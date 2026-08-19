@@ -26,7 +26,7 @@ export function UserArea() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       try {
         const meRes = await fetch("/api/me", { cache: "no-store" });
         if (!meRes.ok) return;
@@ -42,9 +42,14 @@ export function UserArea() {
       } catch {
         /* 后端未就绪时保持占位态 */
       }
-    })();
+    };
+    void load();
+    // 充值到账 / 生成扣费后由业务侧派发该事件刷新余额（与 deck 工作台同一约定）
+    const onRefresh = () => void load();
+    window.addEventListener("anppt:credits-refresh", onRefresh);
     return () => {
       cancelled = true;
+      window.removeEventListener("anppt:credits-refresh", onRefresh);
     };
   }, []);
 

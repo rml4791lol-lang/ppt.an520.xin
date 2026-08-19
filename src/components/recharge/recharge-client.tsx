@@ -164,7 +164,10 @@ function PaymentPanel({
           const next = String(json.data.order.status) as OrderView["status"];
           if (next !== "pending") {
             setStatus(next);
-            if (next === "paid") router.refresh();
+            if (next === "paid") {
+              router.refresh();
+              window.dispatchEvent(new Event("anppt:credits-refresh"));
+            }
           }
         }
       } catch {
@@ -350,6 +353,7 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
         setNotice("兑换成功，星星已到账");
         setCode("");
         router.refresh();
+        window.dispatchEvent(new Event("anppt:credits-refresh"));
       } else {
         setError(apiErrorMessage(json, "兑换失败，请检查兑换码是否正确"));
       }
