@@ -22,6 +22,9 @@ export function StepStyle({
   const selectedId = state.deck.stylePackId || null;
   const selectedPack = STYLE_PACKS.find((p) => p.id === selectedId) ?? null;
   const hasGenerated = state.deck.status === "generated" || state.deck.status === "partial";
+  const generating = state.deck.status === "generating"
+    || state.slides.some((s) => s.genStatus === "queued" || s.genStatus === "running");
+  const pendingCount = state.slides.filter((s) => s.genStatus !== "succeeded").length;
   const canGenerate = state.contentLocked; // 需先确认冻结
 
   const filtered = useMemo(
@@ -206,19 +209,29 @@ export function StepStyle({
             <button
               type="button"
               onClick={onGenerate}
-              disabled={!selectedPack || !canGenerate || saving}
+              disabled={!selectedPack || !canGenerate || saving || generating}
               title={
                 !selectedPack
                   ? "请先选择一个设计风格"
                   : !canGenerate
                     ? "请先完成内容梳理并确认"
-                    : hasGenerated
-                      ? "按新选择的风格重新生成整套（将重新按页冻结与结算星星）"
-                      : "按当前风格生成整套页面"
+                    : generating
+                      ? "页面正在生成中，请到「生成页面」查看进度"
+                      : hasGenerated && pendingCount === 0
+                        ? "按新选择的风格重新生成整套（将重新按页冻结与结算星星）"
+                        : pendingCount < state.slides.length
+                          ? `只为尚未完成的 ${pendingCount} 页生成，已完成的页不重复扣费`
+                          : "按当前风格生成整套页面"
               }
               className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {hasGenerated ? "使用此风格重新生成" : `生成整套页面 · ${state.slides.length * 10}🌟`}
+              {generating
+                ? "正在生成中…"
+                : hasGenerated && pendingCount === 0
+                  ? `使用此风格重新生成 · ${state.slides.length * 10}🌟`
+                  : pendingCount < state.slides.length
+                    ? `生成剩余 ${pendingCount} 页 · ${pendingCount * 10}🌟`
+                    : `生成整套页面 · ${state.slides.length * 10}🌟`}
             </button>
           </div>
         </div>

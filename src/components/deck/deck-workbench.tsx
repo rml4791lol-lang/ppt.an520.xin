@@ -235,16 +235,20 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   const openGenerateConfirm = useCallback(
     (forceRegenerate: boolean) => {
       setEstimate(null);
-      setConfirm({ kind: "generate", forceRegenerate });
       if (!state) return;
       const pages = forceRegenerate
         ? state.slides.length
         : state.slides.filter((s) => s.genStatus !== "succeeded").length;
+      if (!forceRegenerate && pages === 0) {
+        toast("所有页面都已生成完毕，无需重复生成。");
+        return;
+      }
+      setConfirm({ kind: "generate", forceRegenerate });
       estimateCredits("deck_page_generate", Math.max(1, pages))
         .then((e) => setEstimate({ credits: e.credits, unitPrice: e.unitPrice, pages: e.pages }))
         .catch(() => setEstimate(null));
     },
-    [state],
+    [state, toast],
   );
 
   const ctx: DeckCtx | null = useMemo(
@@ -436,11 +440,11 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             {ctx && activeStep === 3 && (
               <StepStyle
                 ctx={ctx}
-                onGenerate={() =>
-                  openGenerateConfirm(
-                    ctx.state.deck.status === "generated" || ctx.state.deck.status === "partial",
-                  )
-                }
+                onGenerate={() => {
+                  // 全部页都已成功 → 整套重做（force）；否则只补未完成页，已生成页不重复扣费
+                  const pending = ctx.state.slides.filter((s) => s.genStatus !== "succeeded").length;
+                  openGenerateConfirm(pending === 0);
+                }}
               />
             )}
             {ctx && activeStep === 4 && (
@@ -552,8 +556,8 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
         >
           <p className="text-sm leading-6 text-ink-2">
             {confirm.forceRegenerate
-              ? `将按当前选中设计风格，重新生成整套 ${state.slides.length} 页。`
-              : "将使用选中的设计风格，调用 AI 模型生成当前页面。"}
+              ? `将按当前选中设计风格，重新生成整套 ${state.slides.length} 页（覆盖已有页面图）。`
+              : "将使用选中的设计风格，调用 AI 模型生成页面；已完成的页面不重复生成、不重复扣费。"}
           </p>
           <div className="mt-3 rounded-xl bg-page px-4 py-3 text-sm text-ink-2">
             {estimate ? (

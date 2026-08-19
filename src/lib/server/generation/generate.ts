@@ -212,7 +212,7 @@ export async function startDeckGeneration(
     targets = allSlides.filter((slide) => ['idle', 'failed', 'stale'].includes(slide.genStatus));
   }
   if (targets.length === 0) {
-    throw new ApiError('NOTHING_TO_GENERATE', '没有待生成的页面（如需重做全部请用 forceRegenerate）', 400, false);
+    throw new ApiError('NOTHING_TO_GENERATE', '所有页面都已生成完毕，无需重复生成；如需重做请在风格页使用「重新生成」', 400, false);
   }
 
   // 整单估价 + 余额校验：不足整单 402，不建 job 不扣费
