@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import {
   CheckIcon,
@@ -13,6 +14,8 @@ import {
   TrashIcon,
   UploadIcon,
 } from "@/components/icons";
+import { ApiClientError } from "@/lib/client/api";
+import { createPagedCopyDeck, parseDeckDocument } from "@/lib/client/deck-api";
 import type { StylePack } from "@/data/style-packs";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
@@ -294,6 +297,7 @@ function StylePicker({
 }
 
 export function UploadCard({ packs }: { packs: StylePack[] }) {
+  const router = useRouter();
   const [tab, setTab] = useState<TabKey>("import");
   const [style, setStyle] = useState<StylePack | null>(null);
   const [duration, setDuration] = useState("15");
@@ -302,62 +306,81 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [pages, setPages] = useState<string[]>([""]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<null | "import" | "paged">(null);
 
   const flash = (msg: string) => {
     setNotice(msg);
     window.setTimeout(() => setNotice(null), 4000);
   };
 
-  // 契约见交接文档：对应 POST /api/deck/parse（FormData）
-  const submitImport = () => {
+  // 统一错误处理：401 → 跳登录（回跳首页）；402 → 提示充值；其余直接展示文案
+  const handleSubmitError = (error: unknown, fallback: string) => {
+    const err = error instanceof ApiClientError ? error : null;
+    if (err?.isUnauthorized) {
+      router.push(`/login?next=${encodeURIComponent("/")}`);
+      return;
+    }
+    if (err?.isInsufficientCredits) {
+      flash(`${err.message}（前往「购买与兑换」充值）`);
+      return;
+    }
+    flash(err?.message ?? fallback);
+  };
+
+  // 导入文档 → POST /api/deck/parse（FormData）→ 跳工作台
+  const submitImport = async () => {
     if (!docFile) {
       flash("请先选择或拖入文档");
       return;
     }
-    const opt = DURATION_OPTIONS.find((o) => o.value === duration)!;
-    const payload = {
-      api: "POST /api/deck/parse (FormData)",
-      file: docFile.name,
-      duration: Number(duration),
-      targetPageCount: opt.pages,
-      pageCountMode: "auto",
-      qualityTier: quality,
-      stylePackId: style?.id ?? null,
-    };
-    console.log("[AnPPT] 导入文档提交占位：", payload);
-    flash("已收到生成请求（演示环境），生成能力将在后端接入后开放");
+    if (submitting) return;
+    setSubmitting("import");
+    try {
+      const opt = DURATION_OPTIONS.find((o) => o.value === duration)!;
+      const result = await parseDeckDocument({
+        file: docFile,
+        duration: Number(duration),
+        targetPageCount: opt.pages,
+        pageCountMode: "auto",
+        qualityTier: quality,
+        stylePackId: style?.id ?? null,
+      });
+      router.push(`/deck/${result.deckId}`);
+    } catch (error) {
+      handleSubmitError(error, "创建项目失败，请重新尝试");
+      setSubmitting(null);
+    }
   };
 
-  // 对应 POST /api/deck/paged-copy-v2（JSON）
-  const submitPaged = () => {
+  // 按页录入 → POST /api/deck/paged-copy-v2（JSON）→ 跳工作台
+  const submitPaged = async () => {
     const filled = pages.map((p) => p.trim()).filter(Boolean);
     if (filled.length === 0) {
       flash("请先至少填写一页内容");
       return;
     }
-    const payload = {
-      api: "POST /api/deck/paged-copy-v2 (JSON)",
-      pages: filled,
-      qualityTier: quality,
-      stylePackId: style?.id ?? null,
-    };
-    console.log("[AnPPT] 按页录入提交占位：", payload);
-    flash("已收到生成请求（演示环境），生成能力将在后端接入后开放");
+    if (submitting) return;
+    setSubmitting("paged");
+    try {
+      const result = await createPagedCopyDeck({
+        pages: filled.map((rawText) => ({ rawText })),
+        qualityTier: quality,
+        stylePackId: style?.id ?? null,
+      });
+      router.push(`/deck/${result.deckId}`);
+    } catch (error) {
+      handleSubmitError(error, "创建项目失败，请重新尝试");
+      setSubmitting(null);
+    }
   };
 
-  // 对应 POST /api/beautify-projects（FormData）
+  // PPT 美化：后端未上线，保持占位
   const submitBeautify = () => {
     if (!pptFile) {
       flash("请先选择或拖入 PPT 文件");
       return;
     }
-    const payload = {
-      api: "POST /api/beautify-projects (FormData)",
-      file: pptFile.name,
-      stylePackId: style?.id ?? null,
-    };
-    console.log("[AnPPT] PPT美化提交占位：", payload);
-    flash("已收到美化请求（演示环境），美化能力将在后端接入后开放");
+    flash("PPT 美化即将上线，敬请期待");
   };
 
   return (
@@ -416,10 +439,11 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                   />
                   <button
                     type="button"
-                    onClick={submitImport}
-                    className="shrink-0 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
+                    onClick={() => void submitImport()}
+                    disabled={submitting !== null}
+                    className="shrink-0 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    开始生成大纲
+                    {submitting === "import" ? "上传解析中…" : "开始生成大纲"}
                   </button>
                 </div>
               </div>
@@ -497,10 +521,11 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 />
                 <button
                   type="button"
-                  onClick={submitPaged}
-                  className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong sm:ml-auto"
+                  onClick={() => void submitPaged()}
+                  disabled={submitting !== null}
+                  className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto"
                 >
-                  开始生成
+                  {submitting === "paged" ? "创建项目中…" : "开始生成"}
                 </button>
               </div>
             </div>
@@ -533,7 +558,8 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 <button
                   type="button"
                   onClick={submitBeautify}
-                  className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong sm:ml-auto"
+                  disabled={submitting !== null}
+                  className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:opacity-50 sm:ml-auto"
                 >
                   开始美化
                 </button>

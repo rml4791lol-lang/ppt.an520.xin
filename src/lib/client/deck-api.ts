@@ -1,0 +1,222 @@
+// 整套 PPT（deck）工作台 API 客户端。
+// 类型对齐 src/lib/server/generation/decks.ts 的 getDeckState 返回（后端已实现）。
+import { apiFetch } from "./api";
+
+export type SlideRole = "cover" | "toc" | "section" | "content" | "ending";
+
+export type DeckStatus =
+  | "parsed"
+  | "outlined"
+  | "structured"
+  | "confirmed"
+  | "generating"
+  | "generated"
+  | "partial";
+
+export type StructureStatus = "pending" | "ok" | "failed";
+
+export type GenStatus = "idle" | "queued" | "running" | "succeeded" | "failed" | "stale";
+
+export interface DeckSlideVersion {
+  versionId: string;
+  versionNo: number;
+  kind: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  imageUrl: string;
+  error: string;
+  jobId: string;
+  createdAt: number;
+}
+
+export interface DeckSlide {
+  slideId: string;
+  pageIndex: number;
+  role: SlideRole;
+  chapter: string;
+  pageType: string;
+  title: string;
+  goal: string;
+  mustKeep: string[];
+  rawText: string;
+  summary: string[];
+  visualNote: string;
+  structuredContent: string;
+  structureStatus: StructureStatus;
+  structureWarnings: string[];
+  genStatus: GenStatus;
+  genError: string;
+  activeVersionId: string;
+  versions: DeckSlideVersion[];
+}
+
+export interface DeckInfo {
+  id: string;
+  title: string;
+  status: DeckStatus;
+  stylePackId: string;
+  qualityTier: string;
+  durationMinutes: number;
+  targetPageCount: number;
+  sourceFileName: string;
+  error: string;
+  confirmedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DeckActiveJob {
+  jobId: string;
+  kind: string;
+  status: "queued" | "running";
+  total: number;
+  succeeded: number;
+  failed: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DeckPageSummary {
+  total: number;
+  idle: number;
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  stale: number;
+}
+
+export interface DeckState {
+  deck: DeckInfo;
+  slides: DeckSlide[];
+  activeJob: DeckActiveJob | null;
+  pageSummary: DeckPageSummary;
+  contentLocked: boolean;
+}
+
+/** 写 action 的响应 data = 全量 state + extra 字段平铺（见 actions.ts 路由） */
+export interface DeckActionResult extends DeckState {
+  [key: string]: unknown;
+}
+
+export type DeckAction =
+  | "outline"
+  | "add-slide"
+  | "delete-slide"
+  | "reorder-slides"
+  | "split-slide"
+  | "update-slide"
+  | "structure"
+  | "structure-slide"
+  | "confirm-structure"
+  | "unlock-structure"
+  | "style"
+  | "generate"
+  | "generate-slide"
+  | "refine-slide"
+  | "retry-failed"
+  | "select-slide-version";
+
+export interface OutlineSlidePatch {
+  role?: SlideRole;
+  chapter?: string;
+  pageType?: string;
+  title?: string;
+  goal?: string;
+  rawText?: string;
+  summary?: string[];
+  visualNote?: string;
+  structuredContent?: string;
+}
+
+export function getDeckState(deckId: string): Promise<DeckState> {
+  return apiFetch<DeckState>(`/api/deck/${encodeURIComponent(deckId)}`);
+}
+
+/** action RPC：POST /api/deck/{id} {action, ...params}，响应即最新全量状态 */
+export function deckAction(
+  deckId: string,
+  action: DeckAction,
+  params: Record<string, unknown> = {},
+): Promise<DeckActionResult> {
+  return apiFetch<DeckActionResult>(`/api/deck/${encodeURIComponent(deckId)}`, {
+    body: { action, ...params },
+  });
+}
+
+export interface DeckExportResult {
+  exportId: string;
+  url: string;
+  pageCount: number;
+  kind: "image";
+}
+
+/** 图片集 PPTX 导出（免费）。响应用 url 字段（后端 exports.ts 的 ExportResult） */
+export function exportDeckImage(deckId: string): Promise<DeckExportResult> {
+  return apiFetch<DeckExportResult>(`/api/deck/${encodeURIComponent(deckId)}/export-image`, {
+    body: {},
+  });
+}
+
+export interface ParseDeckResult {
+  deckId: string;
+  title: string;
+  status: string;
+  truncated: boolean;
+  chars: number;
+}
+
+/** 首页「导入文档」：POST /api/deck/parse（FormData） */
+export function parseDeckDocument(input: {
+  file: File;
+  duration: number;
+  targetPageCount: number;
+  pageCountMode: string;
+  qualityTier: string;
+  stylePackId?: string | null;
+}): Promise<ParseDeckResult> {
+  const form = new FormData();
+  form.set("file", input.file);
+  form.set("duration", String(input.duration));
+  form.set("targetPageCount", String(input.targetPageCount));
+  form.set("pageCountMode", input.pageCountMode);
+  form.set("qualityTier", input.qualityTier);
+  if (input.stylePackId) form.set("stylePackId", input.stylePackId);
+  return apiFetch<ParseDeckResult>("/api/deck/parse", { formData: form });
+}
+
+/** 首页「按页录入」：POST /api/deck/paged-copy-v2（JSON） */
+export function createPagedCopyDeck(input: {
+  pages: { title?: string; rawText: string }[];
+  qualityTier: string;
+  stylePackId?: string | null;
+}): Promise<{ deckId: string }> {
+  return apiFetch<{ deckId: string }>("/api/deck/paged-copy-v2", { body: input });
+}
+
+/** 项目改名（deck 与单页项目共用）：PATCH /api/projects/{id} {title} */
+export function renameProject(id: string, title: string): Promise<unknown> {
+  return apiFetch(`/api/projects/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: { title },
+  });
+}
+
+export interface CreditEstimate {
+  action: string;
+  unitPrice: number;
+  pages: number;
+  credits: number;
+}
+
+/** 费用预估：POST /api/credits/estimate（deck 逐页生成动作为 deck_page_generate） */
+export function estimateCredits(action: string, pages?: number): Promise<CreditEstimate> {
+  return apiFetch<CreditEstimate>("/api/credits/estimate", { body: { action, pages } });
+}
+
+/** 星星余额 */
+export function getCreditBalance(): Promise<number | null> {
+  return apiFetch<{ balance?: number; available?: number }>("/api/credits/balance").then(
+    (data) => data.balance ?? data.available ?? null,
+    () => null,
+  );
+}
