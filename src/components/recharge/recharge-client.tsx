@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckIcon } from "@/components/icons";
 import type { RechargePlan } from "@/data/recharge";
 
@@ -16,11 +16,31 @@ function apiErrorMessage(
   return json?.message ?? fallback;
 }
 
+type PayChannel = "wechat" | "alipay";
+
+/** 对齐 src/lib/server/recharge.ts 的 PublicOrder。 */
+interface OrderView {
+  orderNo: string;
+  planId: string;
+  amountFen: number;
+  credits: number;
+  status: "pending" | "paid" | "expired" | "cancelled";
+  provider: "wechat" | "epay" | "mock";
+  codeUrl: string;
+  checkoutUrl: string;
+}
+
+function fenToYuan(fen: number): string {
+  return (fen / 100).toFixed(2).replace(/\.00$/, "");
+}
+
 function PlanCard({
   plan,
+  ordering,
   onOrder,
 }: {
   plan: RechargePlan;
+  ordering: boolean;
   onOrder: (plan: RechargePlan) => void;
 }) {
   return (
@@ -69,14 +89,15 @@ function PlanCard({
 
       <button
         type="button"
+        disabled={ordering}
         onClick={() => onOrder(plan)}
-        className={`mt-4 w-full rounded-xl py-2.5 text-sm font-medium transition ${
+        className={`mt-4 w-full rounded-xl py-2.5 text-sm font-medium transition disabled:opacity-60 ${
           plan.recommended
             ? "bg-brand text-white hover:bg-brand-strong"
             : "bg-brand-soft text-brand hover:bg-brand-line"
         }`}
       >
-        立即订阅
+        {ordering ? "创建订单…" : "立即购买"}
       </button>
 
       <div className="mt-4 rounded-xl bg-page p-3">
@@ -87,45 +108,224 @@ function PlanCard({
   );
 }
 
+/** 支付面板：扫码 / 跳转收银台 + 2.5s 轮询订单状态直到支付成功或过期。 */
+function PaymentPanel({
+  order,
+  mock,
+  plan,
+  onClose,
+}: {
+  order: OrderView;
+  mock: boolean;
+  plan: RechargePlan;
+  onClose: (paid: boolean) => void;
+}) {
+  const router = useRouter();
+  const [qr, setQr] = useState<string | null>(null);
+  const [status, setStatus] = useState<OrderView["status"]>(order.status);
+  const [pollError, setPollError] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isWechat = order.provider === "wechat" || order.provider === "mock";
+  const paid = status === "paid";
+  const dead = status === "expired" || status === "cancelled";
+
+  // codeUrl → 二维码图片（qrcode 按需动态加载，不进首屏包）
+  useEffect(() => {
+    let alive = true;
+    setQr(null);
+    if (order.codeUrl) {
+      import("qrcode")
+        .then((mod) =>
+          mod.toDataURL(order.codeUrl, { width: 480, margin: 1 }),
+        )
+        .then((url) => {
+          if (alive) setQr(url);
+        })
+        .catch(() => {
+          if (alive) setQr(null);
+        });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [order.codeUrl]);
+
+  // 轮询订单状态
+  useEffect(() => {
+    if (status !== "pending") return;
+    timerRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/recharge/orders?orderNo=${encodeURIComponent(order.orderNo)}`,
+        );
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.ok && json.data?.order) {
+          const next = String(json.data.order.status) as OrderView["status"];
+          if (next !== "pending") {
+            setStatus(next);
+            if (next === "paid") router.refresh();
+          }
+        }
+      } catch {
+        setPollError(true);
+      }
+    }, 2500);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [order.orderNo, status, router]);
+
+  return (
+    <div className="mx-auto mt-6 max-w-md rounded-2xl border border-line bg-card p-8 text-center shadow-card">
+      {paid ? (
+        <>
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-soft text-brand">
+            <CheckIcon width={22} height={22} />
+          </span>
+          <h3 className="mt-4 text-lg font-semibold text-ink">支付成功</h3>
+          <p className="mt-2 text-sm leading-6 text-ink-3">
+            {plan.name} · {order.credits.toLocaleString("zh-CN")}🌟 已到账
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push("/account/credits")}
+              className="rounded-xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
+            >
+              查看积分明细
+            </button>
+            <button
+              type="button"
+              onClick={() => onClose(true)}
+              className="rounded-xl bg-brand-soft px-5 py-2.5 text-sm font-medium text-brand transition hover:bg-brand-line"
+            >
+              继续购买
+            </button>
+          </div>
+        </>
+      ) : dead ? (
+        <>
+          <h3 className="text-lg font-semibold text-ink">订单已失效</h3>
+          <p className="mt-2 text-sm leading-6 text-ink-3">
+            订单超时未支付已关闭，请重新下单。
+          </p>
+          <button
+            type="button"
+            onClick={() => onClose(false)}
+            className="mt-6 rounded-xl bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
+          >
+            重新下单
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="flex items-start justify-between text-left">
+            <div>
+              <h3 className="text-lg font-semibold text-ink">
+                {isWechat ? "微信扫码支付" : "支付宝支付"}
+              </h3>
+              <p className="mt-1 text-sm text-ink-3">
+                {plan.name} ·{" "}
+                <span className="font-semibold text-ink">¥{fenToYuan(order.amountFen)}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onClose(false)}
+              aria-label="返回套餐"
+              className="rounded-lg px-2 py-1 text-lg leading-none text-ink-4 transition hover:bg-page hover:text-ink"
+            >
+              ×
+            </button>
+          </div>
+
+          {order.codeUrl ? (
+            <div className="mx-auto mt-5 flex h-52 w-52 items-center justify-center overflow-hidden rounded-xl border border-line bg-white">
+              {qr ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={qr} alt="支付二维码" className="h-full w-full" />
+              ) : (
+                <span className="text-xs text-ink-4">二维码生成中…</span>
+              )}
+            </div>
+          ) : null}
+
+          {order.checkoutUrl ? (
+            <a
+              href={order.checkoutUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-5 block rounded-xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
+            >
+              跳转支付宝收银台
+            </a>
+          ) : null}
+
+          <p className="mt-4 text-sm text-ink-3">
+            {isWechat ? "请使用微信扫一扫完成支付" : "请使用支付宝扫码或跳转收银台完成支付"}
+          </p>
+          <p className="mt-2 flex items-center justify-center gap-2 text-xs text-ink-4">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-brand" />
+            等待支付结果…支付成功后自动到账
+          </p>
+          {mock && (
+            <p className="mt-2 rounded-lg bg-page px-3 py-1.5 text-xs text-ink-4">
+              Mock 模式：扫码不会真实扣款，仅用于联调
+            </p>
+          )}
+          {pollError && (
+            <p className="mt-2 text-xs text-danger">状态刷新异常，请保持网络畅通</p>
+          )}
+          <p className="mt-4 text-xs text-ink-4">订单号 {order.orderNo}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
   const router = useRouter();
   const [tab, setTab] = useState<"buy" | "redeem">("buy");
+  const [channel, setChannel] = useState<PayChannel>("wechat");
   const [code, setCode] = useState("");
   const [redeeming, setRedeeming] = useState(false);
+  const [orderingId, setOrderingId] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    order: OrderView;
+    mock: boolean;
+    plan: RechargePlan;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 契约：POST /api/recharge/orders {planId, channel}（后端代理实现）
   const order = async (plan: RechargePlan) => {
     setError(null);
     setNotice(null);
-    console.log("[AnPPT] 下单占位：", { planId: plan.id, channel: "wechat" });
+    setOrderingId(plan.id);
     try {
       const res = await fetch("/api/recharge/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-anppt-action": "1" },
-        body: JSON.stringify({ planId: plan.id, channel: "wechat" }),
+        body: JSON.stringify({ planId: plan.id, channel }),
       });
       if (res.status === 401) {
         router.push(`/login?next=${encodeURIComponent("/recharge")}`);
         return;
       }
-      if (res.status === 404) {
-        setNotice("支付通道接入中，敬请期待");
-        return;
-      }
       const json = await res.json().catch(() => null);
-      if (res.ok && json?.ok) {
-        setNotice("订单已创建，请按提示完成支付");
+      if (res.ok && json?.ok && json.data?.order) {
+        setPending({ order: json.data.order, mock: Boolean(json.data.mock), plan });
       } else {
         setError(apiErrorMessage(json, "下单失败，请稍后再试"));
       }
     } catch {
-      setNotice("支付通道接入中，敬请期待");
+      setError("网络异常，请稍后再试");
+    } finally {
+      setOrderingId(null);
     }
   };
 
-  // 契约：POST /api/points/redemption/preview {code} → redeem（后端代理实现）
   const redeem = async () => {
     const value = code.trim();
     if (!value) {
@@ -149,6 +349,7 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
       if (res.ok && json?.ok) {
         setNotice("兑换成功，星星已到账");
         setCode("");
+        router.refresh();
       } else {
         setError(apiErrorMessage(json, "兑换失败，请检查兑换码是否正确"));
       }
@@ -159,9 +360,48 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
     }
   };
 
+  if (pending) {
+    return (
+      <PaymentPanel
+        order={pending.order}
+        mock={pending.mock}
+        plan={pending.plan}
+        onClose={() => setPending(null)}
+      />
+    );
+  }
+
   return (
     <div>
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {tab === "buy" ? (
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-ink-3">支付方式</span>
+            <div className="flex rounded-full bg-page p-1">
+              {(
+                [
+                  { key: "wechat", label: "微信支付" },
+                  { key: "alipay", label: "支付宝" },
+                ] as const
+              ).map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setChannel(c.key)}
+                  className={`rounded-full px-4 py-1.5 text-sm transition ${
+                    channel === c.key
+                      ? "bg-card font-medium text-ink shadow-card"
+                      : "text-ink-3 hover:text-ink"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <span />
+        )}
         <div className="flex rounded-full bg-page p-1">
           {(
             [
@@ -188,7 +428,12 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
       {tab === "buy" ? (
         <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {plans.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} onOrder={order} />
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              ordering={orderingId === plan.id}
+              onOrder={order}
+            />
           ))}
         </div>
       ) : (
