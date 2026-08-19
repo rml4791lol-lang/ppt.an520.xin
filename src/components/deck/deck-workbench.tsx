@@ -313,6 +313,12 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
         )}
 
         <div className="ml-auto flex items-center gap-2.5">
+          <Link
+            href="/projects"
+            className="rounded-full border border-line-strong px-3.5 py-1.5 text-[13px] text-ink-2 transition hover:border-brand-line hover:text-brand"
+          >
+            我的项目
+          </Link>
           <span className="flex items-center overflow-hidden rounded-full border border-brand-line bg-brand-softer text-[13px]">
             <span className="flex items-center gap-1 px-3 py-1.5 text-ink-2">
               <StarIcon width={13} height={13} className="text-brand" />
