@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AnPPT v2（ppt.an520.xin）
 
-## Getting Started
+AI PPT 生成工作台：上传文档 / 按页录入 → 大纲 → 内容梳理 → 选风格 → 逐页生图 → 导出图片版 PPTX。
+Next.js 16 全栈单体（App Router + Route Handlers + node:sqlite），无外部服务依赖，单机房部署。
 
-First, run the development server:
+## 业务规则（已冻结）
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- 注册送 100🌟；登录支持邮箱 OTP + 账号密码
+- 计费：逐页生成 10🌟/页，**失败自动退还**；大纲 / 内容梳理 / 解析 / 图片版导出免费
+- 套餐：¥9.9/100🌟、¥39.9/500🌟（推荐）、¥79.9/1000🌟、¥149.9/2000🌟；支持兑换码
+- 支付：微信 Native 扫码 + 支付宝（epay 收银台），回调验签 + 金额校验 + 幂等履约
+- 可编辑导出（图片→可编辑 PPTX）为二期占位，接口返回 501
+
+## 目录
+
+```
+src/
+  app/                    页面（(main) 布局组：首页/风格库/充值/积分/项目/工作台/单页）
+  app/api/                Route Handlers（auth/credits/recharge/deck/single-page/projects/exports）
+  components/             客户端组件
+  data/                   风格包/套餐/规则等静态数据
+  lib/server/             服务端核心：auth(OTP+会话) credits(台账幂等) recharge(订单履约)
+                          payments/(wechat native + epay) documents(解析) exports(pptx)
+                          generation/(deck 状态机/DSL/生图/单页/项目)
+scripts/
+  test-backend.mjs        B 层：45 项（注册/OTP/积分/订单/回调/兑换码）
+  test-generation.mjs     C 层：69 项（解析/DSL/引擎+兜底/状态机/扣费退还/导出/按页录入路由）
+  ts-hooks.mjs            node 直跑 TS 的 resolve 钩子（含 @/ 别名）
+deploy/                   systemd 单元 / 部署脚本 / Caddy 切换块 / Runbook
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 生成链状态机
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`parse → outlined → structured → confirmed(内容冻结) → generating → generated|partial`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- 冻结后内容类 action 一律 409（CONTENT_LOCKED），需 unlock-structure 解锁（作废旧图）
+- 按页录入（paged-copy-v2）跳过 LLM 大纲，直接 outlined → structure
+- 大纲/梳理优先走 PPT 引擎内部 API，不可达时降级本地 LLM 兜底
+  （契约：`image2-studio-v2/docs/ANPPT-V2-INTEGRATION-CONTRACT.md`，schema/DSL v1 已冻结）
 
-## Learn More
+## 开发
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm install
+npm run dev                 # http://localhost:3000
+./node_modules/.bin/tsc --noEmit
+node scripts/test-backend.mjs && node scripts/test-generation.mjs
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+本地联调常用 env（见 `.env.example` 全量注释）：
+`OTP_DEV_ECHO=true`（验证码回显）、`WECHAT_PAY_MOCK=true`（假码+mock 回调）、
+`ANPPT_V2_LLM_BASE_URL` / `ANPPT_V2_IMAGE_*`（指向 6800 中转隧道）。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 部署
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+见 `deploy/README.md`（systemd + rsync 产物 + Caddy 切换/回滚）。
