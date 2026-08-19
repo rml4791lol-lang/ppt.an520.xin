@@ -2,7 +2,7 @@
 // 与 deck 共用生图上游与扣费语义：每张 singlePageCredits（默认 10🌟），失败自动退还。
 import { ApiError, validationError } from '../http';
 import { debitCredits, refundCredits } from '../credits';
-import { getGenerationConfig, type GenerationConfig } from './config';
+import { getGenerationConfig } from './config';
 import { genId, getGenDb, nowMs } from './db';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';

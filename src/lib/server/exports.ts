@@ -2,6 +2,7 @@
 // 图片版导出免费；可编辑导出为 501 占位（EDITABLE_EXPORT_COMING_SOON，见路由）。
 import { createRequire } from 'node:module';
 import { ApiError, validationError } from './http';
+import { estimateCredits } from './credits';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
 import { genId, getGenDb, nowMs } from './generation/db';
 import { getOwnedDeck, listSlides } from './generation/decks';
@@ -51,21 +52,20 @@ async function buildImagePptx(
 }
 
 function recordExport(
+  exportId: string,
   userId: string,
   refType: 'deck' | 'single-page',
   refId: string,
   pageCount: number,
   filePath: string,
   fileUrl: string,
-): { exportId: string } {
-  const id = genId('exp');
+): void {
   getGenDb()
     .prepare(
       `INSERT INTO export_jobs (id, user_id, ref_type, ref_id, kind, status, page_count, file_path, file_url, created_at)
        VALUES (?, ?, ?, ?, 'image', 'succeeded', ?, ?, ?, ?)`,
     )
-    .run(id, userId, refType, refId, pageCount, filePath, fileUrl, nowMs());
-  return { exportId: id };
+    .run(exportId, userId, refType, refId, pageCount, filePath, fileUrl, nowMs());
 }
 
 export interface ExportResult {
@@ -101,7 +101,7 @@ export async function exportDeckImagePptx(
   const exportId = genId('exp');
   const saved = await saveFile('exports', userId, Buffer.alloc(0), { ext: '.pptx', id: exportId }, config);
   await buildImagePptx(pages, saved.absPath);
-  recordExport(userId, 'deck', deck.id, pages.length, saved.relPath, saved.url);
+  recordExport(exportId, userId, 'deck', deck.id, pages.length, saved.relPath, saved.url);
   return { exportId, url: saved.url, pageCount: pages.length, kind: 'image' };
 }
 
@@ -138,7 +138,7 @@ export async function exportSinglePagesImagePptx(
   const exportId = genId('exp');
   const saved = await saveFile('exports', userId, Buffer.alloc(0), { ext: '.pptx', id: exportId }, config);
   await buildImagePptx(images, saved.absPath);
-  recordExport(userId, 'single-page', input.projectId || withImages[0].projectId, images.length, saved.relPath, saved.url);
+  recordExport(exportId, userId, 'single-page', input.projectId || withImages[0].projectId, images.length, saved.relPath, saved.url);
   return { exportId, url: saved.url, pageCount: images.length, kind: 'image' };
 }
 
@@ -206,6 +206,12 @@ export function quoteExport(userId: string, body: Record<string, unknown>) {
   } else {
     throw validationError('缺少 deckId / projectId / pageIds');
   }
+  let editableUnitPrice = 20;
+  try {
+    editableUnitPrice = estimateCredits({ action: 'export_editable' }).unitPrice;
+  } catch {
+    // CREDIT_ACTION_PRICES 被覆盖且不含 export_editable 时用默认 20🌟/页
+  }
   return {
     pageCount,
     refType,
@@ -213,7 +219,8 @@ export function quoteExport(userId: string, body: Record<string, unknown>) {
       { kind: 'image', credits: 0, available: pageCount > 0 },
       {
         kind: 'editable',
-        credits: 0,
+        credits: editableUnitPrice * pageCount,
+        unitPrice: editableUnitPrice,
         available: false,
         code: 'EDITABLE_EXPORT_COMING_SOON',
         message: '可编辑导出即将上线',

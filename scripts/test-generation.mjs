@@ -437,8 +437,9 @@ console.log('\n[6] 导出：图片版 pptx 真产出 + editable 501 + 导出中�
   check('导出返回 url + pageCount=2', result.pageCount === 2 && result.url.startsWith('/api/files/exports/'));
   const rel = result.url.replace('/api/files/', '');
   const fileBuf = readFileSync(path.join(baseConfig.exportsDir, rel.split('/').slice(1).join('/')));
-  const slideCount = (fileBuf.toString('latin1').match(/ppt\/slides\/slide\d+\.xml/g) || []).length;
-  check('pptx zip 内含 2 页 slide', slideCount === 2, `实际 ${slideCount}`);
+  // zip 里文件名会在 local header / central directory / [Content_Types].xml 多出現，按去重文件名计页数
+  const slideNames = new Set(fileBuf.toString('latin1').match(/ppt\/slides\/slide\d+\.xml/g) || []);
+  check('pptx zip 内含 2 页 slide', slideNames.size === 2, `实际 ${slideNames.size}`);
 
   const list = exportsLib.listExports(uid, {});
   check('导出中心列出记录', list.items.some((item) => item.exportId === result.exportId));

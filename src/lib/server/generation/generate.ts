@@ -2,7 +2,7 @@
 // debit（幂等键 deck-generate:{deckId}:{jobId}:{slideId}）→ 成功落盘 / 失败 refund。
 import { ApiError } from '../http';
 import { debitCredits, estimateCredits, getBalance, refundCredits } from '../credits';
-import { getGenerationConfig, type GenerationConfig } from './config';
+import { getGenerationConfig } from './config';
 import { getGenDb } from './db';
 import {
   createJob,
@@ -94,7 +94,6 @@ async function runSlideGeneration(
     jobId,
   });
 
-  let charged = false;
   try {
     debitCredits(deck.userId, unitPrice, {
       reason: `生成第 ${slide.pageIndex + 1} 页`,
@@ -102,7 +101,6 @@ async function runSlideGeneration(
       refType: 'deck',
       refId: deck.id,
     });
-    charged = true;
   } catch (error) {
     const insufficient = error instanceof ApiError && error.code === 'INSUFFICIENT_CREDITS';
     updateSlideVersion(version.versionId, {
@@ -173,8 +171,6 @@ async function runSlideGeneration(
       console.error('[anppt-v2][generation] refund failed:', refundError);
     }
     return 'failed';
-  } finally {
-    void charged;
   }
 }
 

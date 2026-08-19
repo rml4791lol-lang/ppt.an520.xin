@@ -9,7 +9,6 @@ import { withTransaction } from '../db';
 import { genId, getGenDb, nowMs } from './db';
 import {
   cleanString,
-  cleanStringArray,
   type DeckStatus,
   type GenStatus,
   type JobStatus,
