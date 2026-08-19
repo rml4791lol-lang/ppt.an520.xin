@@ -57,16 +57,18 @@ export interface ServerEnv {
 }
 
 const DEFAULT_RECHARGE_PLANS: RechargePlan[] = [
-  { id: 'pack-230', label: '体验包', amountFen: 1800, credits: 230, description: '轻度体验，随用随充' },
-  { id: 'pack-980', label: '标准包', amountFen: 6800, credits: 980, featured: true, description: '日常创作推荐' },
-  { id: 'pack-2580', label: '专业包', amountFen: 15800, credits: 2580, description: '高频产出更划算' },
-  { id: 'pack-4880', label: '团队包', amountFen: 28800, credits: 4880, description: '团队协作大容量' },
+  { id: 'pack-100', label: '新人尝鲜包', amountFen: 990, credits: 100, description: '首次体验刚刚好' },
+  { id: 'pack-500', label: '轻量创作包', amountFen: 3990, credits: 500, featured: true, description: '日常汇报主力档' },
+  { id: 'pack-1000', label: '职场常用包', amountFen: 7990, credits: 1000, description: '高频创作更划算' },
+  { id: 'pack-2000', label: '高频项目包', amountFen: 14990, credits: 2000, description: '量大管饱最划算' },
 ];
 
 const DEFAULT_ACTION_PRICES: Record<string, number> = {
   deck_page_generate: 10,
   outline: 0,
   export_image: 0,
+  // 可编辑导出（即将上线，Codia 链）：用户拍板 20🌟/页
+  export_editable: 20,
 };
 
 function trim(value: unknown): string {
