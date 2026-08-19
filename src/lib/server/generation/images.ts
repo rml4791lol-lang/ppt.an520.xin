@@ -56,6 +56,8 @@ async function parseImageResponse(
     throw new ImageUpstreamError(`HTTP ${response.status}: 上游返回非 JSON`, response.status || 502);
   }
   if (!response.ok) {
+    // 运营可见性：上游原始错误（余额不足/模型不可用等）进服务器日志，对用户仍走公共口径
+    console.error(`[anppt-v2][image-upstream] HTTP ${response.status}: ${text.slice(0, 500)}`);
     throw new ImageUpstreamError(
       `HTTP ${response.status}: ${cleanString(payload?.error?.message, 300) || 'upstream error'}`,
       response.status,
