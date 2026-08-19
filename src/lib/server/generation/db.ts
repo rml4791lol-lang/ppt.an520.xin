@@ -131,7 +131,11 @@ CREATE TABLE IF NOT EXISTS export_jobs (
   page_count INTEGER NOT NULL DEFAULT 0,
   file_path TEXT NOT NULL DEFAULT '',
   file_url TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL
+  error TEXT NOT NULL DEFAULT '',
+  upstream_task_id TEXT NOT NULL DEFAULT '',
+  charged_credits INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_export_jobs_user ON export_jobs(user_id, created_at DESC);
 `;
@@ -143,6 +147,14 @@ export function getGenDb(): DatabaseSync {
   const db = getDb();
   if (!migrated.has(db)) {
     db.exec(GENERATION_SCHEMA_SQL);
+    // 幂等迁移：老库补 export_jobs 可编辑导出列（新库 CREATE TABLE 已含，
+    // 模式参考 src/lib/server/db.ts 的 users.phone）
+    const exportCols = db.prepare("SELECT name FROM pragma_table_info('export_jobs')").all() as Array<{ name: string }>;
+    const colNames = new Set(exportCols.map((c) => c.name));
+    if (!colNames.has('error')) db.exec("ALTER TABLE export_jobs ADD COLUMN error TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('upstream_task_id')) db.exec("ALTER TABLE export_jobs ADD COLUMN upstream_task_id TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('charged_credits')) db.exec('ALTER TABLE export_jobs ADD COLUMN charged_credits INTEGER NOT NULL DEFAULT 0');
+    if (!colNames.has('updated_at')) db.exec('ALTER TABLE export_jobs ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
     migrated.add(db);
   }
   return db;

@@ -157,6 +157,46 @@ export function exportDeckImage(deckId: string): Promise<DeckExportResult> {
   });
 }
 
+export interface EditableExportStart {
+  exportId: string;
+  status: string;
+  credits: number;
+  pageCount: number;
+}
+
+/** 可编辑 PPTX 导出（20🌟/页，Codia 链）：202 返回任务句柄，结果轮询 getExportRecord */
+export function startEditableExport(deckId: string): Promise<EditableExportStart> {
+  return apiFetch<EditableExportStart>(`/api/deck/${encodeURIComponent(deckId)}/export-editable`, {
+    body: {},
+  });
+}
+
+export interface ExportRecord {
+  exportId: string;
+  refType: string;
+  refId: string;
+  kind: string;
+  status: "pending" | "processing" | "succeeded" | "failed";
+  pageCount: number;
+  url: string;
+  error: string;
+  chargedCredits: number;
+  createdAt: number;
+}
+
+/** 导出详情（轮询用） */
+export function getExportRecord(exportId: string): Promise<ExportRecord> {
+  return apiFetch<ExportRecord>(`/api/pptx-exports/${encodeURIComponent(exportId)}`);
+}
+
+/** 下载中心列表 */
+export function listExportRecords(
+  page = 1,
+  pageSize = 50,
+): Promise<{ items: ExportRecord[]; total: number; page: number; pageSize: number }> {
+  return apiFetch(`/api/pptx-exports?page=${page}&pageSize=${pageSize}`);
+}
+
 export interface ParseDeckResult {
   deckId: string;
   title: string;

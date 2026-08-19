@@ -9,6 +9,7 @@ import {
   ClockIcon,
   CoinIcon,
   CloseIcon,
+  DownloadIcon,
   FolderIcon,
   HeadsetIcon,
   HomeIcon,
@@ -72,6 +73,7 @@ export function SidebarNav({
       { key: "styles", label: "设计风格", href: "/style-packs", icon: SparklesIcon },
       { key: "projects", label: "我的项目", href: "/projects", icon: FolderIcon },
       { key: "recent", label: "最近项目", href: "/projects#recent", icon: ClockIcon },
+      { key: "exports", label: "下载中心", href: "/exports", icon: DownloadIcon },
     ],
     [
       { key: "credits", label: "积分明细", href: "/account/credits", icon: ReceiptIcon },

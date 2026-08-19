@@ -202,7 +202,7 @@ export function estimateCredits(input: EstimateInput) {
   if (!action || !(action in prices)) throw validationError('未知的计费动作');
   const unitPrice = prices[action];
   let pages = 1;
-  if (action === 'deck_page_generate') {
+  if (action === 'deck_page_generate' || action === 'export_editable') {
     pages = Math.floor(Number(input.pages) || 0);
     if (!Number.isSafeInteger(pages) || pages < 1 || pages > 100) {
       throw validationError('页数需为 1-100 的整数');

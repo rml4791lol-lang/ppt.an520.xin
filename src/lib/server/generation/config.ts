@@ -28,6 +28,9 @@ export interface GenerationConfig {
   imageTimeoutMs: number;
   /** 逐页生图并发上限 */
   generateConcurrency: number;
+  /** Codia 开放 API（图片版 PPT 转可编辑 PPTX 上游） */
+  codiaApiKey: string;
+  codiaBaseUrl: string;
   /** 单页生成器单价（🌟/张）。env.ts 的 CREDIT_ACTION_PRICES 尚无 single 动作，
    *  这里自带默认值；deck 页价走 credits.estimateCredits('deck_page_generate')。 */
   singlePageCredits: number;
@@ -68,6 +71,8 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     imageSize: trim(env.ANPPT_V2_IMAGE_SIZE) || '1536x864',
     imageTimeoutMs: intFrom(env.ANPPT_V2_IMAGE_TIMEOUT_MS, 300_000),
     generateConcurrency: Math.min(8, intFrom(env.ANPPT_V2_GENERATE_CONCURRENCY, 3)),
+    codiaApiKey: trim(env.ANPPT_V2_CODIA_API_KEY),
+    codiaBaseUrl: stripTrailingSlash(trim(env.ANPPT_V2_CODIA_BASE_URL) || 'https://openapi.codia.ai'),
     singlePageCredits: intFrom(env.ANPPT_V2_SINGLE_PAGE_CREDITS, 10),
     projectRetentionDays: intFrom(env.ANPPT_V2_PROJECT_RETENTION_DAYS, 7),
   };

@@ -10,6 +10,7 @@ import { registerTsHooks } from './ts-hooks.mjs';
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
 process.env.ANPPT_V2_DATA_DIR = path.join(tmpDir, 'data');
+process.env.ANPPT_V2_CODIA_API_KEY = 'sk-test';
 process.env.OTP_DEV_ECHO = 'true';
 process.env.NODE_ENV = 'test';
 
@@ -594,21 +595,249 @@ console.log('\n[6] 导出：图片版 pptx 真产出 + editable 501 + 导出中�
 
   const list = exportsLib.listExports(uid, {});
   check('导出中心列出记录', list.items.some((item) => item.exportId === result.exportId));
-  const one = exportsLib.getExport(uid, result.exportId);
+  const one = await exportsLib.getExport(uid, result.exportId);
   check('导出详情可取', one.url === result.url);
 
   const quote = exportsLib.quoteExport(uid, { deckId: deck.id });
-  check('quote：image 免费可用、editable 占位', quote.pageCount === 2
+  check('quote：image 免费可用、editable 可用且 20🌟×页数', quote.pageCount === 2
     && quote.quotes.find((q) => q.kind === 'image')?.credits === 0
-    && quote.quotes.find((q) => q.kind === 'editable')?.code === 'EDITABLE_EXPORT_COMING_SOON');
-  check('editable 导出 501', (() => {
-    try {
-      exportsLib.exportEditablePptx();
-      return false;
-    } catch (error) {
-      return error?.code === 'EDITABLE_EXPORT_COMING_SOON' && error?.status === 501;
-    }
-  })());
+    && quote.quotes.find((q) => q.kind === 'editable')?.available === true
+    && quote.quotes.find((q) => q.kind === 'editable')?.credits === 40
+    && !quote.quotes.find((q) => q.kind === 'editable')?.code);
+}
+
+console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
+{
+  const codiaDeps = (fetchImpl) => ({ fetchImpl, config: baseConfig, pollIntervalMs: 1 });
+  const genDb = (await import('../src/lib/server/generation/db.ts')).getGenDb();
+  const ledgerKeys = () =>
+    genDb.prepare('SELECT idempotency_key FROM credit_ledger WHERE user_id = ?').all(uid).map((r) => String(r.idempotency_key));
+
+  check('estimateCredits：export_editable 按页计价（3 页 = 60）',
+    credits.estimateCredits({ action: 'export_editable', pages: 3 }).credits === 60);
+  credits.refundCredits(uid, 500, { reason: '测试补贴', idempotencyKey: 'test-topup-6b' });
+
+  // ---- 成功链：uploads → tasks → poll(pending→succeeded) → 下载落盘 ----
+  {
+    let pollN = 0;
+    let uploadInit = null;
+    const createInits = [];
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/', payload: () => ((pollN += 1) === 1
+          ? { code: 0, message: 'ok', data: { status: 'pending' } }
+          : { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/r1.pptx', page_count: 2 } } }) },
+      { match: '/v2/open/tasks', payload: (init) => {
+          createInits.push(init);
+          return { code: 0, message: 'ok', data: { task_id: 'task_ok1', status: 'pending' } };
+        } },
+      { match: '/v2/open/uploads', payload: (init) => {
+          uploadInit = init;
+          return { code: 0, message: 'ok', data: { upload_id: 'upl_1' } };
+        } },
+      { match: 'r1.pptx', payload: new Response(Buffer.from('mock-pptx-binary')) },
+    ]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    check('可编辑导出发起：processing + 40🌟（20×2页）',
+      started.status === 'processing' && started.credits === 40 && started.pageCount === 2);
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('转换成功落盘，url 以 /api/files/exports/ 开头',
+      exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/'), `实际 ${exp.status} ${exp.url}`);
+    check('净扣 40🌟', before - credits.getBalance(uid) === 40, `before=${before} after=${credits.getBalance(uid)}`);
+    check('ledger debit 键 export-editable:{deckId}:{exportId} 唯一',
+      ledgerKeys().filter((k) => k === `export-editable:${deck.id}:${started.exportId}`).length === 1);
+    check('上传走 multipart file 字段 + Bearer 鉴权',
+      uploadInit?.body instanceof FormData && Boolean(uploadInit.body.get('file'))
+        && uploadInit.headers.Authorization === 'Bearer sk-test');
+    const createBody = JSON.parse(createInits[0].body);
+    check('建任务：pdf_to_ppt + upload_id + page_no [0,1] + 幂等键',
+      createBody.operation === 'pdf_to_ppt'
+        && createBody.input.upload_id === 'upl_1'
+        && JSON.stringify(createBody.input.page_no) === '[0,1]'
+        && createInits[0].headers['Idempotency-Key'] === `anppt-editable-${started.exportId}`);
+  }
+
+  // ---- 首次 failed → 自动 retry（-retry1 幂等键）成功 ----
+  {
+    let createN = 0;
+    const idemKeys = [];
+    let poll2 = 0;
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/task_r1', payload: { code: 0, message: 'ok', data: { status: 'failed', error: 'mock 转换爆炸' } } },
+      { match: '/v2/open/tasks/task_r2', payload: () => ((poll2 += 1) === 1
+          ? { code: 0, message: 'ok', data: { status: 'pending' } }
+          : { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/r2.pptx', page_count: 2 } } }) },
+      { match: '/v2/open/tasks', payload: (init) => {
+          createN += 1;
+          idemKeys.push(init.headers['Idempotency-Key']);
+          return { code: 0, message: 'ok', data: { task_id: `task_r${createN}`, status: 'pending' } };
+        } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_r' } } },
+      { match: 'r2.pptx', payload: new Response(Buffer.from('mock-pptx-binary-2')) },
+    ]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('首次失败自动重试后成功', exp.status === 'succeeded', `实际 ${exp.status} ${exp.error}`);
+    check('两次建任务，幂等键 base → -retry1', createN === 2
+      && idemKeys[0] === `anppt-editable-${started.exportId}`
+      && idemKeys[1] === `anppt-editable-${started.exportId}-retry1`);
+    check('重试只扣一次星（净扣 40）', before - credits.getBalance(uid) === 40);
+  }
+
+  // ---- 两次 failed → 退星 + failed ----
+  {
+    let createN = 0;
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/', payload: { code: 0, message: 'ok', data: { status: 'failed', error: 'mock 持续失败' } } },
+      { match: '/v2/open/tasks', payload: () => {
+          createN += 1;
+          return { code: 0, message: 'ok', data: { task_id: `task_f${createN}`, status: 'pending' } };
+        } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_f' } } },
+    ]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('两次失败 → status=failed 且 error 非空', exp.status === 'failed' && exp.error.length > 0, `实际 ${exp.status}`);
+    check('失败全额退星（余额不变）', credits.getBalance(uid) === before);
+    check('refund 键唯一', ledgerKeys().filter((k) => k === `export-editable:${deck.id}:${started.exportId}:refund`).length === 1);
+    check('确已自动重试过一次（建任务 2 次）', createN === 2);
+  }
+
+  // ---- Codia 402（上游余额不足）：立即终态退星，不重试 ----
+  {
+    let createN = 0;
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks', payload: () => {
+          createN += 1;
+          return jsonResponse({ code: 4002, message: 'upstream credit exhausted' }, 402);
+        } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_402' } } },
+    ]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('上游 402 → failed + error 含「暂时不可用」', exp.status === 'failed' && exp.error.includes('暂时不可用'), `实际 ${exp.error}`);
+    check('上游 402 退星', credits.getBalance(uid) === before);
+    check('上游 402 不重试（建任务仅 1 次）', createN === 1);
+  }
+
+  // ---- 余额不足 402：先校验再建行，不产生 export 行 ----
+  {
+    const poorE = await auth.registerWithPassword(
+      { account: 'exportpoor', password: 'password123', confirmPassword: 'password123' },
+      '127.0.0.1',
+    );
+    const okFetcher6b = makeMockFetcher([...engineHandlers, { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
+    const okDeps6b = { fetchImpl: okFetcher6b, config: engineConfig };
+    const pd = decks.createDeck(poorE.user.id, {
+      title: '穷人可编辑', sourceFileName: '', sourceText: '内容',
+      durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+    });
+    await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'outline' }, okDeps6b);
+    await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'structure' }, okDeps6b);
+    await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'confirm-structure' }, okDeps6b);
+    await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps6b);
+    const g = await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'generate' }, okDeps6b);
+    await g.job.done;
+    check('穷人 deck 生成全绿', decks.getDeckState(poorE.user.id, pd.id).deck.status === 'generated');
+    credits.debitCredits(poorE.user.id, 50, { reason: '测试花掉', idempotencyKey: 'test-drain-6b' });
+    // 100（注册） - 20（生成 2 页） - 50 = 30 < 40（可编辑需 20×2）
+    await expectThrows('余额 30 < 40 → 402 INSUFFICIENT_CREDITS', () =>
+      exportsLib.startDeckEditableExport(poorE.user.id, pd.id, codiaDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
+    const editableRows = Number(
+      genDb.prepare("SELECT COUNT(*) AS c FROM export_jobs WHERE ref_id = ? AND kind = 'editable'").get(pd.id)?.c || 0,
+    );
+    check('402 后不产生 export 行', editableRows === 0, `实际 ${editableRows}`);
+  }
+
+  // ---- 21 页 deck → 400 单套最多 20 页 ----
+  {
+    const d21 = decks.createDeck(uid, {
+      title: '21页套', sourceFileName: '', sourceText: 'x',
+      durationMinutes: 30, targetPageCount: 21, qualityTier: 'standard', stylePackId: '',
+    });
+    genDb.prepare("UPDATE decks SET status = 'generated' WHERE id = ?").run(d21.id);
+    const ins = genDb.prepare('INSERT INTO deck_slides (id, deck_id, page_index, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
+    for (let i = 0; i < 21; i += 1) ins.run(`s21_${i}`, d21.id, i, Date.now(), Date.now());
+    await expectThrows('21 页 → 400 EXPORT_TOO_MANY_PAGES', () =>
+      exportsLib.startDeckEditableExport(uid, d21.id, codiaDeps(makeMockFetcher([]))), 'EXPORT_TOO_MANY_PAGES');
+  }
+
+  // ---- 并发：processing 中再次 start → 409 EXPORT_RUNNING ----
+  {
+    let release = false;
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/', payload: () => (release
+          ? { code: 0, message: 'ok', data: { status: 'failed', error: 'mock 收尾失败' } }
+          : { code: 0, message: 'ok', data: { status: 'pending' } }) },
+      { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_c', status: 'pending' } } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_c' } } },
+    ]);
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    await expectThrows('processing 中再次 start → 409 EXPORT_RUNNING', () =>
+      exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher)), 'EXPORT_RUNNING');
+    release = true;
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('收尾：并发用例任务终态 failed + 已退星', exp.status === 'failed' && exp.error.length > 0);
+  }
+
+  // ---- 懒恢复：processing + upstream_task_id 的行，getExport 现场 poll 推进 ----
+  {
+    const now = Date.now();
+    genDb.prepare(`INSERT INTO export_jobs
+        (id, user_id, ref_type, ref_id, kind, status, page_count, file_path, file_url, error, upstream_task_id, charged_credits, created_at, updated_at)
+       VALUES ('exp_lazy_test', ?, 'deck', ?, 'editable', 'processing', 2, '', '', '', 'task_lazy', 40, ?, ?)`)
+      .run(uid, deck.id, now, now);
+    const lazyFetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/task_lazy', payload: { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/lazy.pptx', page_count: 2 } } } },
+      { match: 'lazy.pptx', payload: new Response(Buffer.from('lazy-pptx-binary')) },
+    ]);
+    const before = credits.getBalance(uid);
+    const rec = await exportsLib.getExport(uid, 'exp_lazy_test', codiaDeps(lazyFetcher));
+    check('懒恢复：getExport poll 推进到 succeeded + 落盘',
+      rec.status === 'succeeded' && rec.url.startsWith('/api/files/exports/'), `实际 ${rec.status} ${rec.url}`);
+    check('懒恢复成功不触碰余额', credits.getBalance(uid) === before);
+  }
+
+  // ---- 未 generated deck → 409 ----
+  {
+    const dNg = decks.createDeck(uid, {
+      title: '未生成', sourceFileName: '', sourceText: 'x',
+      durationMinutes: 5, targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
+    });
+    await expectThrows('未 generated deck → 409 EXPORT_NOT_READY', () =>
+      exportsLib.startDeckEditableExport(uid, dNg.id, codiaDeps(makeMockFetcher([]))), 'EXPORT_NOT_READY');
+  }
+
+  // ---- 路由层：缺 CSRF 403 / 未登录 401（均不触达上游）----
+  {
+    const editableRoute = await import('../src/app/api/deck/[id]/export-editable/route.ts');
+    const noCsrf = await editableRoute.POST(
+      new Request(`http://localhost/api/deck/${deck.id}/export-editable`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }),
+      { params: Promise.resolve({ id: deck.id }) },
+    );
+    check('export-editable 缺 CSRF 头 403', noCsrf.status === 403, `实际 ${noCsrf.status}`);
+    const noAuth = await editableRoute.POST(
+      new Request(`http://localhost/api/deck/${deck.id}/export-editable`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+        body: '{}',
+      }),
+      { params: Promise.resolve({ id: deck.id }) },
+    );
+    check('export-editable 未登录 401', noAuth.status === 401, `实际 ${noAuth.status}`);
+  }
 }
 
 console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');

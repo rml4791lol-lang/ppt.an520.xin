@@ -2,9 +2,15 @@
 
 // Step 4 生成页面画布（WORKBENCH-UI-SPEC §8/§9，剔除样稿与可编辑转换）。
 // 网格逐页卡 + 状态/重试 + 放大预览 + ✦ 优化本页浮窗（版本历史可回退）+ 图片集导出。
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, WandIcon } from "@/components/icons";
-import { estimateCredits, type DeckSlide } from "@/lib/client/deck-api";
+import {
+  estimateCredits,
+  getExportRecord,
+  startEditableExport,
+  type DeckSlide,
+} from "@/lib/client/deck-api";
+import { ApiClientError } from "@/lib/client/api";
 import type { DeckCtx } from "@/components/deck/deck-workbench";
 import { DownloadIcon, Modal, RefreshIcon, Spinner, WarnIcon } from "@/components/deck/ui";
 import { notifyCreditsRefresh } from "@/components/deck/use-deck-state";
@@ -66,6 +72,73 @@ export function StepGenerate({
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [refineTarget, setRefineTarget] = useState<DeckSlide | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  // ---------- 转可编辑 PPTX（Codia 链，20🌟/页） ----------
+  const [editableOpen, setEditableOpen] = useState(false);
+  const [editableBusy, setEditableBusy] = useState(false);
+  const [editableUnit, setEditableUnit] = useState(20);
+  const editableTimerRef = useRef<number | null>(null);
+  const allGenerated = state.deck.status === "generated";
+  const editableTotal = slides.length * editableUnit;
+
+  useEffect(() => {
+    estimateCredits("export_editable", 1)
+      .then((e) => setEditableUnit(e.unitPrice))
+      .catch(() => {});
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+    },
+    [],
+  );
+
+  const pollEditable = (exportId: string) => {
+    if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+    editableTimerRef.current = window.setInterval(() => {
+      void (async () => {
+        try {
+          const rec = await getExportRecord(exportId);
+          if (rec.status === "succeeded") {
+            if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+            editableTimerRef.current = null;
+            setEditableBusy(false);
+            const a = document.createElement("a");
+            a.href = rec.url;
+            a.download = `${state.deck.title || "整套PPT"}-可编辑.pptx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            toast("可编辑 PPTX 转换完成，已开始下载；可在下载中心随时再次下载", { duration: 8000 });
+          } else if (rec.status === "failed") {
+            if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+            editableTimerRef.current = null;
+            setEditableBusy(false);
+            toast(rec.error || "可编辑转换失败，星星已退回", { duration: 8000 });
+            notifyCreditsRefresh();
+          }
+        } catch {
+          // 网络抖动：继续轮询
+        }
+      })();
+    }, 4000);
+  };
+
+  const submitEditable = async () => {
+    if (editableBusy) return;
+    setEditableBusy(true);
+    try {
+      const started = await startEditableExport(state.deck.id);
+      setEditableOpen(false);
+      notifyCreditsRefresh();
+      pollEditable(started.exportId);
+    } catch (error) {
+      setEditableBusy(false);
+      const err = error instanceof ApiClientError ? error : null;
+      toast(err?.message ?? "发起可编辑转换失败，请重新尝试");
+    }
+  };
 
   const retrySlide = async (slide: DeckSlide) => {
     if (retryingId) return;
@@ -272,11 +345,22 @@ export function StepGenerate({
             )}
             <button
               type="button"
-              disabled
-              title="可编辑导出即将上线"
-              className="cursor-not-allowed rounded-full border border-line-strong px-4 py-2 text-sm text-ink-4"
+              onClick={() => setEditableOpen(true)}
+              disabled={!allGenerated || generating || editableBusy}
+              title={
+                allGenerated
+                  ? "把整套页面图转成元素级可编辑 PPTX"
+                  : "还有页面未生成成功，完成整套生成后可转可编辑"
+              }
+              className="rounded-full border border-line-strong px-4 py-2 text-sm text-ink-2 transition hover:border-brand-line disabled:cursor-not-allowed disabled:opacity-40"
             >
-              转可编辑 PPTX · 即将上线
+              {editableBusy ? (
+                <>
+                  <Spinner className="mr-1 text-[11px]" /> 转换中…
+                </>
+              ) : (
+                `转可编辑 PPTX · ${editableTotal}🌟`
+              )}
             </button>
             <button
               type="button"
@@ -309,6 +393,40 @@ export function StepGenerate({
           ctx={ctx}
           onClose={() => setRefineTarget(null)}
         />
+      )}
+
+      {/* 转可编辑 PPTX 确认弹窗 */}
+      {editableOpen && (
+        <Modal title="转可编辑 PPTX" ariaLabel="转可编辑 PPTX" onClose={() => setEditableOpen(false)}>
+          <p className="text-sm leading-6 text-ink-2">
+            将把整套 <b>{slides.length}</b> 页页面图转换为元素级可编辑的 PPTX
+            （文字、图形、表格均可在 PowerPoint / WPS 中直接修改），预计需要几分钟。
+          </p>
+          <div className="mt-3 rounded-xl bg-page px-4 py-3 text-sm text-ink-2">
+            {editableUnit}🌟/页 × {slides.length} 页 ={" "}
+            <b className="text-brand">{editableTotal} 🌟</b>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-ink-3">
+            转换失败自动退还星星。完成后自动开始下载，也可在侧边栏「下载中心」随时再次下载。
+          </p>
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setEditableOpen(false)}
+              className="rounded-full border border-line-strong px-5 py-2 text-sm text-ink-2 transition hover:border-brand-line"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={editableBusy}
+              onClick={() => void submitEditable()}
+              className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {editableBusy ? "提交中…" : "确认转换"}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

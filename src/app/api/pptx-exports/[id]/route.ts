@@ -9,5 +9,5 @@ export const dynamic = 'force-dynamic';
 export const GET = defineApiRoute(async (request, ctx) => {
   const { user } = requireUser(request);
   const id = await paramOf(ctx, 'id');
-  return jsonOk(getExport(user.id, id));
+  return jsonOk(await getExport(user.id, id));
 });

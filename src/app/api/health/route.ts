@@ -16,10 +16,12 @@ export async function GET(): Promise<Response> {
   }
   let llmConfigured = false;
   let imageConfigured = false;
+  let editableConfigured = false;
   try {
     const config = getGenerationConfig();
     llmConfigured = Boolean(config.llmApiKey);
     imageConfigured = Boolean(config.imageBaseUrl && config.imageApiKey);
+    editableConfigured = Boolean(config.codiaApiKey);
   } catch {
     // 配置读取失败即视为未配置
   }
@@ -29,6 +31,7 @@ export async function GET(): Promise<Response> {
     db,
     llm: { configured: llmConfigured },
     image: { configured: imageConfigured },
+    editable: { configured: editableConfigured },
     ts: Date.now(),
   });
 }
