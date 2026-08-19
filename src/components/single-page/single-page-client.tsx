@@ -19,8 +19,9 @@ import { ApiClientError, redirectToLogin } from "@/lib/client/api";
 import {
   exportSinglePagesImagePptx,
   generateSinglePage,
-  listProjects,
+  getSinglePageProject,
   refineSinglePage,
+  selectSinglePageVersion,
   uploadAsset,
 } from "@/lib/client/single-page-api";
 import { renameProject, getCreditBalance } from "@/lib/client/deck-api";
@@ -101,31 +102,67 @@ export function SinglePageClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ?projectId= 打开既有单页项目（页面内容加载接口未就绪，先接管项目身份）
+  // ?projectId= 打开既有单页项目：拉详情重建页面队列（含状态/版本列表），并刷新 localStorage 草稿
   useEffect(() => {
     const pid = searchParams.get("projectId");
     if (!pid || !hydrated) return;
     let cancelled = false;
-    listProjects({ projectType: "single-page", pageSize: 50 })
-      .then((result) => {
+    getSinglePageProject(pid)
+      .then((detail) => {
         if (cancelled) return;
-        const found = result.items.find((item) => item.id === pid);
-        if (!found) {
-          setBanner("打开项目失败：项目不存在或已删除");
+        const restored: SpPage[] = detail.pages.map((p) => ({
+          pageId: p.pageId,
+          kind: "text" as const, // 详情接口不暴露原稿图路径，恢复后按文本页处理
+          text: p.content,
+          stylePackId: p.stylePackId || undefined,
+          status:
+            p.status === "succeeded"
+              ? ("done" as const)
+              : p.status === "failed"
+                ? ("error" as const)
+                : p.status === "queued" || p.status === "running"
+                  ? ("generating" as const)
+                  : p.content.trim()
+                    ? ("ready" as const)
+                    : ("idle" as const),
+          versions: p.versions
+            .filter((v) => v.status === "succeeded" && v.imageUrl)
+            .map((v) => ({
+              versionId: v.versionId,
+              imageUrl: v.imageUrl,
+              createdAt: v.createdAt,
+              optimized: v.kind === "refine",
+            })),
+          activeVersionId: p.activeVersionId || undefined,
+          error: p.error || undefined,
+        }));
+        setProjectId(detail.project.id);
+        setTitle(detail.project.title || "未命名单页项目");
+        if (restored.length > 0) {
+          setPages(restored);
+          setActiveId((current) =>
+            restored.some((p) => p.pageId === current) ? current : restored[0].pageId,
+          );
+        }
+        setBanner(null);
+        setViewStep(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const err = error instanceof ApiClientError ? error : null;
+        if (err?.isUnauthorized) return; // 未登录时安静忽略，保留本地草稿
+        if (err?.status === 404) {
+          toast("项目不存在或已删除");
+          setProjectId(null);
+          router.replace("/single-page");
           return;
         }
-        setProjectId(found.id);
-        setTitle(found.title);
-        setBanner("已打开项目；历史页面的恢复展示即将上线，可继续添加页面并生成。");
-      })
-      .catch((error) => {
-        if (!cancelled && error instanceof ApiClientError && error.isUnauthorized) return; // 未登录时安静忽略
-        if (!cancelled) setBanner("打开项目失败");
+        setBanner("打开项目失败");
       });
     return () => {
       cancelled = true;
     };
-  }, [searchParams, hydrated]);
+  }, [searchParams, hydrated, router, toast]);
 
   // ---------- 草稿自动保存（防抖 400ms） ----------
   useEffect(() => {
@@ -316,6 +353,41 @@ export function SinglePageClient() {
       setRefiningIds((prev) => {
         const next = new Set(prev);
         next.delete(page.pageId);
+        return next;
+      });
+    }
+  };
+
+  // ---------- 版本选择（真实调用 select-version，导出/画布均生效） ----------
+  const [switchingIds, setSwitchingIds] = useState<Set<string>>(new Set());
+
+  const selectVersion = async (page: SpPage, versionId: string) => {
+    if (versionId === page.activeVersionId) return;
+    // 生成/优化中的页禁止切换（后端 GENERATION_RUNNING 也会拦，前端先拦）
+    if (
+      generatingIds.has(page.pageId) ||
+      refiningIds.has(page.pageId) ||
+      page.status === "generating"
+    ) {
+      toast("页面正在生成中，请稍候再切换版本");
+      return;
+    }
+    if (switchingIds.has(versionId)) return;
+    setSwitchingIds((prev) => new Set(prev).add(versionId));
+    try {
+      const res = await selectSinglePageVersion({ pageId: page.pageId, versionId });
+      updatePage(page.pageId, { activeVersionId: res.activeVersionId });
+    } catch (error) {
+      const err = error instanceof ApiClientError ? error : null;
+      if (err?.isUnauthorized) {
+        redirectToLogin("/single-page");
+        return;
+      }
+      toast(err?.message ?? "切换版本失败，请重新尝试");
+    } finally {
+      setSwitchingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(versionId);
         return next;
       });
     }
@@ -595,13 +667,15 @@ export function SinglePageClient() {
                 refining={refining}
                 onSubmit={(instruction) => void refine(activePage, instruction)}
                 onRevert={() => {
+                  // 退回原版本：真实切换 activeVersion 到最近的非优化版本
                   const original = [...activePage.versions].reverse().find((v) => !v.optimized);
-                  if (original) updatePage(activePage.pageId, { activeVersionId: original.versionId });
+                  if (original) void selectVersion(activePage, original.versionId);
                 }}
               />
               <VersionBar
                 page={activePage}
-                onSelect={(versionId) => updatePage(activePage.pageId, { activeVersionId: versionId })}
+                switchingId={[...switchingIds][0] ?? null}
+                onSelect={(versionId) => void selectVersion(activePage, versionId)}
               />
             </div>
           )}

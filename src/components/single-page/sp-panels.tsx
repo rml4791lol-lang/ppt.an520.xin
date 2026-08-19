@@ -204,30 +204,37 @@ export function RefineBar({
 
 export function VersionBar({
   page,
+  switchingId,
   onSelect,
 }: {
   page: SpPage;
+  /** 正在切换中的版本 id（select-version 请求在飞）；非空时整条禁用 */
+  switchingId?: string | null;
   onSelect: (versionId: string) => void;
 }) {
   if (page.versions.length === 0) return null;
+  const busy = !!switchingId || page.status === "generating";
   return (
     <div className="flex items-center gap-2 overflow-x-auto rounded-2xl border border-line bg-card p-2">
       {page.versions.map((v, i) => {
         const active = v.versionId === page.activeVersionId;
+        const switching = v.versionId === switchingId;
         return (
           <button
             key={v.versionId}
             type="button"
+            disabled={busy && !active}
+            title={page.status === "generating" ? "页面正在生成中，请稍候再切换版本" : undefined}
             onClick={() => onSelect(v.versionId)}
             className={`flex shrink-0 flex-col items-center gap-1 rounded-xl border p-1.5 transition ${
               active ? "border-brand ring-1 ring-brand/30" : "border-line hover:border-brand-line"
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={v.imageUrl} alt={`版本 ${i + 1}`} className="h-12 w-20 rounded-lg object-cover" />
             <span className="text-[10px] text-ink-3">
-              版本 {String(i + 1).padStart(2, "0")}
-              {v.optimized && " · 已优化"}
+              {switching ? "切换中…" : `版本 ${String(i + 1).padStart(2, "0")}`}
+              {!switching && v.optimized && " · 已优化"}
             </span>
           </button>
         );

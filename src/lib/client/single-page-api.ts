@@ -23,7 +23,7 @@ export function generateSinglePage(input: {
   content: string;
   stylePackId?: string;
   requestId?: string;
-  /** 原稿图路径（前向兼容字段：当前后端路由忽略，待服务端支持 i2i 后生效） */
+  /** 原稿图路径（i2i 原稿重设计，正式契约）：来自 /api/assets/upload 的 path；服务端校验归属当前用户，否则报 FILE_FORBIDDEN/原稿不存在 */
   imagePath?: string;
 }): Promise<SingleRunResponse> {
   return apiFetch<SingleRunResponse>("/api/single-page/generate", { body: input });
@@ -87,6 +87,63 @@ export function listProjects(query: {
 
 export function deleteProject(id: string): Promise<unknown> {
   return apiFetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/* ---------- 项目详情恢复 ---------- */
+
+export interface SinglePageVersionView {
+  versionId: string;
+  kind: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  imageUrl: string;
+  error: string;
+  createdAt: number;
+}
+
+export interface SinglePageDetailPage {
+  pageId: string;
+  projectId: string;
+  userId: string;
+  pageIndex: number;
+  title: string;
+  content: string;
+  stylePackId: string;
+  status: "idle" | "queued" | "running" | "succeeded" | "failed";
+  error: string;
+  activeVersionId: string;
+  createdAt: number;
+  updatedAt: number;
+  /** 新的在前 */
+  versions: SinglePageVersionView[];
+}
+
+export interface SinglePageProjectDetail {
+  project: { id: string; title: string; createdAt: number; updatedAt: number };
+  pages: SinglePageDetailPage[];
+}
+
+/** 打开既有单页项目：GET /api/single-page/project?projectId=（404 → 项目不存在或已删除） */
+export function getSinglePageProject(projectId: string): Promise<SinglePageProjectDetail> {
+  return apiFetch<SinglePageProjectDetail>(
+    `/api/single-page/project?projectId=${encodeURIComponent(projectId)}`,
+  );
+}
+
+/* ---------- 版本选择（真实切换导出/预览版本） ---------- */
+
+export interface SelectVersionResponse {
+  pageId: string;
+  projectId: string;
+  status: string;
+  activeVersionId: string;
+}
+
+/** 切换页面生效版本：POST /api/single-page/select-version（错误码 VERSION_NOT_FOUND/VERSION_NOT_READY/GENERATION_RUNNING） */
+export function selectSinglePageVersion(input: {
+  pageId: string;
+  versionId: string;
+}): Promise<SelectVersionResponse> {
+  return apiFetch<SelectVersionResponse>("/api/single-page/select-version", { body: input });
 }
 
 /** 素材上传（单页「传图」原稿）：POST /api/assets/upload（FormData，≤30MB） */
