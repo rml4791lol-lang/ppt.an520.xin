@@ -396,6 +396,51 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   check('unlock 返回作废提示', String(r8.extra.warning || '').includes('作废'));
 }
 
+console.log('\n[4b] 按页录入路由（POST /api/deck/paged-copy-v2）');
+{
+  const pagedRoute = await import('../src/app/api/deck/paged-copy-v2/route.ts');
+  const pagedToken = auth.createSessionForUser(uid);
+  const pagedCall = (body, headers = {}) =>
+    pagedRoute.POST(
+      new Request('http://localhost/api/deck/paged-copy-v2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: `anppt_v2_session=${pagedToken}`, ...headers },
+        body: JSON.stringify(body),
+      }),
+      { params: Promise.resolve({}) },
+    );
+
+  const okRes = await pagedCall(
+    { pages: [{ title: '年度规划', rawText: '2026 年三大方向' }, { rawText: '第一季度营收 1200 万元' }] },
+    { 'x-anppt-action': '1' },
+  );
+  check('按页录入返回 201', okRes.status === 201, `实际 ${okRes.status}`);
+  const okBody = await okRes.json();
+  const pagedState = decks.getDeckState(uid, okBody.data.deckId);
+  check('直接 outlined、2 页、内容未冻结',
+    pagedState.deck.status === 'outlined' && pagedState.slides.length === 2 && pagedState.contentLocked === false);
+  check('rawText 入库、缺标题页补默认标题',
+    pagedState.slides[0].rawText === '2026 年三大方向' && pagedState.slides[1].title === '第 2 页');
+
+  const noCsrf = await pagedCall({ pages: [{ rawText: '内容' }] });
+  check('缺 CSRF 头 403', noCsrf.status === 403, `实际 ${noCsrf.status}`);
+  const noAuth = await pagedRoute.POST(
+    new Request('http://localhost/api/deck/paged-copy-v2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+      body: JSON.stringify({ pages: [{ rawText: '内容' }] }),
+    }),
+    { params: Promise.resolve({}) },
+  );
+  check('未登录 401', noAuth.status === 401, `实际 ${noAuth.status}`);
+  const emptyPage = await pagedCall({ pages: [{ rawText: '  ' }] }, { 'x-anppt-action': '1' });
+  check('空页 400', emptyPage.status === 400, `实际 ${emptyPage.status}`);
+  const tooLongRes = await pagedCall({ pages: [{ rawText: '字'.repeat(1501) }] }, { 'x-anppt-action': '1' });
+  const tooLongBody = await tooLongRes.json();
+  check('单页超 1500 字 → PAGE_TOO_LONG', tooLongRes.status === 400 && tooLongBody?.error?.code === 'PAGE_TOO_LONG',
+    `实际 ${tooLongRes.status} ${tooLongBody?.error?.code}`);
+}
+
 console.log('\n[5] 余额不足整单 402');
 {
   const poor = await auth.registerWithPassword(
