@@ -1,0 +1,157 @@
+// 生成链自有的 sqlite 表。import 既有 getDb（不改它的文件），首次访问时
+// CREATE TABLE IF NOT EXISTS 自己的表。
+import { randomBytes } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
+import { getDb } from '../db';
+
+const GENERATION_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS decks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '',
+  source_file_name TEXT NOT NULL DEFAULT '',
+  source_text TEXT NOT NULL DEFAULT '',
+  duration_minutes INTEGER NOT NULL DEFAULT 15,
+  target_page_count INTEGER NOT NULL DEFAULT 10,
+  quality_tier TEXT NOT NULL DEFAULT 'standard',
+  style_pack_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'parsed',
+  error TEXT NOT NULL DEFAULT '',
+  confirmed_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_decks_user_updated ON decks(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS deck_slides (
+  id TEXT PRIMARY KEY,
+  deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+  page_index INTEGER NOT NULL,
+  role TEXT NOT NULL DEFAULT 'content',
+  chapter TEXT NOT NULL DEFAULT '',
+  page_type TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  goal TEXT NOT NULL DEFAULT '',
+  must_keep TEXT NOT NULL DEFAULT '[]',
+  raw_text TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '[]',
+  visual_note TEXT NOT NULL DEFAULT '',
+  structured_content TEXT NOT NULL DEFAULT '',
+  structure_status TEXT NOT NULL DEFAULT 'pending',
+  structure_warnings TEXT NOT NULL DEFAULT '[]',
+  gen_status TEXT NOT NULL DEFAULT 'idle',
+  gen_error TEXT NOT NULL DEFAULT '',
+  active_version_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deck_slides_deck ON deck_slides(deck_id, page_index);
+
+CREATE TABLE IF NOT EXISTS slide_versions (
+  id TEXT PRIMARY KEY,
+  slide_id TEXT NOT NULL REFERENCES deck_slides(id) ON DELETE CASCADE,
+  deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+  version_no INTEGER NOT NULL DEFAULT 1,
+  kind TEXT NOT NULL DEFAULT 'generate',
+  prompt TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'queued',
+  image_path TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  job_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_slide_versions_slide ON slide_versions(slide_id, version_no DESC);
+
+CREATE TABLE IF NOT EXISTS generation_jobs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  deck_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  total INTEGER NOT NULL DEFAULT 0,
+  succeeded INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_generation_jobs_deck ON generation_jobs(deck_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS single_page_projects (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '未命名单页项目',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_single_projects_user ON single_page_projects(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS single_pages (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES single_page_projects(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  page_index INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  style_pack_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'idle',
+  error TEXT NOT NULL DEFAULT '',
+  active_version_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_single_pages_project ON single_pages(project_id, page_index);
+
+CREATE TABLE IF NOT EXISTS single_page_versions (
+  id TEXT PRIMARY KEY,
+  page_id TEXT NOT NULL REFERENCES single_pages(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'generate',
+  prompt TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'queued',
+  image_path TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  job_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_single_versions_page ON single_page_versions(page_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS export_jobs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  ref_type TEXT NOT NULL DEFAULT 'deck',
+  ref_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'image',
+  status TEXT NOT NULL DEFAULT 'succeeded',
+  page_count INTEGER NOT NULL DEFAULT 0,
+  file_path TEXT NOT NULL DEFAULT '',
+  file_url TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_export_jobs_user ON export_jobs(user_id, created_at DESC);
+`;
+
+const migrated = new WeakSet<DatabaseSync>();
+
+/** 取共享 db 并确保生成链表结构已建（幂等） */
+export function getGenDb(): DatabaseSync {
+  const db = getDb();
+  if (!migrated.has(db)) {
+    db.exec(GENERATION_SCHEMA_SQL);
+    migrated.add(db);
+  }
+  return db;
+}
+
+export function genId(prefix: string): string {
+  return `${prefix}_${randomBytes(12).toString('hex')}`;
+}
+
+export function nowMs(): number {
+  return Date.now();
+}
