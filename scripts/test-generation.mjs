@@ -441,6 +441,70 @@ console.log('\n[4b] 按页录入路由（POST /api/deck/paged-copy-v2）');
     `实际 ${tooLongRes.status} ${tooLongBody?.error?.code}`);
 }
 
+console.log('\n[4c] update-slide / select-slide-version');
+{
+  const d3 = decks.createDeck(uid, {
+    title: '编辑测试', sourceFileName: '', sourceText: 'Alpha 段落一。Beta 段落二。',
+    durationMinutes: 5, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+  });
+  const okFetcher = makeMockFetcher([...engineHandlers, { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
+  const okDeps = { fetchImpl: okFetcher, config: engineConfig };
+  await actions.dispatchDeckAction(uid, d3.id, { action: 'outline' }, okDeps);
+  const s0 = decks.getDeckState(uid, d3.id).slides[0].slideId;
+
+  const u1 = await actions.dispatchDeckAction(uid, d3.id,
+    { action: 'update-slide', slideId: s0, title: '新标题', rawText: '第一季度销售额 1200 万元，同比增长 20%' }, okDeps);
+  check('update-slide 标题/原文入库',
+    u1.state.slides[0].title === '新标题' && u1.state.slides[0].rawText.includes('1200 万元'));
+
+  await actions.dispatchDeckAction(uid, d3.id, { action: 'structure' }, okDeps);
+  const u2 = await actions.dispatchDeckAction(uid, d3.id, { action: 'update-slide', slideId: s0, chapter: '第二章' }, okDeps);
+  check('仅改章节：deck 不回退且梳理结果保留',
+    u2.state.deck.status === 'structured' && u2.state.slides[0].structureStatus === 'ok' && u2.state.slides[0].chapter === '第二章');
+  const u3 = await actions.dispatchDeckAction(uid, d3.id,
+    { action: 'update-slide', slideId: s0, rawText: '销售额 1200 万元，同比增长 20%，补充第二季度展望' }, okDeps);
+  check('改原文：页打回 pending、deck 回 outlined',
+    u3.state.slides[0].structureStatus === 'pending' && u3.state.deck.status === 'outlined');
+
+  await actions.dispatchDeckAction(uid, d3.id, { action: 'structure' }, okDeps);
+  await actions.dispatchDeckAction(uid, d3.id, { action: 'confirm-structure' }, okDeps);
+  await expectThrows('冻结后 update-slide 被拒', () =>
+    actions.dispatchDeckAction(uid, d3.id, { action: 'update-slide', slideId: s0, title: 'x' }, okDeps), 'CONTENT_LOCKED');
+
+  await actions.dispatchDeckAction(uid, d3.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps);
+  const g = await actions.dispatchDeckAction(uid, d3.id, { action: 'generate' }, okDeps);
+  await g.job.done;
+  const st1 = decks.getDeckState(uid, d3.id);
+  check('生成全绿 generated', st1.deck.status === 'generated', `实际 ${st1.deck.status}`);
+  const v1 = st1.slides[0].versions.find((v) => v.versionNo === 1);
+
+  const failEdit = makeMockFetcher([{ match: '/images/edits', payload: jsonResponse({ error: { message: 'mock i2i 500' } }, 500) }]);
+  const rf = await actions.dispatchDeckAction(uid, d3.id,
+    { action: 'refine-slide', slideId: s0, editInstruction: '改背景' },
+    { fetchImpl: failEdit, config: engineConfig });
+  await rf.job.done;
+  const st2 = decks.getDeckState(uid, d3.id);
+  check('refine 失败 → deck partial 且旧版本仍在', st2.deck.status === 'partial' && st2.slides[0].versions.length >= 2,
+    `实际 ${st2.deck.status}`);
+
+  const vFailed = decks.listVersions(s0).find((v) => v.status === 'failed');
+  await expectThrows('failed 版本不可选', () =>
+    actions.dispatchDeckAction(uid, d3.id, { action: 'select-slide-version', slideId: s0, versionId: vFailed.versionId }, okDeps), 'VERSION_NOT_READY');
+
+  const sv = await actions.dispatchDeckAction(uid, d3.id,
+    { action: 'select-slide-version', slideId: s0, versionId: v1.versionId }, okDeps);
+  check('回退 v1：activeVersion 生效且整单回 generated',
+    sv.state.slides[0].activeVersionId === v1.versionId && sv.state.deck.status === 'generated',
+    `实际 ${sv.state.slides[0].activeVersionId} / ${sv.state.deck.status}`);
+
+  const d4 = decks.createDeck(uid, {
+    title: '早', sourceFileName: '', sourceText: 'x',
+    durationMinutes: 5, targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
+  });
+  await expectThrows('未确认内容切版本被拒', () =>
+    actions.dispatchDeckAction(uid, d4.id, { action: 'select-slide-version', slideId: 'x', versionId: 'y' }, okDeps), 'VERSION_SELECT_TOO_EARLY');
+}
+
 console.log('\n[5] 余额不足整单 402');
 {
   const poor = await auth.registerWithPassword(

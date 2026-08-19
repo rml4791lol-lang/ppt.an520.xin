@@ -9,6 +9,8 @@ import { withTransaction } from '../db';
 import { genId, getGenDb, nowMs } from './db';
 import {
   cleanString,
+  cleanStringArray,
+  isSlideRole,
   type DeckStatus,
   type GenStatus,
   type JobStatus,
@@ -430,6 +432,90 @@ export function updateSlideStructure(
       deckId,
       slideId,
     );
+}
+
+/** 在线编辑大纲页字段（未冻结时由 action 层调用）。标题/原文变更会作废该页梳理结果。 */
+export function updateSlideContent(
+  deckId: string,
+  slideId: string,
+  patch: Partial<Pick<OutlineSlide, 'role' | 'chapter' | 'pageType' | 'title' | 'goal' | 'rawText' | 'summary' | 'visualNote'>> & {
+    structuredContent?: string;
+  },
+): { contentChanged: boolean } {
+  const db = getGenDb();
+  const sets: string[] = ['updated_at = ?'];
+  const params: (string | number)[] = [nowMs()];
+  let contentChanged = false;
+  if (patch.role !== undefined) {
+    sets.push('role = ?');
+    params.push(isSlideRole(patch.role) ? patch.role : 'content');
+  }
+  if (patch.chapter !== undefined) {
+    sets.push('chapter = ?');
+    params.push(cleanString(patch.chapter, 120));
+  }
+  if (patch.pageType !== undefined) {
+    sets.push('page_type = ?');
+    params.push(cleanString(patch.pageType, 80));
+  }
+  if (patch.title !== undefined) {
+    sets.push('title = ?');
+    params.push(cleanString(patch.title, 200) || '未命名页');
+    contentChanged = true;
+  }
+  if (patch.goal !== undefined) {
+    sets.push('goal = ?');
+    params.push(cleanString(patch.goal, 500));
+  }
+  if (patch.rawText !== undefined) {
+    sets.push('raw_text = ?');
+    params.push(cleanString(patch.rawText, 8000));
+    contentChanged = true;
+  }
+  if (patch.summary !== undefined) {
+    sets.push('summary = ?');
+    params.push(JSON.stringify(cleanStringArray(patch.summary, 12, 300)));
+  }
+  if (patch.visualNote !== undefined) {
+    sets.push('visual_note = ?');
+    params.push(cleanString(patch.visualNote, 500));
+  }
+  if (patch.structuredContent !== undefined) {
+    // 人工直改结构化内容 = 人工确认该页结构
+    sets.push('structured_content = ?', 'structure_status = ?');
+    const value = cleanString(patch.structuredContent, 12000);
+    params.push(value, value ? 'ok' : 'pending');
+  } else if (contentChanged) {
+    sets.push("structured_content = ''", "structure_status = 'pending'", "structure_warnings = '[]'");
+  }
+  params.push(deckId, slideId);
+  const res = db
+    .prepare(`UPDATE deck_slides SET ${sets.join(', ')} WHERE deck_id = ? AND id = ?`)
+    .run(...params);
+  if (!res.changes) throw new ApiError('SLIDE_NOT_FOUND', '页面不存在', 404, false);
+  return { contentChanged };
+}
+
+/** 版本回退：把某页的活动版本切到历史成功版本；slide 处于 stale（内容已作废）时拒绝。 */
+export function setActiveVersion(deckId: string, slideId: string, versionId: string): void {
+  const db = getGenDb();
+  const slide = db
+    .prepare('SELECT gen_status FROM deck_slides WHERE deck_id = ? AND id = ?')
+    .get(deckId, cleanString(slideId, 80)) as Row | undefined;
+  if (!slide) throw new ApiError('SLIDE_NOT_FOUND', '页面不存在', 404, false);
+  if (String(slide.gen_status) === 'stale') {
+    throw new ApiError('CONTENT_UNLOCKED', '内容已解锁作废，请重新确认并生成', 409, false);
+  }
+  const version = db
+    .prepare('SELECT id, status FROM slide_versions WHERE deck_id = ? AND slide_id = ? AND id = ?')
+    .get(deckId, cleanString(slideId, 80), cleanString(versionId, 80)) as Row | undefined;
+  if (!version) throw new ApiError('VERSION_NOT_FOUND', '版本不存在', 404, false);
+  if (String(version.status) !== 'succeeded') {
+    throw new ApiError('VERSION_NOT_READY', '只能切换到生成成功的版本', 409, false);
+  }
+  db.prepare(
+    "UPDATE deck_slides SET active_version_id = ?, gen_status = 'succeeded', gen_error = '', updated_at = ? WHERE deck_id = ? AND id = ?",
+  ).run(String(version.id), nowMs(), deckId, cleanString(slideId, 80));
 }
 
 export function markSlidesGenStale(deckId: string): number {

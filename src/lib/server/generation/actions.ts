@@ -16,7 +16,9 @@ import {
   reorderSlides,
   replaceSlides,
   replaceSlideWithMany,
+  setActiveVersion,
   touchDeck,
+  updateSlideContent,
   updateSlideStructure,
   type DeckRow,
 } from './decks';
@@ -144,6 +146,47 @@ export async function dispatchDeckAction(
         extra: { provider: result.provider, into: result.slides.length },
         status: 200,
       };
+    }
+
+    case 'update-slide': {
+      const deck = getOwnedDeck(userId, deckId);
+      assertContentEditable(deck);
+      const slideId = cleanString(body.slideId, 80);
+      if (!slideId) throw validationError('缺少 slideId');
+      const { contentChanged } = updateSlideContent(deck.id, slideId, {
+        role: body.role as OutlineSlide['role'] | undefined,
+        chapter: body.chapter as string | undefined,
+        pageType: body.pageType as string | undefined,
+        title: body.title as string | undefined,
+        goal: body.goal as string | undefined,
+        rawText: body.rawText as string | undefined,
+        summary: body.summary as string[] | undefined,
+        visualNote: body.visualNote as string | undefined,
+        structuredContent: body.structuredContent as string | undefined,
+      });
+      // 标题/原文变更后该页需重新梳理；deck 状态回退到 outlined（章节等弱变更不动状态）
+      if (contentChanged && deck.status !== 'outlined') touchDeck(deck.id, { status: 'outlined' });
+      return { state: getDeckState(userId, deck.id), extra: { contentChanged }, status: 200 };
+    }
+
+    case 'select-slide-version': {
+      const deck = getOwnedDeck(userId, deckId);
+      if (deck.status === 'generating') {
+        throw new ApiError('GENERATION_RUNNING', '生成进行中，请稍后再切换版本', 409, true);
+      }
+      if (!['confirmed', 'generated', 'partial'].includes(deck.status)) {
+        throw new ApiError('VERSION_SELECT_TOO_EARLY', '请先确认内容并生成页面', 409, false);
+      }
+      const slideId = cleanString(body.slideId, 80);
+      const versionId = cleanString(body.versionId, 80);
+      if (!slideId || !versionId) throw validationError('缺少 slideId 或 versionId');
+      setActiveVersion(deck.id, slideId, versionId);
+      // 若此前有失败页，版本回退把它救活了：全部成功则整单转 generated
+      const slides = listSlides(deck.id);
+      if (deck.status === 'partial' && slides.every((s) => s.genStatus === 'succeeded')) {
+        touchDeck(deck.id, { status: 'generated', error: '' });
+      }
+      return { state: getDeckState(userId, deck.id), extra: {}, status: 200 };
     }
 
     case 'structure':
