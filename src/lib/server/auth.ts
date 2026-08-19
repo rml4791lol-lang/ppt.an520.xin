@@ -25,6 +25,7 @@ export interface PublicUser {
   id: string;
   username: string;
   email: string | null;
+  phone: string | null;
   displayName: string;
   role: string;
   plan: string;
@@ -59,6 +60,27 @@ export function normalizeEmail(value: unknown): string {
     throw validationError('请输入正确的邮箱地址');
   }
   return email;
+}
+
+// 中国大陆手机号：容忍 +86/86 前缀与空格/短横分隔
+export function normalizePhone(value: unknown): string {
+  const raw = String(value ?? '').trim().replace(/[\s-]+/g, '');
+  const national = raw.replace(/^\+?86(?=1[3-9]\d{9}$)/, '');
+  if (!/^1[3-9]\d{9}$/.test(national)) {
+    throw validationError('请输入正确的手机号');
+  }
+  return national;
+}
+
+// 登录标识分类：邮箱 / 手机号 / 用户名
+export type IdentifierKind = 'email' | 'phone' | 'username';
+
+export function classifyIdentifier(value: unknown): { kind: IdentifierKind; value: string } {
+  const trimmed = String(value ?? '').trim();
+  if (trimmed.includes('@')) return { kind: 'email', value: normalizeEmail(trimmed) };
+  const digits = trimmed.replace(/[\s-]+/g, '').replace(/^\+?86(?=1[3-9]\d{9}$)/, '');
+  if (/^1[3-9]\d{9}$/.test(digits)) return { kind: 'phone', value: digits };
+  return { kind: 'username', value: normalizeUsername(trimmed) };
 }
 
 function validateUsername(username: string): void {
@@ -98,6 +120,7 @@ function toPublicUser(row: UserRow | undefined | null): PublicUser | null {
     id: String(row.id),
     username: String(row.username),
     email: row.email == null ? null : String(row.email),
+    phone: row.phone == null ? null : String(row.phone),
     displayName: String(row.display_name || row.username),
     role: String(row.role || 'user'),
     plan: String(row.plan || 'free'),
@@ -116,6 +139,11 @@ export function findUserByEmail(email: string): PublicUser | null {
   return toPublicUser(row as UserRow | undefined);
 }
 
+export function findUserByPhone(phone: string): PublicUser | null {
+  const row = getDb().prepare('SELECT * FROM users WHERE phone = ?').get(phone);
+  return toPublicUser(row as UserRow | undefined);
+}
+
 export function findUserById(id: string): PublicUser | null {
   const row = getDb().prepare('SELECT * FROM users WHERE id = ?').get(id);
   return toPublicUser(row as UserRow | undefined);
@@ -129,6 +157,7 @@ function getPasswordHash(userId: string): string {
 interface InsertUserInput {
   username: string;
   email: string | null;
+  phone?: string | null;
   displayName: string;
   passwordHash: string | null;
 }
@@ -139,13 +168,13 @@ export function createUserTx(input: InsertUserInput): PublicUser {
   try {
     getDb()
       .prepare(
-        `INSERT INTO users (id, username, email, display_name, password_hash, role, plan, created_at, last_login_at)
-         VALUES (?, ?, ?, ?, ?, 'user', 'free', ?, NULL)`,
+        `INSERT INTO users (id, username, email, phone, display_name, password_hash, role, plan, created_at, last_login_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'user', 'free', ?, NULL)`,
       )
-      .run(id, input.username, input.email, input.displayName, input.passwordHash, ts);
+      .run(id, input.username, input.email, input.phone ?? null, input.displayName, input.passwordHash, ts);
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new ApiError('REGISTER_FAILED', '无法创建该账号，用户名或邮箱可能已被占用', 409, false);
+      throw new ApiError('REGISTER_FAILED', '无法创建该账号，用户名、邮箱或手机号可能已被占用', 409, false);
     }
     throw error;
   }
@@ -329,7 +358,12 @@ export async function loginWithPassword(input: LoginInput, clientIp: string): Pr
   if (!identifier || !password) throw validationError('请输入账号和密码');
   checkAuthRateLimit(clientIp, `login:${identifier}`, '登录尝试过多，请稍后再试');
 
-  const user = identifier.includes('@') ? findUserByEmail(identifier) : findUserByUsername(identifier);
+  const user = (() => {
+    const id = classifyIdentifier(identifier);
+    if (id.kind === 'email') return findUserByEmail(id.value);
+    if (id.kind === 'phone') return findUserByPhone(id.value);
+    return findUserByUsername(id.value);
+  })();
   const storedHash = user ? getPasswordHash(user.id) : '';
   const ok = await verifyPassword(password, storedHash || (await fakePasswordHash()));
   if (!user || !ok) {

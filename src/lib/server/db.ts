@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   email TEXT UNIQUE,
+  phone TEXT,
   display_name TEXT NOT NULL DEFAULT '',
   password_hash TEXT,
   role TEXT NOT NULL DEFAULT 'user',
@@ -120,6 +121,12 @@ export function getDb(): DatabaseSync {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA foreign_keys = ON');
     db.exec(SCHEMA_SQL);
+    // 幂等迁移：老库补 users.phone 列（新库 CREATE TABLE 已含）
+    const userCols = db.prepare("SELECT name FROM pragma_table_info('users')").all() as Array<{ name: string }>;
+    if (!userCols.some((c) => c.name === 'phone')) {
+      db.exec('ALTER TABLE users ADD COLUMN phone TEXT');
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone IS NOT NULL');
     globalRef.__anpptV2Db = db;
   }
   return globalRef.__anpptV2Db;

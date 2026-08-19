@@ -5,9 +5,9 @@ import { useState } from "react";
 
 /**
  * 后端认证接口（src/app/api/auth/**，已实现）：
- * - POST /api/auth/otp/request  { identifier: 邮箱 }                 发送邮箱验证码
- * - POST /api/auth/otp/verify   { identifier: 邮箱, code }           验证码登录（新用户自动注册并送星星）
- * - POST /api/auth/login        { account: 邮箱或用户名, password }  密码登录
+ * - POST /api/auth/otp/request  { identifier: 邮箱或手机号 }           发送验证码（邮件或短信）
+ * - POST /api/auth/otp/verify   { identifier: 邮箱或手机号, code }     验证码登录（新用户自动注册并送星星）
+ * - POST /api/auth/login        { account: 邮箱/手机号/用户名, password }  密码登录
  * - POST /api/auth/register     { account, email?, password, confirmPassword }  注册
  * 统一响应 {ok:true,data?} / {ok:false,error:{code,message}}；登录成功后写 Cookie Session。
  * 所有非 GET 请求必须带 x-anppt-action: 1 头（CSRF 守卫）。
@@ -48,6 +48,18 @@ async function postJson(url: string, body: Record<string, unknown>) {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^1[3-9]\d{9}$/;
+
+// 验证码登录支持邮箱或手机号：自动识别并做基础校验
+function normalizeIdentifierInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.includes("@")) return trimmed;
+  return trimmed.replace(/[\s-]+/g, "").replace(/^\+?86(?=1[3-9]\d{9}$)/, "");
+}
+
+function isValidIdentifier(value: string): boolean {
+  return EMAIL_RE.test(value) || PHONE_RE.test(value);
+}
 
 export function LoginCard({ signupBonus }: { signupBonus: number }) {
   const router = useRouter();
@@ -70,13 +82,14 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
   const [error, setError] = useState<string | null>(null);
 
   const sendCode = async () => {
-    if (!EMAIL_RE.test(email)) {
-      setError("请输入正确的邮箱地址");
+    const target = normalizeIdentifierInput(email);
+    if (!isValidIdentifier(target)) {
+      setError("请输入正确的邮箱地址或手机号");
       return;
     }
     setError(null);
     setSending(true);
-    const r = await postJson(API.sendCode, { email });
+    const r = await postJson(API.sendCode, { identifier: target });
     setSending(false);
     if (!r.ok) {
       setError(r.message);
@@ -101,20 +114,21 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
     if (registering) {
       if (!/^[a-z0-9_]{3,32}$/.test(username.trim()))
         r = { ok: false, message: "用户名需 3–32 位，小写字母、数字或下划线" };
-      else if (!EMAIL_RE.test(email)) r = { ok: false, message: "请输入正确的邮箱地址" };
+      else if (!EMAIL_RE.test(email.trim())) r = { ok: false, message: "请输入正确的邮箱地址" };
       else if (password.length < 8) r = { ok: false, message: "密码至少 8 位" };
       else if (password !== confirm) r = { ok: false, message: "两次输入的密码不一致" };
       else
         r = await postJson(API.register, {
           account: username.trim(),
-          email,
+          email: email.trim(),
           password,
           confirmPassword: confirm,
         });
     } else if (mode === "code") {
-      if (!EMAIL_RE.test(email)) r = { ok: false, message: "请输入正确的邮箱地址" };
+      const target = normalizeIdentifierInput(email);
+      if (!isValidIdentifier(target)) r = { ok: false, message: "请输入正确的邮箱地址或手机号" };
       else if (!code.trim()) r = { ok: false, message: "请输入验证码" };
-      else r = await postJson(API.loginCode, { identifier: email, code: code.trim() });
+      else r = await postJson(API.loginCode, { identifier: target, code: code.trim() });
     } else {
       if (!identifier.trim()) r = { ok: false, message: "请输入邮箱或用户名" };
       else if (!password) r = { ok: false, message: "请输入密码" };
@@ -189,11 +203,11 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
         {registering || mode === "code" ? (
           <>
             <input
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="邮箱"
-              autoComplete="email"
+              placeholder={registering ? "邮箱" : "邮箱 / 手机号"}
+              autoComplete={registering ? "email" : "username"}
               className={inputCls}
             />
             {!registering && (
@@ -203,7 +217,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
                   inputMode="numeric"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="邮箱验证码"
+                  placeholder="验证码"
                   autoComplete="one-time-code"
                   className={`${inputCls} min-w-0 flex-1`}
                 />
@@ -223,7 +237,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
             type="text"
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
-            placeholder="邮箱 / 用户名"
+            placeholder="邮箱 / 手机号 / 用户名"
             autoComplete="username"
             className={inputCls}
           />

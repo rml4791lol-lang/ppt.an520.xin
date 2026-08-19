@@ -4,14 +4,16 @@ import { getDb, withTransaction } from './db';
 import { getEnv } from './env';
 import { ApiError, validationError } from './http';
 import {
+  classifyIdentifier,
   createSessionForUser,
   createUserTx,
   findUserByEmail,
-  normalizeEmail,
+  findUserByPhone,
   sha256,
   type AuthResult,
   type PublicUser,
 } from './auth';
+import { sendSmsCode } from './sms';
 import { grantSignupBonusTx } from './credits';
 
 const OTP_TTL_MS = 10 * 60 * 1000;
@@ -37,10 +39,15 @@ function effectiveOtpSecret(): string {
   return sha256(`anppt-v2-dev-otp:${env.dbPath}`);
 }
 
-export function otpAvailability(): { enabled: boolean; devEcho: boolean } {
+export function otpAvailability(): { enabled: boolean; email: boolean; phone: boolean; devEcho: boolean } {
   const env = getEnv();
-  const enabled = effectiveOtpSecret().length > 0 && (env.smtpReady || env.otpDevEcho);
-  return { enabled, devEcho: env.otpDevEcho };
+  const hasSecret = effectiveOtpSecret().length > 0;
+  return {
+    enabled: hasSecret && (env.smtpReady || env.smsReady || env.otpDevEcho),
+    email: hasSecret && (env.smtpReady || env.otpDevEcho),
+    phone: hasSecret && (env.smsReady || env.otpDevEcho),
+    devEcho: env.otpDevEcho,
+  };
 }
 
 function identifierHash(secret: string, email: string): string {
@@ -56,6 +63,10 @@ function maskEmail(email: string): string {
   const visible = local.length <= 2 ? local.slice(0, 1) : local.slice(0, 2);
   const stars = '*'.repeat(Math.min(6, Math.max(2, local.length - visible.length)));
   return `${visible}${stars}@${domain}`;
+}
+
+function maskPhone(phone: string): string {
+  return phone.length === 11 ? `${phone.slice(0, 3)}****${phone.slice(7)}` : '***';
 }
 
 function emailHtml(code: string): string {
@@ -104,6 +115,10 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
   });
 }
 
+async function sendOtpSms(phone: string, code: string): Promise<void> {
+  await sendSmsCode(phone, code);
+}
+
 export interface OtpRequestResult {
   challengeId: string;
   expiresAt: number;
@@ -113,16 +128,23 @@ export interface OtpRequestResult {
 }
 
 export async function requestEmailOtp(identifier: unknown, clientIp: string): Promise<OtpRequestResult> {
-  const email = normalizeEmail(identifier);
+  const id = classifyIdentifier(identifier);
+  if (id.kind === 'username') throw validationError('请输入正确的邮箱地址或手机号');
   const env = getEnv();
   const secret = effectiveOtpSecret();
-  if (!secret || (!env.smtpReady && !env.otpDevEcho)) {
-    throw new ApiError('OTP_DELIVERY_UNAVAILABLE', '邮件验证码暂不可用，请稍后重试', 503, true);
+  const channelReady = id.kind === 'email' ? env.smtpReady : env.smsReady;
+  if (!secret || (!channelReady && !env.otpDevEcho)) {
+    throw new ApiError(
+      'OTP_DELIVERY_UNAVAILABLE',
+      id.kind === 'email' ? '邮件验证码暂不可用，请稍后重试' : '短信验证码暂不可用，请使用邮箱登录',
+      503,
+      true,
+    );
   }
 
   const db = getDb();
   const ts = Date.now();
-  const idHash = identifierHash(secret, email);
+  const idHash = identifierHash(secret, id.value);
   const cHash = clientHash(secret, clientIp);
 
   const latest = db
@@ -164,7 +186,8 @@ export async function requestEmailOtp(identifier: unknown, clientIp: string): Pr
 
   if (!env.otpDevEcho) {
     try {
-      await sendOtpEmail(email, code);
+      if (id.kind === 'email') await sendOtpEmail(id.value, code);
+      else await sendOtpSms(id.value, code);
       db.prepare('UPDATE auth_otp_challenges SET delivery_status = ? WHERE id = ?').run('sent', challengeId);
     } catch (error) {
       db.prepare('UPDATE auth_otp_challenges SET delivery_status = ? WHERE id = ?').run('failed', challengeId);
@@ -180,7 +203,7 @@ export async function requestEmailOtp(identifier: unknown, clientIp: string): Pr
     challengeId,
     expiresAt,
     retryAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
-    destination: maskEmail(email),
+    destination: id.kind === 'email' ? maskEmail(id.value) : maskPhone(id.value),
     ...(env.otpDevEcho ? { devCode: code } : {}),
   };
 }
@@ -204,8 +227,20 @@ function deriveUsernameFromEmail(email: string): string {
   return `u_${randomBytes(8).toString('hex')}`;
 }
 
+function deriveUsernameFromPhone(phone: string): string {
+  const db = getDb();
+  const base = `u_${phone.slice(-4)}`;
+  if (!db.prepare('SELECT 1 FROM users WHERE username = ?').get(base)) return base;
+  for (let i = 0; i < 20; i += 1) {
+    const candidate = `${base}_${randomBytes(2).toString('hex')}`;
+    if (!db.prepare('SELECT 1 FROM users WHERE username = ?').get(candidate)) return candidate;
+  }
+  return `u_${randomBytes(8).toString('hex')}`;
+}
+
 export async function verifyEmailOtp(input: { identifier: unknown; code: unknown; challengeId?: unknown }): Promise<OtpVerifyResult> {
-  const email = normalizeEmail(input.identifier);
+  const id = classifyIdentifier(input.identifier);
+  if (id.kind === 'username') throw validationError('请输入正确的邮箱地址或手机号');
   const code = String(input.code ?? '').trim();
   if (!/^\d{6}$/.test(code)) throw validationError('请输入 6 位验证码');
   const secret = effectiveOtpSecret();
@@ -213,7 +248,7 @@ export async function verifyEmailOtp(input: { identifier: unknown; code: unknown
 
   const db = getDb();
   const ts = Date.now();
-  const idHash = identifierHash(secret, email);
+  const idHash = identifierHash(secret, id.value);
   const challengeId = String(input.challengeId ?? '').trim();
 
   let isNewUser = false;
@@ -256,11 +291,20 @@ export async function verifyEmailOtp(input: { identifier: unknown; code: unknown
       throw new ApiError('OTP_ALREADY_USED', '验证码已使用，请重新获取', 409, false);
     }
 
-    const existing = findUserByEmail(email);
+    const existing = id.kind === 'email' ? findUserByEmail(id.value) : findUserByPhone(id.value);
     if (existing) return existing;
-    const username = deriveUsernameFromEmail(email);
-    const displayName = (email.split('@')[0] || 'AnPPT 用户').slice(0, 32);
-    const created = createUserTx({ username, email, displayName, passwordHash: null });
+    const isEmail = id.kind === 'email';
+    const username = isEmail ? deriveUsernameFromEmail(id.value) : deriveUsernameFromPhone(id.value);
+    const displayName = isEmail
+      ? (id.value.split('@')[0] || 'AnPPT 用户').slice(0, 32)
+      : `用户${id.value.slice(-4)}`;
+    const created = createUserTx({
+      username,
+      email: isEmail ? id.value : null,
+      phone: isEmail ? null : id.value,
+      displayName,
+      passwordHash: null,
+    });
     grantSignupBonusTx(created.id);
     isNewUser = true;
     return created;

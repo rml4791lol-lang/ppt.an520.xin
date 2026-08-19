@@ -93,6 +93,22 @@ const req2 = await otp.requestEmailOtp('otp-user@example.com', '127.0.0.2').catc
 const verified2 = await otp.verifyEmailOtp({ identifier: email, code: req2.devCode });
 check('二次 OTP 登录为老用户（不重复赠送）', verified2.isNewUser === false && credits.getBalance(verified2.user.id) === 100);
 
+console.log('\n[3b] 手机号 OTP（dev echo）与标识识别');
+const phone = '13800138000';
+check('classifyIdentifier 识别手机号', auth.classifyIdentifier('+86 138-0013-8000').value === phone);
+check('classifyIdentifier 识别邮箱', auth.classifyIdentifier(' A@B.COM ').value === 'a@b.com');
+const preq = await otp.requestEmailOtp(phone, '127.0.0.3');
+check('手机号 OTP 请求成功且回显 devCode', /^\d{6}$/.test(preq.devCode || ''));
+check('手机号掩码正确', preq.destination === '138****8000');
+await expectThrows('无效标识（非邮箱非手机号）被拒', () => otp.requestEmailOtp('not-an-email', '127.0.0.1'), 'VALIDATION_ERROR');
+await expectThrows('无效手机号被拒', () => otp.requestEmailOtp('12345', '127.0.0.1'), 'VALIDATION_ERROR');
+const pverified = await otp.verifyEmailOtp({ identifier: phone, code: preq.devCode });
+check('手机号首验自动建号并送 100', pverified.isNewUser === true && pverified.user.phone === phone && credits.getBalance(pverified.user.id) === 100);
+check('findUserByPhone 命中', auth.findUserByPhone(phone)?.id === pverified.user.id);
+await expectThrows('手机号密码登录（未设密码）走 AUTH_FAILED', () =>
+  auth.loginWithPassword({ identifier: phone, password: 'whatever123' }, '127.0.0.4'),
+  'AUTH_FAILED');
+
 console.log('\n[4] 积分幂等');
 const uid = reg.user.id;
 const before = credits.getBalance(uid);

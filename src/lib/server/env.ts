@@ -48,6 +48,8 @@ export interface ServerEnv {
   signupBonusCredits: number;
   smtp: { host: string; port: number; user: string; pass: string; from: string };
   smtpReady: boolean;
+  aliyunSms: { accessKeyId: string; accessKeySecret: string; signName: string; templateCode: string };
+  smsReady: boolean;
   publicBaseUrl: string;
   wechat: WechatPayConfig;
   epay: EpayConfig;
@@ -182,6 +184,12 @@ function loadEnv(): ServerEnv {
     pass: trim(e.SMTP_PASS),
     from: trim(e.SMTP_FROM) || trim(e.SMTP_USER),
   };
+  const aliyunSms = {
+    accessKeyId: trim(e.ALIYUN_SMS_ACCESS_KEY_ID),
+    accessKeySecret: trim(e.ALIYUN_SMS_ACCESS_KEY_SECRET),
+    signName: trim(e.ALIYUN_SMS_SIGN_NAME),
+    templateCode: trim(e.ALIYUN_SMS_TEMPLATE_CODE),
+  };
   return {
     isProduction,
     dbPath,
@@ -193,6 +201,10 @@ function loadEnv(): ServerEnv {
     signupBonusCredits: intFromEnv(e.SIGNUP_BONUS_CREDITS, 100),
     smtp,
     smtpReady: Boolean(smtp.host && smtp.port && smtp.user && smtp.pass),
+    aliyunSms,
+    smsReady: Boolean(
+      aliyunSms.accessKeyId && aliyunSms.accessKeySecret && aliyunSms.signName && aliyunSms.templateCode,
+    ),
     publicBaseUrl,
     wechat: loadWechatConfig(publicBaseUrl),
     epay: loadEpayConfig(publicBaseUrl),
