@@ -21,5 +21,6 @@ echo "== 3/4 服务器安装生产依赖 =="
 ssh "$SERVER" "cd $REMOTE_DIR && npm ci --omit=dev --no-audit --no-fund"
 
 echo "== 4/4 重启并自检 =="
-ssh "$SERVER" "systemctl restart anppt-v2 && sleep 2 && systemctl is-active anppt-v2 \
-  && curl -sf -o /dev/null -w 'local /api/me -> %{http_code}\n' http://127.0.0.1:3100/api/me"
+ssh "$SERVER" "sudo -n systemctl restart anppt-v2 && sleep 2 && sudo -n systemctl is-active anppt-v2 \
+  && test \"\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/me)\" = 401 \
+  && echo 'local /api/me -> 401 OK'"
