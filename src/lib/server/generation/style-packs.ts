@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { STYLE_PACKS, type StylePack } from '../../../data/style-packs';
+import { resolvePageType } from './page-types';
 import { cleanString } from './types';
 
 // 契约 §6「易于转可编辑」条款，逐字注入每页生图 prompt（放在风格/版式指令之后）。
@@ -126,22 +127,37 @@ export interface SlidePromptInput {
   visualNote: string;
 }
 
-/** 生图 prompt = 页面文案段 + 风格包指令 + 契约 §6 条款（逐字，置后） */
+export interface DeckContext {
+  /** 全套总页数；>1 时才注入整套一致性段 */
+  totalPages: number;
+  /** 当前页序号（0 起） */
+  pageIndex: number;
+  /** 所属章节名，可空 */
+  chapter?: string;
+}
+
+/** 生图 prompt = 整套一致性段 + 页型版式指令 + 页面文案段 + 风格包指令 + 契约 §6 条款（逐字，置后） */
 export function buildSlideImagePrompt(
   slide: SlidePromptInput,
   pack: ResolvedStylePack | null,
-  opts: { withStyleReferenceHint?: boolean } = {},
+  opts: { withStyleReferenceHint?: boolean; deckContext?: DeckContext } = {},
 ): string {
   const copy = slide.copyLines.filter(Boolean);
+  const pageSpec = resolvePageType(slide.pageType, slide.role);
+  const deck = opts.deckContext;
   const parts = [
     '为一张 16:9 商务演示 PPT 幻灯片生成完整的最终视觉图（整页一张图，含全部排版与文字）。',
-    `页面角色：${slide.role || 'content'}${slide.pageType ? `（版式：${slide.pageType}）` : ''}`,
+    deck && deck.totalPages > 1
+      ? `整套一致性要求：本页是全套 ${deck.totalPages} 页中的第 ${deck.pageIndex + 1} 页${deck.chapter ? `，属于「${deck.chapter}」章节` : ''}；全套页面必须保持完全一致的栅格系统、字号层级、配色方案、页眉页脚与页码位置、装饰元素语言，仅按页型变化版式。`
+      : '',
+    `页面角色：${slide.role || 'content'}${slide.pageType ? `（大纲标注版式：${slide.pageType}）` : ''}`,
+    `版式要求（页型：${pageSpec.label}）：${pageSpec.layout}`,
     slide.title ? `页面标题：${slide.title}` : '',
     slide.goal ? `本页表达目标：${slide.goal}` : '',
     copy.length > 0
       ? `页面文案（必须逐字完整呈现，不得增删、不得改写）：\n${copy.map((line) => `- ${line}`).join('\n')}`
       : '',
-    slide.visualNote ? `版式/配图建议：${slide.visualNote}` : '',
+    slide.visualNote ? `版式/配图建议（在上述页型版式框架内执行）：${slide.visualNote}` : '',
     `风格要求：\n${styleDirective(pack)}`,
     opts.withStyleReferenceHint ? '随附风格参考图，请严格延续其配色、版式与视觉气质。' : '',
     `易转可编辑排版条款（必须严格遵守）：${EDITABLE_FRIENDLY_CLAUSE}`,

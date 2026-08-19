@@ -19,7 +19,7 @@ import {
 } from './decks';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';
-import { buildSlideImagePrompt, loadStyleReferenceDataUrl, resolveStylePack } from './style-packs';
+import { buildSlideImagePrompt, loadStyleReferenceDataUrl, resolveStylePack, type DeckContext } from './style-packs';
 import { extractCopyFromDsl } from './dsl';
 import { cleanString, type JobKind } from './types';
 
@@ -49,6 +49,7 @@ function promptForSlide(
   slide: DeckSlideRow,
   stylePackId: string,
   refineInstruction?: string,
+  deckContext?: DeckContext,
 ): { prompt: string; withReference: boolean } {
   const pack = resolveStylePack(stylePackId);
   const copy = extractCopyFromDsl(slide.structuredContent);
@@ -65,7 +66,14 @@ function promptForSlide(
       visualNote: slide.visualNote,
     },
     pack,
-    { withStyleReferenceHint: withReference },
+    {
+      withStyleReferenceHint: withReference,
+      deckContext: deckContext ?? {
+        totalPages: 1,
+        pageIndex: slide.pageIndex,
+        chapter: slide.chapter,
+      },
+    },
   );
   if (!refineInstruction) return { prompt, withReference };
   return {
@@ -79,7 +87,7 @@ async function runSlideGeneration(
   slide: DeckSlideRow,
   jobId: string,
   kind: JobKind,
-  opts: { refineInstruction?: string },
+  opts: { refineInstruction?: string; deckContext?: DeckContext },
   deps: GenerateDeps,
 ): Promise<'succeeded' | 'failed'> {
   const config = deps.config ?? getGenerationConfig();
@@ -87,7 +95,7 @@ async function runSlideGeneration(
   // 幂等键含 jobId（契约口径 deck-generate:{deckId}:{jobId}，逐页追加 slideId 保证唯一）
   const chargeKey = `deck-generate:${deck.id}:${jobId}:${slide.slideId}`;
   const refundKey = `${chargeKey}:refund`;
-  const { prompt, withReference } = promptForSlide(slide, deck.stylePackId, opts.refineInstruction);
+  const { prompt, withReference } = promptForSlide(slide, deck.stylePackId, opts.refineInstruction, opts.deckContext);
   const version = createSlideVersion(slide, {
     kind: kind === 'deck-refine' ? 'refine' : 'generate',
     prompt,
@@ -243,7 +251,10 @@ export async function startDeckGeneration(
       while (cursor < targets.length) {
         const slide = targets[cursor];
         cursor += 1;
-        const result = await runSlideGeneration(deck, slide, job.jobId, kind, options, deps);
+        const result = await runSlideGeneration(deck, slide, job.jobId, kind, {
+          refineInstruction: options.refineInstruction,
+          deckContext: { totalPages: allSlides.length, pageIndex: slide.pageIndex, chapter: slide.chapter },
+        }, deps);
         if (result === 'succeeded') succeeded += 1;
         else failed += 1;
       }

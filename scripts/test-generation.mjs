@@ -265,6 +265,38 @@ console.log('\n[2] tagged DSL 校验');
   check('DSL 提取文案段', copy.title === 'T' && copy.lines.some((l) => l.includes('要点一')));
 }
 
+console.log('\n[2b] 页型归一 + 生图 prompt 版式/整套一致性注入');
+{
+  const pageTypes = await import('../src/lib/server/generation/page-types.ts');
+  const stylePacks = await import('../src/lib/server/generation/style-packs.ts');
+  check('role 优先：cover 直接封面页', pageTypes.resolvePageType('数据图表', 'cover').key === 'cover');
+  check('role 优先：ending 直接结尾页', pageTypes.resolvePageType('', 'ending').key === 'ending');
+  check('关键词命中：数据图表 → data-chart', pageTypes.resolvePageType('数据图表', 'content').key === 'data-chart');
+  check('最长关键词胜出：大数字指标 → big-number', pageTypes.resolvePageType('大数字指标', 'content').key === 'big-number');
+  check('时间轴/流程/对比/表格各自命中',
+    pageTypes.resolvePageType('时间轴', 'content').key === 'timeline'
+    && pageTypes.resolvePageType('实施步骤', 'content').key === 'process'
+    && pageTypes.resolvePageType('竞品对比', 'content').key === 'comparison'
+    && pageTypes.resolvePageType('参数表格', 'content').key === 'table');
+  check('自由文本兜底通用内容页', pageTypes.resolvePageType('随便写点什么', 'content').key === 'content');
+  check('空 pageType 兜底通用内容页', pageTypes.resolvePageType('', 'content').key === 'content');
+
+  const pack = stylePacks.resolveStylePack(STYLE_PACKS[0].id);
+  const slide = { role: 'content', pageType: '数据图表', title: 'T', goal: '', copyLines: ['一行'], visualNote: '' };
+  const p1 = stylePacks.buildSlideImagePrompt(slide, pack, {
+    deckContext: { totalPages: 10, pageIndex: 2, chapter: '背景' },
+  });
+  check('prompt 含页型版式指令', p1.includes('版式要求（页型：数据图表页）'));
+  check('prompt 含整套一致性段（总页数+页码+章节）', p1.includes('全套 10 页中的第 3 页') && p1.includes('「背景」章节'));
+  check('prompt 保留易转可编辑条款', p1.includes(stylePacks.EDITABLE_FRIENDLY_CLAUSE));
+  const p2 = stylePacks.buildSlideImagePrompt(slide, pack, { deckContext: { totalPages: 1, pageIndex: 0, chapter: '' } });
+  check('单页整套不注入一致性段', !p2.includes('整套一致性要求'));
+  const p3 = stylePacks.buildSlideImagePrompt(slide, pack);
+  check('无 deckContext 不注入一致性段', !p3.includes('整套一致性要求'));
+  const p4 = stylePacks.buildSlideImagePrompt({ ...slide, visualNote: '放柱状图' }, pack, { withStyleReferenceHint: true });
+  check('参考图提示与 visualNote 框架约束共存', p4.includes('随附风格参考图') && p4.includes('在上述页型版式框架内执行'));
+}
+
 console.log('\n[3] outline：引擎成功 + LLM 兜底两路');
 {
   const engineFetcher = makeMockFetcher(engineHandlers);
@@ -369,6 +401,14 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
     slideIds.every((sid) => keys.includes(`deck-generate:${deck.id}:${jobId}:${sid}`)));
   check('失败页 refund 键唯一且只退一次',
     keys.filter((k) => k === `deck-generate:${deck.id}:${jobId}:${slideIds[1]}:refund`).length === 1);
+
+  const genPrompts = fullFetcher.calls
+    .filter((c) => c.url.includes('/images/generations'))
+    .map((c) => JSON.parse(c.init.body).prompt);
+  check('链路 prompt 实含页型版式指令（封面页+数据图表页）',
+    genPrompts.some((p) => p.includes('版式要求（页型：封面页）')) && genPrompts.some((p) => p.includes('版式要求（页型：数据图表页）')));
+  check('链路 prompt 实含整套一致性（总页数+页码+章节）',
+    genPrompts.some((p) => p.includes('全套 2 页中的第 2 页') && p.includes('「业绩」章节')));
 
   await expectThrows('生成后（非 generating）内容仍冻结', () =>
     actions.dispatchDeckAction(uid, deck.id, { action: 'reorder-slides', order: slideIds }, fullDeps), 'CONTENT_LOCKED');
