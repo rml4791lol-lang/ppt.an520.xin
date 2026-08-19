@@ -17,6 +17,7 @@ export interface StylePackRuntimeEntry {
   stylePrompt?: string;
   palette?: string[];
   blueprint?: string;
+  visualKeywords?: string[];
 }
 
 export interface ResolvedStylePack {
@@ -27,6 +28,8 @@ export interface ResolvedStylePack {
   stylePrompt: string;
   palette: string[];
   blueprint: string;
+  /** 视觉语言关键词：runtime 非空时优先，否则用包数据 */
+  visualKeywords: string[];
   /** 首张预览图的站内路径（/assets/style-packs/...，public 下），无则空串 */
   firstPreviewPath: string;
 }
@@ -52,6 +55,9 @@ function loadRuntimeMap(): Map<string, StylePackRuntimeEntry> | null {
         stylePrompt: cleanString(item?.stylePrompt, 4000),
         palette: Array.isArray(item?.palette) ? item.palette.map((c: unknown) => cleanString(c, 20)).filter(Boolean) : [],
         blueprint: cleanString(item?.blueprint, 2000),
+        visualKeywords: Array.isArray(item?.visualKeywords)
+          ? item.visualKeywords.map((k: unknown) => cleanString(k, 40)).filter(Boolean).slice(0, 16)
+          : [],
       });
     }
     runtimeCache = map;
@@ -79,6 +85,7 @@ export function resolveStylePack(id: string): ResolvedStylePack | null {
   const pack = findStylePack(id);
   if (!pack) return null;
   const runtime = loadRuntimeMap()?.get(pack.id);
+  const runtimeKeywords = (runtime?.visualKeywords || []).filter(Boolean);
   return {
     id: pack.id,
     name: pack.name,
@@ -86,6 +93,7 @@ export function resolveStylePack(id: string): ResolvedStylePack | null {
     stylePrompt: runtime?.stylePrompt || '',
     palette: runtime?.palette || [],
     blueprint: runtime?.blueprint || '',
+    visualKeywords: runtimeKeywords.length > 0 ? runtimeKeywords : pack.visualKeywords,
     firstPreviewPath: pack.previewImageUrls[0] || pack.previewUrl || '',
   };
 }
@@ -100,6 +108,7 @@ export function styleDirective(pack: ResolvedStylePack | null): string {
   if (parts.length === 0) {
     parts.push(`设计风格：「${pack.name}」${pack.description ? `——${pack.description}` : ''}`);
   }
+  if (pack.visualKeywords.length > 0) parts.push(`视觉关键词：${pack.visualKeywords.join('、')}`);
   return parts.join('\n');
 }
 

@@ -11,6 +11,8 @@ export interface StylePack {
   suitablePageTypes: string[]
   suitableScenarios: string[]
   recommendationWeight: number
+  /** 逐包看预览图提炼的视觉语言关键词（配色/版式/装饰母题/图形元素/质感氛围），注入生图 prompt */
+  visualKeywords: string[]
 }
 
 export const STYLE_PACKS: StylePack[] = [
@@ -27,6 +29,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["商务汇报", "数据报告", "看板等"],
     suitableScenarios: [],
     recommendationWeight: 99,
+    visualKeywords: ["纯净白底", "藏蓝主色配浅灰蓝辅色", "扁平线性图标", "大数字指标卡", "多栏等宽栅格", "色块标题栏", "玻璃幕墙建筑摄影配图", "细线分割", "编号目录竖线分隔"],
   },
   {
     id: "cms5p1p5m01tl13yheatu8708",
@@ -41,6 +44,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["工作汇报", "方案报告"],
     suitableScenarios: [],
     recommendationWeight: 95,
+    visualKeywords: ["天空蓝渐变摄影底", "金色曲线装饰", "超大号金色章节数字", "圆形裁切建筑摄影", "底部白色弧形托底", "细线圆形图标", "大留白栅格", "蓝金双主色"],
   },
   {
     id: "cmrbxz89q001oxty8gxoa9ffq",
@@ -55,6 +59,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["工作汇报", "述职等"],
     suitableScenarios: [],
     recommendationWeight: 94,
+    visualKeywords: ["纯净白底", "钴蓝到青色渐变", "3D玻璃质感图表", "通栏渐变底带", "圆形浅蓝图标底", "渐变箭头流程线", "浅蓝圆角结论横幅", "磨砂立体饼图"],
   },
   {
     id: "cms5q2vfl02qz13yh2jhgo8p3",
@@ -69,6 +74,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["工作汇报", "商务报告"],
     suitableScenarios: [],
     recommendationWeight: 93,
+    visualKeywords: ["满幅冷调山水摄影封面", "特大号留白标题", "纯白内容底", "浅灰圆角卡片", "蓝色大数字指标", "极简细线图标", "三栏栅格", "冷灰蓝电影色调"],
   },
   {
     id: "cmrn8kjb002lyy1o1b81fikbr",
@@ -83,6 +89,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["技术方案", "架构", "汇报等"],
     suitableScenarios: [],
     recommendationWeight: 93,
+    visualKeywords: ["纯黑深底", "荧光绿主色点缀", "3D等距硬件插画", "霓虹绿数据光效", "绿色线性图标", "点阵网格底纹", "发光连线装饰", "深绿渐变结论横幅"],
   },
   {
     id: "cmrtyn2kl006960kpu3o6yd68",
@@ -97,6 +104,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["企业介绍", "业务汇报类演示"],
     suitableScenarios: [],
     recommendationWeight: 92,
+    visualKeywords: ["浅暖灰底", "活力橙强调色", "暖光建筑摄影配图", "橙色短粗装饰线", "橙色大号章节数字", "圆角白色信息条", "橙色细线图标", "明亮通透大留白"],
   },
   {
     id: "cmqs3gcsm0000d3ye34vdheke",
@@ -111,6 +119,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["数据看板", "报告等"],
     suitableScenarios: ["企业汇报", "项目方案", "季度总结", "融资路演"],
     recommendationWeight: 92,
+    visualKeywords: ["米白纸面底", "深酒红主色配中性灰", "细线分割栏目标题", "红色圆形线性图标", "多栏密集信息栅格", "红灰配色数据图表", "红底白字编号方块", "底部结论横幅"],
   },
   {
     id: "cmseiyimt0qxuck7fzmcdal6m",
@@ -125,6 +134,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["项目评审", "答辩"],
     suitableScenarios: [],
     recommendationWeight: 90,
+    visualKeywords: ["纯净白底", "深邃学术蓝大色块", "红色关键字点缀", "蓝色栏目标题条", "四栏等宽栅格", "科研示意图配图", "实验数据图表混排", "严谨学术版式"],
   },
   {
     id: "cmronzw9u00sg14jae48stfwf",
@@ -139,6 +149,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["汇报", "提案", "报告等"],
     suitableScenarios: [],
     recommendationWeight: 90,
+    visualKeywords: ["正红色大色块", "满幅建筑摄影封面", "粗体白色大标题", "浅米灰内容底", "红色编号圆点流程", "圆角白卡细灰边", "红色大数字指标", "黑灰调摄影配图", "底部结论条"],
   },
   {
     id: "cmrn42x3n00e3t9qmt2gdrcv6",
@@ -153,6 +164,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["工作汇报", "职场商务"],
     suitableScenarios: [],
     recommendationWeight: 90,
+    visualKeywords: ["黑白色调城市摄影", "绯红强调色", "特大号粗体标题", "短粗红线装饰", "点阵装饰母题", "细灰分割线", "杂志化编辑排印", "大留白栅格"],
   },
   {
     id: "cmrk9saju00bh10zkedkn6l09",
@@ -167,6 +179,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["适合信息量偏多的页面"],
     suitableScenarios: [],
     recommendationWeight: 90,
+    visualKeywords: ["浅灰白底", "蓝紫智能渐变", "3D玻璃质感透视背景", "白色圆角卡片", "柔和弥散投影", "蓝色线性图标", "磨砂玻璃拟态", "轻盈通透氛围"],
   },
   {
     id: "cmrjdv6i80001kup5set1no4a",
@@ -181,6 +194,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["深色科技", "发布会"],
     suitableScenarios: [],
     recommendationWeight: 90,
+    visualKeywords: ["深邃藏蓝底", "蓝色霓虹光带", "发光渐变标题字", "未来城市剪影", "光束透视地平线", "超大发光章节数字", "点阵光斑", "电影级光效氛围"],
   },
   {
     id: "cmsohlood12wnd752l4f7ijxy",
@@ -195,6 +209,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["护理比赛", "医护课件"],
     suitableScenarios: [],
     recommendationWeight: 88,
+    visualKeywords: ["柔紫主色配米白底", "护理场景温暖摄影", "紫色圆形图标底", "圆角卡片", "紫色栏目标题条", "编号步骤流", "浅紫柔和卡片底", "亲和人文氛围"],
   },
   {
     id: "cmrxo1g2q0vxltn4r2fvx00qw",
@@ -209,6 +224,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["医疗汇报", "医药研发等"],
     suitableScenarios: [],
     recommendationWeight: 88,
+    visualKeywords: ["深钴蓝大色块", "金色斜切分割线", "蓝图风建筑线稿", "DNA双螺旋粒子插画", "金色大号章节数字", "白蓝强对比版式", "医疗十字符号", "点阵光点装饰"],
   },
   {
     id: "cmqs3gctc0003d3yei6wwxjdv",
@@ -223,6 +239,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["地产", "路演等"],
     suitableScenarios: ["品牌发布", "高端路演", "金句页", "封面页"],
     recommendationWeight: 88,
+    visualKeywords: ["深黑暗场底", "香槟金强调色", "金色书法大标题", "拱形取景框构图", "暗调城市摄影", "金色细线装饰框", "白色大数字指标", "低调颗粒质感"],
   },
   {
     id: "cmqs3gct50002d3yetlhjw4di",
@@ -237,6 +254,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["能源电力汇报等"],
     suitableScenarios: [],
     recommendationWeight: 88,
+    visualKeywords: ["大面积洁净白底", "深黑粗体标题", "克制红色强调", "浅灰工程线稿配图", "红灰配色数据图表", "细线分割", "灰色细线图标", "技术图纸感底纹"],
   },
   {
     id: "cmsne1r3800d2o1xqsnu4aw9u",
@@ -251,6 +269,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["护理讲课比赛", "护理技能教学比赛"],
     suitableScenarios: [],
     recommendationWeight: 85,
+    visualKeywords: ["蓝青医疗配色", "真实临床场景摄影", "深蓝粗体标题", "蓝色信息底栏", "医学器官线稿", "双栏对比卡片", "细胞医学插画", "蓝绿双色标题条"],
   },
   {
     id: "cms5jbscy000nywm197g8ls05",
@@ -265,6 +284,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["医疗工作汇报", "研发报告"],
     suitableScenarios: [],
     recommendationWeight: 85,
+    visualKeywords: ["蓝绿渐变主色", "左侧渐变色块", "实验室场景摄影", "医疗器械特写配图", "蓝绿渐变章节数字", "左图右文分栏", "洁净白底", "白色粗体大标题"],
   },
   {
     id: "cms5j6bte03v5216o6q5kkfvh",
@@ -279,6 +299,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["医疗学术交流", "药物分析报告"],
     suitableScenarios: [],
     recommendationWeight: 85,
+    visualKeywords: ["深藏蓝大色块", "斜切圆弧色块边缘", "冷蓝调医疗摄影", "白色粗体标题", "蓝白强对比", "竖排编号目录", "分子链线稿装饰", "稳重专业氛围"],
   },
   {
     id: "cms5ip3kv03cd216omfjve2sl",
@@ -293,6 +314,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["数字医疗", "药物研发等"],
     suitableScenarios: [],
     recommendationWeight: 85,
+    visualKeywords: ["浅灰白底", "蓝青渐变标题条", "白色圆角卡片", "蓝色线性图标", "蓝色大数字指标", "四栏并列栅格", "底部结论横幅", "洁净医疗感"],
   },
   {
     id: "cms5ibx4802yz216ocnp7ob5h",
@@ -307,6 +329,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["公共医疗", "医疗服务汇报"],
     suitableScenarios: [],
     recommendationWeight: 85,
+    visualKeywords: ["蓝色斜切渐变蒙版", "明亮医院场景摄影", "白色粗体大标题", "斜切几何分割", "右侧蓝色目录色块", "蓝白清新对比", "医患人文摄影", "蓝色短装饰线"],
   },
   {
     id: "cmr1wty4900152p2n49q1au8z",
@@ -321,6 +344,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["适合信息量偏少的页面"],
     suitableScenarios: ["场景"],
     recommendationWeight: 80,
+    visualKeywords: ["深空黑底", "地球弧线光带", "粒子点阵球体装饰", "冷白配轨道冰蓝", "冰蓝大数字指标", "细线图标", "虚线栏分隔", "电影级暗场氛围"],
   },
   {
     id: "cmqs3gcsw0001d3ye5wrop6g9",
@@ -335,6 +359,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["适合信息量偏少的页面"],
     suitableScenarios: ["产品发布", "技术方案", "系统架构介绍", "数据看板"],
     recommendationWeight: 80,
+    visualKeywords: ["月白底", "汝窑青渐变曲面", "深灰衬线感标题", "大留白疏朗版式", "灰青单色图表", "细线分割", "东方温润气质", "竖排小字导航"],
   },
   {
     id: "cmrk8asi10033v7fx2zbu1y2o",
@@ -349,6 +374,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["适合咨询报告", "数据看板等"],
     suitableScenarios: [],
     recommendationWeight: 60,
+    visualKeywords: ["浅灰白纸面", "墨绿主色", "斜切几何色块", "低饱和城市摄影", "墨绿大数字指标", "细线分割栏目标题", "绿色线性图标", "咨询式密集栅格", "点阵世界地图底纹"],
   },
   {
     id: "cmqs3gctm0004d3yedytwwyd2",
@@ -363,6 +389,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["适合信息量偏少的页面"],
     suitableScenarios: ["通用汇报", "产品介绍", "工作总结", "内容展示"],
     recommendationWeight: 60,
+    visualKeywords: ["深炭灰底", "香槟棕金强调", "暖调建筑光影摄影", "金棕衬线大数字", "棕金渐变图表", "细虚线分割", "竖线导航分隔", "静奢暗调氛围"],
   },
   {
     id: "cmrn6b4p600wfy1o1fqayigj2",
@@ -377,6 +404,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["融资路演", "业务汇报类"],
     suitableScenarios: [],
     recommendationWeight: 4,
+    visualKeywords: ["深蓝紫夜空底", "极光蓝紫光带", "渐变发光标题", "玻璃拟态图标", "极光头图圆角卡片", "紫色大数字指标", "浅紫白内容底", "细线功能图标"],
   },
   {
     id: "cmrmw53b800gmmw1l0r1op50x",
@@ -391,6 +419,7 @@ export const STYLE_PACKS: StylePack[] = [
     suitablePageTypes: ["医药数字化汇报"],
     suitableScenarios: [],
     recommendationWeight: 3,
+    visualKeywords: ["翡翠绿到钴蓝横向渐变", "纯白内容底", "绿色大数字指标", "绿色线性医疗图标", "圆角白卡柔和投影", "通栏渐变结论横幅", "网状连接线底纹", "通透科技感"],
   },
 ]
 

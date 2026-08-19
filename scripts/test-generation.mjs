@@ -295,6 +295,8 @@ console.log('\n[2b] 页型归一 + 生图 prompt 版式/整套一致性注入');
   check('无 deckContext 不注入一致性段', !p3.includes('整套一致性要求'));
   const p4 = stylePacks.buildSlideImagePrompt({ ...slide, visualNote: '放柱状图' }, pack, { withStyleReferenceHint: true });
   check('参考图提示与 visualNote 框架约束共存', p4.includes('随附风格参考图') && p4.includes('在上述页型版式框架内执行'));
+  check('styleDirective 注入视觉关键词行', stylePacks.styleDirective(pack).includes('视觉关键词：'));
+  check('resolveStylePack 透出包数据视觉关键词', Array.isArray(pack.visualKeywords) && pack.visualKeywords.length >= 6);
 }
 
 console.log('\n[3] outline：引擎成功 + LLM 兜底两路');
