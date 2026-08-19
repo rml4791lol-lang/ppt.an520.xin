@@ -6,7 +6,7 @@ import { generateSinglePage } from '@/lib/server/generation/single-pages';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** 单页生成：{pageId, projectId?, title?, content, stylePackId?, requestId?}，10🌟/张 */
+/** 单页生成：{pageId, projectId?, title?, content, stylePackId?, imagePath?, requestId?}，10🌟/张 */
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   const body = await readJsonBody(request);
@@ -16,6 +16,7 @@ export const POST = defineApiRoute(async (request) => {
     title: body.title ? String(body.title) : undefined,
     content: String(body.content ?? ''),
     stylePackId: body.stylePackId ? String(body.stylePackId) : undefined,
+    imagePath: body.imagePath ? String(body.imagePath) : undefined,
     requestId: body.requestId ? String(body.requestId) : undefined,
   });
   return jsonOk(

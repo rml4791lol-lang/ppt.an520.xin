@@ -144,8 +144,20 @@ export interface SingleGenerateInput {
   title?: string;
   content: string;
   stylePackId?: string;
+  /** 原稿图（/api/assets/upload 返回的 path）：提供后走 i2i 重设计而非纯文生图 */
+  imagePath?: string;
   /** 客户端幂等键（可选）；缺省用服务端 jobId */
   requestId?: string;
+}
+
+/** 校验原稿图路径归属当前用户（uploads/{userId}/...），返回规范化相对路径 */
+function assertOwnedUpload(userId: string, imagePath: unknown): string {
+  const rel = cleanString(imagePath, 300).replace(/^\/api\/files\//, '').replace(/^\/+/, '');
+  const segments = rel.split('/').filter(Boolean);
+  if (segments.length < 3 || segments[0] !== 'uploads' || segments[1] !== userId) {
+    throw new ApiError('FILE_FORBIDDEN', '原稿图不存在或不属于当前账号', 403, false);
+  }
+  return rel;
 }
 
 export interface SingleRunResult {
@@ -160,7 +172,7 @@ export interface SingleRunResult {
 
 async function runSinglePageJob(
   page: SinglePageRow,
-  opts: { kind: 'single-generate' | 'single-refine'; refineInstruction?: string; requestId?: string },
+  opts: { kind: 'single-generate' | 'single-refine'; refineInstruction?: string; sourceImagePath?: string; requestId?: string },
   deps: SinglePageDeps,
 ): Promise<SingleRunResult> {
   const config = deps.config ?? getGenerationConfig();
@@ -223,6 +235,14 @@ async function runSinglePageJob(
       const source = current ? await readSiteFile(String(current.image_path || ''), config) : null;
       if (!source) throw new Error('原图不存在，无法改图');
       image = await editImage({ image: source, instruction: opts.refineInstruction || '' }, deps);
+    } else if (opts.sourceImagePath) {
+      // i2i 原稿重设计：以上传图为底，按风格化 prompt 全面重绘
+      const source = await readSiteFile(opts.sourceImagePath, config);
+      if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
+      image = await editImage(
+        { image: source, instruction: `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。` },
+        deps,
+      );
     } else {
       image = await generateImage({ prompt }, deps);
     }
@@ -271,7 +291,8 @@ export async function generateSinglePage(
   const content = cleanString(input.content, 8000);
   if (!content) throw validationError('页面内容不能为空');
   const page = upsertPage(userId, { ...input, pageId: cleanPageId(input.pageId), content });
-  return runSinglePageJob(page, { kind: 'single-generate', requestId: input.requestId }, deps);
+  const sourceImagePath = input.imagePath ? assertOwnedUpload(userId, input.imagePath) : undefined;
+  return runSinglePageJob(page, { kind: 'single-generate', sourceImagePath, requestId: input.requestId }, deps);
 }
 
 export async function refineSinglePage(
@@ -306,4 +327,70 @@ export function getActiveVersionImagePath(page: SinglePageRow): string {
     .prepare('SELECT image_path FROM single_page_versions WHERE id = ?')
     .get(page.activeVersionId) as Row | undefined;
   return String(row?.image_path || '');
+}
+
+// ---------- 项目详情 / 版本 ----------
+
+export interface SinglePageVersionView {
+  versionId: string;
+  kind: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  imageUrl: string;
+  error: string;
+  createdAt: number;
+}
+
+export function listPageVersions(pageId: string): SinglePageVersionView[] {
+  const rows = getGenDb()
+    .prepare('SELECT * FROM single_page_versions WHERE page_id = ? ORDER BY created_at DESC, rowid DESC')
+    .all(pageId) as Row[];
+  return rows.map((row) => ({
+    versionId: String(row.id),
+    kind: String(row.kind || 'generate'),
+    status: String(row.status || 'queued') as SinglePageVersionView['status'],
+    imageUrl: String(row.image_url || ''),
+    error: String(row.error || ''),
+    createdAt: Number(row.created_at),
+  }));
+}
+
+/** 单页项目详情（?projectId= 恢复历史页 + 版本列表） */
+export function getSingleProjectDetail(userId: string, projectId: string) {
+  const db = getGenDb();
+  const project = db
+    .prepare('SELECT * FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+    .get(cleanString(projectId, 80), userId) as Row | undefined;
+  if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
+  const pages = listSingleProjectPages(userId, String(project.id)).map((page) => ({
+    ...page,
+    versions: listPageVersions(page.pageId),
+  }));
+  return {
+    project: {
+      id: String(project.id),
+      title: String(project.title || ''),
+      createdAt: Number(project.created_at),
+      updatedAt: Number(project.updated_at),
+    },
+    pages,
+  };
+}
+
+/** 版本回退/选择：仅允许切到生成成功的版本 */
+export function selectSinglePageVersion(userId: string, pageId: string, versionId: string): SinglePageRow {
+  const page = getOwnedPage(userId, pageId);
+  if (page.status === 'running' || page.status === 'queued') {
+    throw new ApiError('GENERATION_RUNNING', '该页正在生成中，请稍候', 409, true);
+  }
+  const row = getGenDb()
+    .prepare('SELECT id, status FROM single_page_versions WHERE id = ? AND page_id = ?')
+    .get(cleanString(versionId, 80), page.pageId) as Row | undefined;
+  if (!row) throw new ApiError('VERSION_NOT_FOUND', '版本不存在', 404, false);
+  if (String(row.status) !== 'succeeded') {
+    throw new ApiError('VERSION_NOT_READY', '只能切换到生成成功的版本', 409, false);
+  }
+  getGenDb()
+    .prepare("UPDATE single_pages SET active_version_id = ?, status = 'succeeded', error = '', updated_at = ? WHERE id = ?")
+    .run(String(row.id), nowMs(), page.pageId);
+  return getOwnedPage(userId, page.pageId);
 }

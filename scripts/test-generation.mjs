@@ -595,6 +595,43 @@ console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
   check('单页项目导出图片版 pptx（仅成功页 1 页）', exp.pageCount === 1);
 }
 
+console.log('\n[7b] 单页项目详情 / 版本选择 / i2i 原稿重设计');
+{
+  credits.refundCredits(uid, 100, { reason: '测试补贴', idempotencyKey: 'test-topup-7b' });
+  const storage = await import('../src/lib/server/generation/storage.ts');
+  const okFetcher2 = makeMockFetcher([{ match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
+  const deps2 = { fetchImpl: okFetcher2, config: imageConfig };
+  const g1 = await singlePages.generateSinglePage(uid, { pageId: 'pg-a', title: 'P1', content: '营收 1200 万元' }, deps2);
+  const g2 = await singlePages.refineSinglePage(uid, { pageId: 'pg-a', editInstruction: '加深对比' }, deps2);
+  check('生成+改图两个成功版本', g1.status === 'succeeded' && g2.status === 'succeeded');
+
+  const detail = singlePages.getSingleProjectDetail(uid, g1.page.projectId);
+  check('项目详情含 1 页 2 版本', detail.pages.length === 1 && detail.pages[0].versions.length === 2);
+  check('他人取项目详情 404', (() => {
+    try {
+      singlePages.getSingleProjectDetail('other-user', g1.page.projectId);
+      return false;
+    } catch (error) {
+      return error?.code === 'PROJECT_NOT_FOUND';
+    }
+  })());
+
+  const v1 = detail.pages[0].versions.find((v) => v.kind === 'generate');
+  const sel = singlePages.selectSinglePageVersion(uid, 'pg-a', v1.versionId);
+  check('版本回退生效', sel.activeVersionId === v1.versionId);
+  await expectThrows('不存在版本 404', () => singlePages.selectSinglePageVersion(uid, 'pg-a', 'ver_nope'), 'VERSION_NOT_FOUND');
+
+  const saved = await storage.saveFile('uploads', uid, Buffer.from(PNG_1X1_B64, 'base64'), { kind: 'draft', ext: '.png' }, imageConfig);
+  const editsBefore = okFetcher2.calls.filter((c) => c.url.includes('/images/edits')).length;
+  const before3 = credits.getBalance(uid);
+  const g3 = await singlePages.generateSinglePage(uid, { pageId: 'pg-b', content: '原稿重设计一页', imagePath: saved.relPath }, deps2);
+  check('i2i 原稿重设计走 /images/edits 且成功',
+    g3.status === 'succeeded' && okFetcher2.calls.filter((c) => c.url.includes('/images/edits')).length === editsBefore + 1);
+  check('i2i 正常扣 10🌟', before3 - g3.balance === 10, `before=${before3} after=${g3.balance}`);
+  await expectThrows('他人原稿图 403', () =>
+    singlePages.generateSinglePage(uid, { pageId: 'pg-c', content: 'x', imagePath: saved.relPath.replace(uid, 'other-user') }, deps2), 'FILE_FORBIDDEN');
+}
+
 console.log('\n[8] 项目列表 / 改名 / 软删');
 {
   const list = projects.listProjects(uid, {});
