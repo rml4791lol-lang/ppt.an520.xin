@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-08-20（单页可编辑导出上线 + 备份纳入数据资产）
+> 最后更新：2026-08-20（微信支付直连上线 + emoji/BMP 过滤修复）
 
 ## 1. 系统是什么
 
@@ -46,7 +46,16 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 - 价格表：`src/lib/server/env.ts` DEFAULT_ACTION_PRICES（`deck_page_generate:10`、`export_editable:20`、outline/export_image:0）。可用 env `CREDIT_ACTION_PRICES` JSON 覆盖。
 - 充值档：DEFAULT_RECHARGE_PLANS（¥9.9/100🌟、¥39.9/500🌟、¥79.9/1000🌟、¥149.9/2000🌟），env `RECHARGE_PLANS` 可覆盖。
 - 账：`credit_ledger` 幂等键防重；所有扣费先整单估价+余额预检（402）；失败自动退还（refund 键唯一）。
-- 支付渠道：**epay 支付宝收银台（活）**；微信支付开不了——商户私钥 apiclient_key.pem 在服务器上不存在（等用户提供）。
+- 支付渠道：
+  - **epay 支付宝收银台（活）**
+  - **微信支付 Native 直连（2026-08-20 已上线）**
+    - 密钥目录 `/opt/anppt-v2/shared/secrets/`（`600 ubuntu:ubuntu`）：`wechat-pay-private.pem`（商户私钥）、`wechat-pay-platform-public.pem`（平台公钥）。**绝不打印/提交/外传。**
+    - `.env`：`WECHAT_PAY_ENABLED=true`，`WECHAT_PAY_*_PATH`/`_FILE` 指向上述 secrets；商户号 `1747212050`、APP `wxeb7e1885c25df663`、证书序列与 APIv3 已为真值（值本身勿入手册）。
+    - 回调：`POST /api/recharge/notify/wechat`（平台公钥验签 → 幂等入账）。
+    - **坑**：下单 `description` 不可含 emoji/非 BMP。微信报「请求内容传入了非UTF8参数」。`sanitizeWechatDescription` 必须用 `/[^\u0000-\uFFFF]/gu`（**带 `u` 旗**）；无 `u` 时代理对各自落在 BMP 内，过滤失效。建单文案用「星」不用「🌟」。
+    - 验收：先只建单（`codeUrl` 以 `weixin://` 开头）不付款；真实小额扫码由人工核对回调验签 + 星星入账 + 订单 `paid`。
+
+> 最后更新：2026-08-20（微信支付直连上线 + emoji/BMP 过滤修复）
 
 ## 6. 转可编辑 PPTX（Codia 链，20🌟/页）
 
@@ -69,7 +78,7 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 
 ```bash
 node --experimental-strip-types scripts/test-generation.mjs  # 172 断言（含 [6b] deck / [6c] 单页 Codia 全链 mock、[9] 崩溃恢复/清理）
-node --experimental-strip-types scripts/test-backend.mjs     # 54 断言
+node --experimental-strip-types scripts/test-backend.mjs     # 56 断言（含微信 description 非 BMP 过滤）
 ./node_modules/.bin/tsc --noEmit
 npm run build
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）

@@ -149,6 +149,9 @@ await expectThrows('不存在的码 preview 统一报错', () => redemption.prev
 await expectThrows('已用完的码 preview 统一报错（不暴露区别）', () => redemption.previewRedemption(code), 'REDEMPTION_INVALID');
 
 console.log('\n[6] 充值（mock 微信）');
+const { sanitizeWechatDescription } = await import('../src/lib/server/payments/wechat.ts');
+check('微信描述剥除非 BMP emoji', sanitizeWechatDescription('AnPPT 100星包 100🌟') === 'AnPPT 100星包 100');
+check('微信描述空串回落默认', sanitizeWechatDescription('🌟🌟') === 'AnPPT 星星充值');
 const plans = recharge.listRechargePlans();
 check('默认 4 个套餐', plans.length === 4 && plans[1].featured === true);
 const created = await recharge.createRechargeOrder(uid, { planId: 'pack-100', channel: 'wechat' }, '127.0.0.1');

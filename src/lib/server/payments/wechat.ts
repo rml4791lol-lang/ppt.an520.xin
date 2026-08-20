@@ -26,6 +26,13 @@ export interface WechatNativeOrderResult {
   raw?: unknown;
 }
 
+/** 微信网关拒收 4 字节 UTF-8（emoji 等）。必须带 u 旗：否则 JS 按 UTF-16 码元匹配，代理对（如 🌟）各自落在 BMP 内，过滤失效。 */
+export function sanitizeWechatDescription(input?: string): string {
+  return String(input || 'AnPPT 星星充值')
+    .replace(/[^\u0000-\uFFFF]/gu, '')
+    .slice(0, 127) || 'AnPPT 星星充值';
+}
+
 function normalizePem(value: string): string {
   let trimmed = String(value || '').trim();
   if (!trimmed) return '';
@@ -112,10 +119,7 @@ export async function createWechatNativeOrder(
 
   const outTradeNo = String(input.outTradeNo || '').trim();
   const amountFen = Math.max(1, Math.floor(Number(input.amountFen || 0)));
-  // 微信网关拒收 4 字节 UTF-8（emoji 等），下单描述只保留 BMP 字符
-  const description = String(input.description || 'AnPPT 星星充值')
-    .replace(/[^\u0000-\uFFFF]/g, '')
-    .slice(0, 127) || 'AnPPT 星星充值';
+  const description = sanitizeWechatDescription(input.description);
 
   if (config.mock) {
     return {

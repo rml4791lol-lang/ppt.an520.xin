@@ -107,7 +107,8 @@ export async function createRechargeOrder(
      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, '', '', '', NULL, ?, ?)`,
   ).run(id, outTradeNo, userId, plan.id, plan.amountFen, plan.credits, provider, ts, ts);
 
-  const description = `AnPPT ${plan.label} ${plan.credits}🌟`;
+  // 支付网关描述勿含 emoji（微信拒收非 BMP）；站内文案仍可用 🌟
+  const description = `AnPPT ${plan.label} ${plan.credits}星`;
   let codeUrl = '';
   let checkoutUrl = '';
   let mock = false;
