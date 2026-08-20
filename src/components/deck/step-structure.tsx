@@ -28,6 +28,16 @@ function statusChipClass(status: string): string {
   }
 }
 
+/** 上游技术错误转用户可读文案；未识别的保留原文（多为 DSL 校验提示，本身面向用户） */
+function friendlyStructureError(raw?: string): string {
+  const s = String(raw || "");
+  if (/402|balance|余额/i.test(s)) return "AI 服务额度暂时不可用，请稍后重试";
+  if (/timeout|超时|aborted/i.test(s)) return "AI 处理超时，请稍后重试";
+  if (/HTTP \d+|upstream|ECONN|fetch failed/i.test(s))
+    return "AI 服务暂时不可用，请稍后重试";
+  return s || "处理失败，请重试";
+}
+
 export function StepStructure({
   ctx,
   structuring,
@@ -183,7 +193,7 @@ export function StepStructure({
                   <DslPreview text={slide.structuredContent} />
                 ) : slide.structureStatus === "failed" ? (
                   <p className="py-4 text-sm text-danger">
-                    处理失败{slide.structureWarnings[0] ? `：${slide.structureWarnings[0]}` : ""}
+                    处理失败：{friendlyStructureError(slide.structureWarnings[0])}
                     （失败页重试不扣除星星）
                   </p>
                 ) : (

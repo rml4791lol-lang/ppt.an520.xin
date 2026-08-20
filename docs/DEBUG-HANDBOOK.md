@@ -55,8 +55,6 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
     - **坑**：下单 `description` 不可含 emoji/非 BMP。微信报「请求内容传入了非UTF8参数」。`sanitizeWechatDescription` 必须用 `/[^\u0000-\uFFFF]/gu`（**带 `u` 旗**）；无 `u` 时代理对各自落在 BMP 内，过滤失效。建单文案用「星」不用「🌟」。
     - 验收：先只建单（`codeUrl` 以 `weixin://` 开头）不付款；真实小额扫码由人工核对回调验签 + 星星入账 + 订单 `paid`。
 
-> 最后更新：2026-08-20（微信支付直连上线 + emoji/BMP 过滤修复）
-
 ## 6. 转可编辑 PPTX（Codia 链，20🌟/页）
 
 - 代码：`src/lib/server/codia.ts`（客户端）、`src/lib/server/exports.ts`（`startDeckEditableExport` / `startSinglePageEditableExport` → 共用 `launchEditableExport` + 管线 + 懒恢复；`readExportSourceImages` 按 ref_type 分发取图）、路由 `POST /api/deck/[id]/export-editable` 与 `POST /api/single-page/export-editable-pptx`（均 202）、状态 `GET /api/pptx-exports/[id]`。

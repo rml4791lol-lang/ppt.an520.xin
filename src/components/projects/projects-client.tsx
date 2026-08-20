@@ -18,6 +18,9 @@ export function ProjectsClient() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [unauthorized, setUnauthorized] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,8 +49,32 @@ export function ProjectsClient() {
     void load();
   }, [load]);
 
+  const remove = async (id: string) => {
+    setRemoving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "DELETE",
+        headers: { "x-anppt-action": "1" },
+      });
+      if (res.ok) {
+        setConfirmingId(null);
+        await load();
+      } else {
+        setError("删除失败，请稍后重试");
+      }
+    } catch {
+      setError("网络异常，删除失败");
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   return (
     <div id="recent" className="space-y-5">
+      {error && (
+        <p className="rounded-xl bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p>
+      )}
       {unauthorized && (
         <div className="flex items-center justify-between rounded-2xl border border-danger/20 bg-danger-soft px-5 py-4">
           <p className="text-sm text-danger">请先登录后再操作</p>
@@ -76,32 +103,62 @@ export function ProjectsClient() {
       ) : projects && projects.length > 0 ? (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {projects.map((p) => (
-            <Link
-              key={p.id}
-              href={p.projectType === "single-page" ? `/single-page?projectId=${p.id}` : `/deck/${p.id}`}
-              className="group rounded-2xl border border-line bg-card p-4 shadow-card transition hover:shadow-pop"
-            >
-              <div className="flex aspect-[16/9] items-center justify-center rounded-xl bg-page text-ink-4">
-                {p.coverUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={p.coverUrl}
-                    alt={`${p.title ?? p.name ?? "项目"} 封面`}
-                    className="h-full w-full rounded-xl object-cover"
-                  />
-                ) : (
-                  <span className="text-xs">暂无预览</span>
-                )}
-              </div>
-              <p className="mt-3 truncate text-sm font-medium text-ink">
-                {p.title ?? p.name ?? "未命名项目"}
-              </p>
-              <p className="mt-1 text-xs text-ink-4">
-                {p.updatedAt ?? p.createdAt
-                  ? `更新于 ${new Date(p.updatedAt ?? p.createdAt!).toLocaleString("zh-CN")}`
-                  : ""}
-              </p>
-            </Link>
+            <div key={p.id} className="group relative">
+              <Link
+                href={p.projectType === "single-page" ? `/single-page?projectId=${p.id}` : `/deck/${p.id}`}
+                className="block rounded-2xl border border-line bg-card p-4 shadow-card transition hover:shadow-pop"
+              >
+                <div className="flex aspect-[16/9] items-center justify-center rounded-xl bg-page text-ink-4">
+                  {p.coverUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.coverUrl}
+                      alt={`${p.title ?? p.name ?? "项目"} 封面`}
+                      className="h-full w-full rounded-xl object-cover"
+                    />
+                  ) : (
+                    <span className="text-xs">暂无预览</span>
+                  )}
+                </div>
+                <p className="mt-3 truncate text-sm font-medium text-ink">
+                  {p.title ?? p.name ?? "未命名项目"}
+                </p>
+                <p className="mt-1 text-xs text-ink-4">
+                  {p.updatedAt ?? p.createdAt
+                    ? `更新于 ${new Date(p.updatedAt ?? p.createdAt!).toLocaleString("zh-CN")}`
+                    : ""}
+                </p>
+              </Link>
+              {confirmingId === p.id ? (
+                <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded-full border border-line bg-card px-2.5 py-1 shadow-pop">
+                  <span className="text-[11px] text-ink-3">确认删除？</span>
+                  <button
+                    type="button"
+                    disabled={removing}
+                    onClick={() => void remove(p.id)}
+                    className="rounded-full bg-danger-soft px-2.5 py-0.5 text-[11px] font-medium text-danger transition hover:bg-danger/15 disabled:opacity-50"
+                  >
+                    {removing ? "删除中…" : "删除"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingId(null)}
+                    className="rounded-full px-2 py-0.5 text-[11px] text-ink-4 transition hover:text-ink"
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`删除项目 ${p.title ?? p.name ?? ""}`}
+                  onClick={() => setConfirmingId(p.id)}
+                  className="absolute right-2 top-2 z-10 rounded-full border border-line bg-card/95 px-2.5 py-1 text-[11px] text-ink-4 shadow-card transition hover:border-danger/30 hover:text-danger"
+                >
+                  删除
+                </button>
+              )}
+            </div>
           ))}
         </div>
       ) : (

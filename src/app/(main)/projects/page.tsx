@@ -16,7 +16,7 @@ export default function ProjectsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-ink">我的项目</h1>
           <p className="mt-2 text-sm text-ink-3">
-            项目会保留 7 天，生成后请尽快下载，过期将自动删除。
+            项目不会自动过期；主动删除的项目会保留 7 天，之后自动彻底清除。
           </p>
         </div>
         <Link

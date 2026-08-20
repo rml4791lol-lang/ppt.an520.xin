@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -307,6 +307,17 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
   const [pages, setPages] = useState<string[]>([""]);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<null | "import" | "paged">(null);
+
+  // 风格卡「使用此风格」链接带 ?style={slug}：进入首页时预选该风格
+  // （slug 优先，兼容 id / name），否则用户点了链接还要手动重选一遍
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("style");
+    if (!value) return;
+    const found = packs.find(
+      (p) => p.slug === value || p.id === value || p.name === value,
+    );
+    if (found) setStyle(found);
+  }, [packs]);
 
   const flash = (msg: string) => {
     setNotice(msg);
