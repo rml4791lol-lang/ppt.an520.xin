@@ -1,7 +1,11 @@
-// 项目列表（整套 deck + 单页项目）。7 天保留文案在 UI 层；删除仅软删。
+// 项目列表（整套 deck + 单页项目）。删除软删；超过保留期后在列表访问时物理清理
+// （行级联删除 + 生成图文件删除；导出文件与 uploads 不动）。
+import path from 'node:path';
+import { rm } from 'node:fs/promises';
 import { ApiError } from '../http';
 import { getGenerationConfig } from './config';
 import { getGenDb, nowMs } from './db';
+import { absPathForRelPath } from './storage';
 import { cleanString } from './types';
 
 type Row = Record<string, string | number | null>;
@@ -74,11 +78,48 @@ function singleProjectToItem(row: Row): ProjectItem {
   };
 }
 
+/**
+ * 物理清理软删超过保留期的项目：删行（FK 级联 slides/pages/versions）+ 删生成图。
+ * deck 图在 generated/{userId}/{deckId}/ 整目录删除；单页图按 version.image_path
+ * 逐个删（共用 single/ 目录）。导出文件与 uploads 不在清理范围。失败只忽略。
+ */
+function purgeExpiredProjects(userId: string): void {
+  const db = getGenDb();
+  const config = getGenerationConfig();
+  const cutoff = nowMs() - config.projectRetentionDays * 24 * 60 * 60 * 1000;
+
+  const deadDecks = db
+    .prepare('SELECT id FROM decks WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?')
+    .all(userId, cutoff) as Array<{ id: string }>;
+  for (const row of deadDecks) {
+    db.prepare('DELETE FROM generation_jobs WHERE deck_id = ?').run(row.id);
+    db.prepare('DELETE FROM decks WHERE id = ?').run(row.id);
+    void rm(path.join(config.generatedDir, userId, row.id), { recursive: true, force: true }).catch(() => {});
+  }
+
+  const deadProjects = db
+    .prepare('SELECT id FROM single_page_projects WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?')
+    .all(userId, cutoff) as Array<{ id: string }>;
+  for (const row of deadProjects) {
+    const files = db
+      .prepare(
+        "SELECT image_path FROM single_page_versions WHERE image_path != '' AND page_id IN (SELECT id FROM single_pages WHERE project_id = ?)",
+      )
+      .all(row.id) as Array<{ image_path: string }>;
+    db.prepare('DELETE FROM single_page_projects WHERE id = ?').run(row.id);
+    for (const file of files) {
+      const absPath = absPathForRelPath(String(file.image_path), config);
+      if (absPath) void rm(absPath, { force: true }).catch(() => {});
+    }
+  }
+}
+
 export function listProjects(
   userId: string,
   query: { projectType?: string; page?: number; pageSize?: number } = {},
 ): ProjectListResult {
   const db = getGenDb();
+  purgeExpiredProjects(userId);
   const type = cleanString(query.projectType, 20);
   const page = Math.max(1, Math.floor(Number(query.page) || 1));
   const pageSize = Math.min(50, Math.max(1, Math.floor(Number(query.pageSize) || 20)));
@@ -137,7 +178,7 @@ export function renameProject(userId: string, id: string, title: string): Projec
   throw new ApiError('PROJECT_NOT_FOUND', '项目不存在或已删除', 404, false);
 }
 
-/** 软删：仅打 deleted_at 标记，数据与文件保留（7 天保留策略的清理在 UI/运维层） */
+/** 软删：仅打 deleted_at 标记；超过保留期后由 listProjects 懒清理物理删除 */
 export function deleteProject(userId: string, id: string): { id: string; projectType: string } {
   const clean = cleanString(id, 80);
   const db = getGenDb();

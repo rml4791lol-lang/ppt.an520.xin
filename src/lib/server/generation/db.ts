@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS single_page_versions (
   image_url TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
   job_id TEXT NOT NULL DEFAULT '',
+  charge_key TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -155,6 +156,11 @@ export function getGenDb(): DatabaseSync {
     if (!colNames.has('upstream_task_id')) db.exec("ALTER TABLE export_jobs ADD COLUMN upstream_task_id TEXT NOT NULL DEFAULT ''");
     if (!colNames.has('charged_credits')) db.exec('ALTER TABLE export_jobs ADD COLUMN charged_credits INTEGER NOT NULL DEFAULT 0');
     if (!colNames.has('updated_at')) db.exec('ALTER TABLE export_jobs ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
+    // 单页版本表补 charge_key（崩溃恢复按它找孤儿扣费；新库 CREATE TABLE 已含）
+    const singleVerCols = db.prepare("SELECT name FROM pragma_table_info('single_page_versions')").all() as Array<{ name: string }>;
+    if (!singleVerCols.some((c) => c.name === 'charge_key')) {
+      db.exec("ALTER TABLE single_page_versions ADD COLUMN charge_key TEXT NOT NULL DEFAULT ''");
+    }
     migrated.add(db);
   }
   return db;

@@ -4,6 +4,7 @@ import { ApiError, validationError } from '../http';
 import { debitCredits, refundCredits } from '../credits';
 import { getGenerationConfig } from './config';
 import { genId, getGenDb, nowMs } from './db';
+import { markSinglePageActive, markSinglePageDone, reconcileSinglePage } from './recovery';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';
 import { buildSlideImagePrompt, resolveStylePack } from './style-packs';
@@ -178,108 +179,114 @@ async function runSinglePageJob(
   const config = deps.config ?? getGenerationConfig();
   const unitPrice = config.singlePageCredits;
   const jobId = genId('job');
-  const chargeKey = `single-page:${page.pageId}:${opts.requestId || jobId}`;
+  // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费
+  const chargeKey = `single-page:${page.pageId}:${opts.requestId || jobId}`.trim().slice(0, 128);
   const refundKey = `${chargeKey}:refund`;
   const prompt = buildPagePrompt(page, opts.refineInstruction);
 
   const versionId = genId('ver');
   const ts = nowMs();
-  getGenDb()
-    .prepare(
-      `INSERT INTO single_page_versions
-        (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?)`,
-    )
-    .run(versionId, page.pageId, opts.kind === 'single-refine' ? 'refine' : 'generate', prompt, jobId, ts, ts);
-  getGenDb()
-    .prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?')
-    .run('running', '', ts, page.pageId);
-
-  let debit;
+  markSinglePageActive(page.pageId);
   try {
-    debit = debitCredits(page.userId, unitPrice, {
-      reason: opts.kind === 'single-refine' ? '单页改图' : '单页生成',
-      idempotencyKey: chargeKey,
-      refType: 'single-page',
-      refId: page.pageId,
-    });
-  } catch (error) {
-    getGenDb().prepare("UPDATE single_page_versions SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
-      'INSUFFICIENT_CREDITS',
-      nowMs(),
-      versionId,
-    );
-    getGenDb().prepare("UPDATE single_pages SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
-      'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试',
-      nowMs(),
-      page.pageId,
-    );
-    throw error;
-  }
-
-  const finish = (status: 'succeeded' | 'failed', imagePath: string, imageUrl: string, errorText: string) => {
     getGenDb()
-      .prepare('UPDATE single_page_versions SET status = ?, image_path = ?, image_url = ?, error = ?, updated_at = ? WHERE id = ?')
-      .run(status, imagePath, imageUrl, errorText, nowMs(), versionId);
+      .prepare(
+        `INSERT INTO single_page_versions
+          (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?, ?)`,
+      )
+      .run(versionId, page.pageId, opts.kind === 'single-refine' ? 'refine' : 'generate', prompt, jobId, chargeKey, ts, ts);
     getGenDb()
-      .prepare('UPDATE single_pages SET status = ?, error = ?, active_version_id = ?, updated_at = ? WHERE id = ?')
-      .run(status, errorText, status === 'succeeded' ? versionId : page.activeVersionId, nowMs(), page.pageId);
-  };
+      .prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?')
+      .run('running', '', ts, page.pageId);
 
-  try {
-    let image: Buffer;
-    if (opts.kind === 'single-refine') {
-      const current = page.activeVersionId
-        ? getGenDb().prepare('SELECT image_path FROM single_page_versions WHERE id = ?').get(page.activeVersionId)
-        : null;
-      const source = current ? await readSiteFile(String(current.image_path || ''), config) : null;
-      if (!source) throw new Error('原图不存在，无法改图');
-      image = await editImage({ image: source, instruction: opts.refineInstruction || '' }, deps);
-    } else if (opts.sourceImagePath) {
-      // i2i 原稿重设计：以上传图为底，按风格化 prompt 全面重绘
-      const source = await readSiteFile(opts.sourceImagePath, config);
-      if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
-      image = await editImage(
-        { image: source, instruction: `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。` },
-        deps,
-      );
-    } else {
-      image = await generateImage({ prompt }, deps);
-    }
-    const saved = await saveFile('generated', page.userId, image, { kind: 'single', ext: '.png', id: versionId }, config);
-    finish('succeeded', saved.relPath, saved.url, '');
-    return {
-      page: getOwnedPage(page.userId, page.pageId),
-      versionId,
-      jobId,
-      imageUrl: saved.url,
-      status: 'succeeded',
-      error: '',
-      balance: debit.balance,
-    };
-  } catch (error) {
-    const publicError = toPublicImageError(error);
-    const errorText = `${publicError.code}: ${publicError.message}`;
-    finish('failed', '', '', errorText);
+    let debit;
     try {
-      refundCredits(page.userId, unitPrice, {
-        reason: '单页生成失败退回',
-        idempotencyKey: refundKey,
+      debit = debitCredits(page.userId, unitPrice, {
+        reason: opts.kind === 'single-refine' ? '单页改图' : '单页生成',
+        idempotencyKey: chargeKey,
         refType: 'single-page',
         refId: page.pageId,
       });
-    } catch (refundError) {
-      console.error('[anppt-v2][single-page] refund failed:', refundError);
+    } catch (error) {
+      getGenDb().prepare("UPDATE single_page_versions SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
+        'INSUFFICIENT_CREDITS',
+        nowMs(),
+        versionId,
+      );
+      getGenDb().prepare("UPDATE single_pages SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
+        'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试',
+        nowMs(),
+        page.pageId,
+      );
+      throw error;
     }
-    return {
-      page: getOwnedPage(page.userId, page.pageId),
-      versionId,
-      jobId,
-      imageUrl: '',
-      status: 'failed',
-      error: errorText,
-      balance: debit.balance,
+
+    const finish = (status: 'succeeded' | 'failed', imagePath: string, imageUrl: string, errorText: string) => {
+      getGenDb()
+        .prepare('UPDATE single_page_versions SET status = ?, image_path = ?, image_url = ?, error = ?, updated_at = ? WHERE id = ?')
+        .run(status, imagePath, imageUrl, errorText, nowMs(), versionId);
+      getGenDb()
+        .prepare('UPDATE single_pages SET status = ?, error = ?, active_version_id = ?, updated_at = ? WHERE id = ?')
+        .run(status, errorText, status === 'succeeded' ? versionId : page.activeVersionId, nowMs(), page.pageId);
     };
+
+    try {
+      let image: Buffer;
+      if (opts.kind === 'single-refine') {
+        const current = page.activeVersionId
+          ? getGenDb().prepare('SELECT image_path FROM single_page_versions WHERE id = ?').get(page.activeVersionId)
+          : null;
+        const source = current ? await readSiteFile(String(current.image_path || ''), config) : null;
+        if (!source) throw new Error('原图不存在，无法改图');
+        image = await editImage({ image: source, instruction: opts.refineInstruction || '' }, deps);
+      } else if (opts.sourceImagePath) {
+        // i2i 原稿重设计：以上传图为底，按风格化 prompt 全面重绘
+        const source = await readSiteFile(opts.sourceImagePath, config);
+        if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
+        image = await editImage(
+          { image: source, instruction: `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。` },
+          deps,
+        );
+      } else {
+        image = await generateImage({ prompt }, deps);
+      }
+      const saved = await saveFile('generated', page.userId, image, { kind: 'single', ext: '.png', id: versionId }, config);
+      finish('succeeded', saved.relPath, saved.url, '');
+      return {
+        page: getOwnedPage(page.userId, page.pageId),
+        versionId,
+        jobId,
+        imageUrl: saved.url,
+        status: 'succeeded',
+        error: '',
+        balance: debit.balance,
+      };
+    } catch (error) {
+      const publicError = toPublicImageError(error);
+      const errorText = `${publicError.code}: ${publicError.message}`;
+      finish('failed', '', '', errorText);
+      try {
+        refundCredits(page.userId, unitPrice, {
+          reason: '单页生成失败退回',
+          idempotencyKey: refundKey,
+          refType: 'single-page',
+          refId: page.pageId,
+        });
+      } catch (refundError) {
+        console.error('[anppt-v2][single-page] refund failed:', refundError);
+      }
+      return {
+        page: getOwnedPage(page.userId, page.pageId),
+        versionId,
+        jobId,
+        imageUrl: '',
+        status: 'failed',
+        error: errorText,
+        balance: debit.balance,
+      };
+    }
+  } finally {
+    markSinglePageDone(page.pageId);
   }
 }
 
@@ -290,6 +297,8 @@ export async function generateSinglePage(
 ): Promise<SingleRunResult> {
   const content = cleanString(input.content, 8000);
   if (!content) throw validationError('页面内容不能为空');
+  // 先收敛历史中断（否则卡 running 的页会永远 409），upsertPage 内部再做运行中检查
+  reconcileSinglePage(userId, cleanPageId(input.pageId));
   const page = upsertPage(userId, { ...input, pageId: cleanPageId(input.pageId), content });
   const sourceImagePath = input.imagePath ? assertOwnedUpload(userId, input.imagePath) : undefined;
   return runSinglePageJob(page, { kind: 'single-generate', sourceImagePath, requestId: input.requestId }, deps);
@@ -300,6 +309,7 @@ export async function refineSinglePage(
   input: { pageId: string; editInstruction: string; requestId?: string },
   deps: SinglePageDeps = {},
 ): Promise<SingleRunResult> {
+  reconcileSinglePage(userId, cleanPageId(input.pageId));
   const page = getOwnedPage(userId, input.pageId);
   const editInstruction = cleanString(input.editInstruction, 1000);
   if (!editInstruction) throw validationError('缺少 editInstruction');
@@ -354,13 +364,16 @@ export function listPageVersions(pageId: string): SinglePageVersionView[] {
   }));
 }
 
-/** 单页项目详情（?projectId= 恢复历史页 + 版本列表） */
+/** 单页项目详情（?projectId= 恢复历史页 + 版本列表）；读取时顺带懒恢复中断页 */
 export function getSingleProjectDetail(userId: string, projectId: string) {
   const db = getGenDb();
   const project = db
     .prepare('SELECT * FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
     .get(cleanString(projectId, 80), userId) as Row | undefined;
   if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
+  for (const page of listSingleProjectPages(userId, String(project.id))) {
+    reconcileSinglePage(userId, page.pageId);
+  }
   const pages = listSingleProjectPages(userId, String(project.id)).map((page) => ({
     ...page,
     versions: listPageVersions(page.pageId),

@@ -28,6 +28,8 @@ export interface GenerationConfig {
   imageTimeoutMs: number;
   /** 逐页生图并发上限 */
   generateConcurrency: number;
+  /** 生成 job 心跳卡死判定阈值：超过即视为进程中断，懒恢复可收敛（默认生图超时+2min，下限 5min） */
+  jobStaleMs: number;
   /** Codia 开放 API（图片版 PPT 转可编辑 PPTX 上游） */
   codiaApiKey: string;
   codiaBaseUrl: string;
@@ -53,6 +55,7 @@ function stripTrailingSlash(value: string): string {
 
 export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): GenerationConfig {
   const dataDir = trim(env.ANPPT_V2_DATA_DIR) || path.resolve(process.cwd(), 'data');
+  const imageTimeoutMs = intFrom(env.ANPPT_V2_IMAGE_TIMEOUT_MS, 300_000);
   return {
     dataDir,
     uploadsDir: trim(env.ANPPT_V2_UPLOADS_DIR) || path.join(dataDir, 'uploads'),
@@ -69,8 +72,9 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     imageApiKey: trim(env.ANPPT_V2_IMAGE_API_KEY),
     imageModel: trim(env.ANPPT_V2_IMAGE_MODEL) || 'gpt-image-2',
     imageSize: trim(env.ANPPT_V2_IMAGE_SIZE) || '1536x864',
-    imageTimeoutMs: intFrom(env.ANPPT_V2_IMAGE_TIMEOUT_MS, 300_000),
+    imageTimeoutMs,
     generateConcurrency: Math.min(8, intFrom(env.ANPPT_V2_GENERATE_CONCURRENCY, 3)),
+    jobStaleMs: intFrom(env.ANPPT_V2_JOB_STALE_MS, Math.max(5 * 60_000, imageTimeoutMs + 120_000)),
     codiaApiKey: trim(env.ANPPT_V2_CODIA_API_KEY),
     codiaBaseUrl: stripTrailingSlash(trim(env.ANPPT_V2_CODIA_BASE_URL) || 'https://openapi.codia.ai'),
     singlePageCredits: intFrom(env.ANPPT_V2_SINGLE_PAGE_CREDITS, 10),

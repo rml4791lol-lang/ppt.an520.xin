@@ -127,11 +127,11 @@ export async function readResolvedFile(absPath: string): Promise<{ data: Buffer;
   return { data, size: info.size };
 }
 
-/** 读取站内文件（/api/files/... 或裸相对路径）为 Buffer；不存在返回 null */
-export async function readSiteFile(
+/** 相对路径（/api/files/URL 或裸 rel）→ 安全绝对路径；不合法返回 null（不读盘） */
+export function absPathForRelPath(
   relPathOrUrl: string,
   config: GenerationConfig = getGenerationConfig(),
-): Promise<Buffer | null> {
+): string | null {
   const rel = String(relPathOrUrl || '').replace(/^\/api\/files\//, '').replace(/^\/+/, '');
   const segments = rel.split('/').filter(Boolean);
   if (segments.length < 2) return null;
@@ -139,7 +139,16 @@ export async function readSiteFile(
   if (!(FILE_ROOTS as readonly string[]).includes(root)) return null;
   const base = path.resolve(rootDir(root, config));
   const absPath = path.resolve(base, ...segments.slice(1));
-  if (!absPath.startsWith(base + path.sep)) return null;
+  return absPath.startsWith(base + path.sep) ? absPath : null;
+}
+
+/** 读取站内文件（/api/files/... 或裸相对路径）为 Buffer；不存在返回 null */
+export async function readSiteFile(
+  relPathOrUrl: string,
+  config: GenerationConfig = getGenerationConfig(),
+): Promise<Buffer | null> {
+  const absPath = absPathForRelPath(relPathOrUrl, config);
+  if (!absPath) return null;
   try {
     return await readFile(absPath);
   } catch {

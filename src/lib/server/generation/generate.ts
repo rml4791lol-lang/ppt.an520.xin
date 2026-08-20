@@ -20,6 +20,7 @@ import {
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';
 import { buildSlideImagePrompt, loadStyleReferenceDataUrl, resolveStylePack, type DeckContext } from './style-packs';
+import { markJobActive, markJobDone, reconcileDeckGeneration } from './recovery';
 import { extractCopyFromDsl } from './dsl';
 import { cleanString, type JobKind } from './types';
 
@@ -197,7 +198,9 @@ export async function startDeckGeneration(
   deps: GenerateDeps = {},
 ): Promise<StartedJob> {
   const config = deps.config ?? getGenerationConfig();
-  const deck = getOwnedDeck(userId, deckId);
+  let deck = getOwnedDeck(userId, deckId);
+  // 先收敛历史中断（重启死锁/孤儿扣费），否则卡死的 generating 会永远 409
+  if (reconcileDeckGeneration(deck)) deck = getOwnedDeck(userId, deckId);
   assertGeneratable(deck);
   const allSlides = listSlides(deck.id);
   if (allSlides.length === 0) throw new ApiError('NO_SLIDES', '大纲为空，请先生成大纲', 400, false);
@@ -243,6 +246,7 @@ export async function startDeckGeneration(
   updateJob(job.jobId, { status: 'running' });
 
   const done = (async () => {
+    markJobActive(job.jobId);
     let succeeded = 0;
     let failed = 0;
     // 逐页并发，上限 config.generateConcurrency（默认 3）
@@ -257,6 +261,8 @@ export async function startDeckGeneration(
         }, deps);
         if (result === 'succeeded') succeeded += 1;
         else failed += 1;
+        // 心跳：每页完成即刷新 job.updated_at，供崩溃恢复区分「在跑」与「已死」
+        updateJob(job.jobId, {});
       }
     };
     const workers = Array.from({ length: Math.min(config.generateConcurrency, targets.length) }, () => worker());
@@ -272,10 +278,14 @@ export async function startDeckGeneration(
       error: '',
     });
   })().catch((error) => {
-    // 管线级异常（非页面级）：job 标记失败，页面保持 queued/running 由 retry-failed 恢复
+    // 管线级异常（非页面级）：job 置终态后走统一恢复——卡 queued/running 的页
+    // 收敛为 failed、孤儿扣费补退款、deck 状态收敛（见 recovery.ts）
     console.error('[anppt-v2][generation] pipeline crashed:', error);
+    markJobDone(job.jobId);
     updateJob(job.jobId, { status: 'failed', error: '生成管线异常中断，请重试失败页' });
-    touchDeck(deck.id, { status: 'partial' });
+    reconcileDeckGeneration(getOwnedDeck(deck.userId, deck.id));
+  }).finally(() => {
+    markJobDone(job.jobId);
   });
 
   return { jobId: job.jobId, status: 'running', total: targets.length, done };

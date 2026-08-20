@@ -924,6 +924,119 @@ console.log('\n[8] 项目列表 / 改名 / 软删');
   })());
 }
 
+console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退）');
+{
+  const recovery = await import('../src/lib/server/generation/recovery.ts');
+  const reg2 = await auth.registerWithPassword(
+    { account: 'recoveryuser', password: 'password123', confirmPassword: 'password123' },
+    '127.0.0.1',
+  );
+  const uid2 = reg2.user.id;
+  const okImageFetcher = makeMockFetcher([imageOkHandler, editsOkHandler]);
+  const okDeps2 = { fetchImpl: okImageFetcher, config: imageConfig };
+
+  // --- deck：手工铺「生成中途进程死亡」现场（deck generating + 页 queued + 已扣费无退款）---
+  const d9 = decks.createDeck(uid2, {
+    title: '中断恢复测试', sourceFileName: 'r.txt', sourceText: '2025 年销售额 1200 万元。',
+    durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+  });
+  decks.replaceSlides(d9.id, OUTLINE_FIXTURE);
+  for (const slide of decks.listSlides(d9.id)) {
+    decks.updateSlideStructure(d9.id, slide.slideId, { ok: true, structuredContent: '【标题】t\n【正文】b', warnings: [], errors: [] });
+  }
+  decks.touchDeck(d9.id, { status: 'confirmed', confirmedAt: Date.now() });
+  decks.touchDeck(d9.id, { stylePackId: STYLE_PACKS[0].id });
+
+  const job9 = decks.createJob(uid2, d9.id, 'deck-generate', 2);
+  decks.updateJob(job9.jobId, { status: 'running' });
+  const slides9 = decks.listSlides(d9.id);
+  for (const slide of slides9) {
+    decks.createSlideVersion(slide, { kind: 'generate', prompt: 'p', jobId: job9.jobId });
+    decks.updateSlideGen(d9.id, slide.slideId, { genStatus: 'queued' });
+    credits.debitCredits(uid2, 10, {
+      reason: '生成第 1 页', idempotencyKey: `deck-generate:${d9.id}:${job9.jobId}:${slide.slideId}`, refType: 'deck', refId: d9.id,
+    });
+  }
+  decks.touchDeck(d9.id, { status: 'generating' });
+  check('中断现场：扣费后余额 80', credits.getBalance(uid2) === 80, `实际 ${credits.getBalance(uid2)}`);
+  await expectThrows('未恢复前 generate 永久 409（复现死锁）', () =>
+    actions.dispatchDeckAction(uid2, d9.id, { action: 'generate' }, okDeps2), 'GENERATION_RUNNING');
+
+  // 活跃 job（心跳新鲜）不被误收敛
+  const stateLive = decks.getDeckState(uid2, d9.id);
+  check('活跃生成不被误收敛', stateLive.deck.status === 'generating' && stateLive.slides.every((s) => s.genStatus === 'queued'));
+
+  // 心跳超时（回拨 2h）→ getDeckState 懒恢复
+  const dbMod = await import('../src/lib/server/db.ts');
+  const genDbMod = await import('../src/lib/server/generation/db.ts');
+  const staleTs = Date.now() - 2 * 60 * 60 * 1000;
+  dbMod.getDb().prepare('UPDATE generation_jobs SET updated_at = ? WHERE id = ?').run(staleTs, job9.jobId);
+  const healed = decks.getDeckState(uid2, d9.id);
+  check('恢复：deck 死锁解除（confirmed，无成功页）', healed.deck.status === 'confirmed', `实际 ${healed.deck.status}`);
+  check('恢复：中断页 → failed 可重试', healed.slides.every((s) => s.genStatus === 'failed' && s.genError.length > 0));
+  check('恢复：job 置 failed', decks.latestJob(d9.id).status === 'failed');
+  check('恢复：孤儿扣费按实扣金额补退（余额回 100）', credits.getBalance(uid2) === 100, `实际 ${credits.getBalance(uid2)}`);
+  const refundKeys = dbMod.getDb()
+    .prepare('SELECT idempotency_key FROM credit_ledger WHERE user_id = ? AND delta > 0').all(uid2)
+    .map((r) => String(r.idempotency_key));
+  check('恢复：refund 键与正常失败退款同格式',
+    slides9.every((s) => refundKeys.includes(`deck-generate:${d9.id}:${job9.jobId}:${s.slideId}:refund`)));
+  const againHealed = decks.getDeckState(uid2, d9.id);
+  check('恢复幂等：重复读不重复退款', credits.getBalance(uid2) === 100 && againHealed.deck.status === 'confirmed');
+
+  const retry9 = await actions.dispatchDeckAction(uid2, d9.id, { action: 'retry-failed' }, okDeps2);
+  await retry9.job.done;
+  const state9 = decks.getDeckState(uid2, d9.id);
+  check('恢复后 retry-failed 全部成功 → generated', state9.deck.status === 'generated' && state9.slides.every((s) => s.genStatus === 'succeeded'));
+  check('恢复后重生成净扣 2×10', credits.getBalance(uid2) === 80, `实际 ${credits.getBalance(uid2)}`);
+
+  // --- 单页：模拟中断（页 running + 在途 version + 已扣费）---
+  const sp = await singlePages.generateSinglePage(uid2, { pageId: 'pg-r1', content: '恢复测试页' }, okDeps2);
+  check('单页先成功一次（余额 70）', sp.status === 'succeeded' && credits.getBalance(uid2) === 70, `实际 ${credits.getBalance(uid2)}`);
+  const manualKey = 'single-page:pg-r1:job_manualcrash';
+  genDbMod.getGenDb().prepare(
+    "INSERT INTO single_page_versions (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at) VALUES (?, 'pg-r1', 'generate', 'p', 'queued', '', '', '', 'job_manualcrash', ?, ?, ?)",
+  ).run('ver_crash', manualKey, staleTs, staleTs);
+  genDbMod.getGenDb().prepare("UPDATE single_pages SET status = 'running' WHERE id = 'pg-r1'").run();
+  credits.debitCredits(uid2, 10, { reason: '单页生成', idempotencyKey: manualKey, refType: 'single-page', refId: 'pg-r1' });
+  check('单页中断现场：余额 60', credits.getBalance(uid2) === 60, `实际 ${credits.getBalance(uid2)}`);
+  check('单页恢复：reconcileSinglePage 收敛', recovery.reconcileSinglePage(uid2, 'pg-r1') === true);
+  const pageAfter = singlePages.getOwnedPage(uid2, 'pg-r1');
+  check('单页恢复：页 → failed', pageAfter.status === 'failed');
+  check('单页恢复：孤儿扣费补退（余额回 70）', credits.getBalance(uid2) === 70, `实际 ${credits.getBalance(uid2)}`);
+  const spAgain = await singlePages.generateSinglePage(uid2, { pageId: 'pg-r1', content: '恢复后重新生成' }, okDeps2);
+  check('单页恢复：重新生成不再 409 且成功', spAgain.status === 'succeeded');
+
+  // --- 物理清理：软删超期 → 行 + 生成图删除；账本永久保留 ---
+  const ledgerBeforePurge = dbMod.getDb()
+    .prepare('SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ?').all(uid2)[0].c;
+  check('有账本记录（验证清理不删账的前置）', ledgerBeforePurge > 0);
+
+  projects.deleteProject(uid2, d9.id);
+  dbMod.getDb().prepare('UPDATE decks SET deleted_at = ? WHERE id = ?').run(Date.now() - 8 * 86400e3, d9.id);
+  const spProjectId = spAgain.page.projectId;
+  const spImagePath = genDbMod.getGenDb()
+    .prepare('SELECT image_path FROM single_page_versions WHERE id = ?').all(spAgain.versionId)[0]?.image_path;
+  projects.deleteProject(uid2, spProjectId);
+  dbMod.getDb().prepare('UPDATE single_page_projects SET deleted_at = ? WHERE id = ?').run(Date.now() - 8 * 86400e3, spProjectId);
+  projects.listProjects(uid2, {});
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const deckGone = dbMod.getDb().prepare('SELECT COUNT(*) AS c FROM decks WHERE id = ?').all(d9.id)[0].c === 0;
+  const slidesGone = dbMod.getDb().prepare('SELECT COUNT(*) AS c FROM deck_slides WHERE deck_id = ?').all(d9.id)[0].c === 0;
+  check('清理：超期软删 deck 行 + slides 级联删除', deckGone && slidesGone);
+  check('清理：deck 生成图目录删除', !existsSync(path.join(baseConfig.generatedDir, uid2, d9.id)));
+  const singleGone = dbMod.getDb().prepare('SELECT COUNT(*) AS c FROM single_page_projects WHERE id = ?').all(spProjectId)[0].c === 0;
+  check('清理：超期软删单页项目行删除', singleGone);
+  const spImageAbs = spImagePath
+    ? path.join(baseConfig.generatedDir, String(spImagePath).split('/').slice(1).join('/'))
+    : null;
+  check('清理：单页版本图文件删除', spImageAbs === null || !existsSync(spImageAbs));
+  const ledgerAfterPurge = dbMod.getDb().prepare('SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ?').all(uid2)[0].c;
+  check('清理：账本永不删除', ledgerAfterPurge === ledgerBeforePurge);
+  const recent = projects.listProjects(uid2, {});
+  check('清理后列表正常返回', Array.isArray(recent.items));
+}
+
 console.log(`\n结果：${passed} 通过 / ${failed} 失败`);
 if (failed > 0) {
   console.log('失败项：\n - ' + failures.join('\n - '));
