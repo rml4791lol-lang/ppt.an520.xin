@@ -322,6 +322,33 @@ console.log('\n[3] outline：引擎成功 + LLM 兜底两路');
   );
   check('无 token 走 llm-fallback 且解析出大纲', viaLlm.provider === 'llm-fallback' && viaLlm.slides.length === 2);
 
+  // 兜底路径失败口径：统一 ENGINE_UNAVAILABLE 503 可重试（不裸 500）
+  const capture = async (fetcher) => {
+    try {
+      await engine.generateOutline({ sourceText: 'x', targetPageCount: 2 }, { fetchImpl: fetcher, config: llmConfig });
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+  const err502 = await capture(makeMockFetcher([
+    { match: '/chat/completions', payload: new Response('gateway garbage', { status: 502 }) },
+  ]));
+  check('LLM 兜底上游 502 → ENGINE_UNAVAILABLE 503 可重试',
+    err502?.code === 'ENGINE_UNAVAILABLE' && err502?.status === 503 && err502?.retryable === true,
+    `实际 ${err502?.code}/${err502?.status}`);
+  const errBadJson = await capture(makeMockFetcher([
+    { match: '/chat/completions', payload: { choices: [{ message: { content: '抱歉我无法输出 JSON' } }] } },
+  ]));
+  check('LLM 兜底返回非 JSON → ENGINE_UNAVAILABLE 503 可重试',
+    errBadJson?.code === 'ENGINE_UNAVAILABLE' && errBadJson?.status === 503 && errBadJson?.retryable === true,
+    `实际 ${errBadJson?.code}/${errBadJson?.status}`);
+  const errEmpty = await capture(makeMockFetcher([
+    { match: '/chat/completions', payload: { choices: [{ message: { content: '"不是数组"' } }] } },
+  ]));
+  check('兜底空大纲仍走 OUTLINE_FAILED 502（engineFailure 不吞业务错）',
+    errEmpty?.code === 'OUTLINE_FAILED' && errEmpty?.status === 502, `实际 ${errEmpty?.code}/${errEmpty?.status}`);
+
   const downThenLlm = makeMockFetcher([
     { match: '/internal/ppt/outline', payload: new Response('boom', { status: 502 }) },
     {

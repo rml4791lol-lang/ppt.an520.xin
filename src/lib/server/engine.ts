@@ -224,16 +224,22 @@ export async function generateOutline(input: OutlineInput, deps: EngineDeps = {}
     '原始文档全文：',
     input.sourceText,
   ].join('\n');
-  const text = await chatCompletion(
-    [
-      { role: 'system', content: OUTLINE_SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt },
-    ],
-    deps,
-  );
-  const slides = normalizeOutlineList(extractJson(text));
-  if (slides.length === 0) throw new ApiError('OUTLINE_FAILED', '大纲生成失败，请重试', 502, true);
-  return { slides, provider: 'llm-fallback' };
+  // 兜底路径同样走 engineFailure 统一错误口径：超时/非 JSON/未配置等
+  // EngineUnavailableError 转成 ENGINE_UNAVAILABLE 503 可重试，而不是裸 500 逃逸
+  try {
+    const text = await chatCompletion(
+      [
+        { role: 'system', content: OUTLINE_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      deps,
+    );
+    const slides = normalizeOutlineList(extractJson(text));
+    if (slides.length === 0) throw new ApiError('OUTLINE_FAILED', '大纲生成失败，请重试', 502, true);
+    return { slides, provider: 'llm-fallback' };
+  } catch (error) {
+    throw engineFailure(error);
+  }
 }
 
 export interface StructuredPageResult {

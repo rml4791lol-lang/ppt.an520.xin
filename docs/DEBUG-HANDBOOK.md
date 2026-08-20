@@ -68,7 +68,7 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node --experimental-strip-types scripts/test-generation.mjs  # 154 断言（含 [6b] Codia 全链 mock、[9] 崩溃恢复/清理）
+node --experimental-strip-types scripts/test-generation.mjs  # 157 断言（含 [6b] Codia 全链 mock、[9] 崩溃恢复/清理）
 node --experimental-strip-types scripts/test-backend.mjs     # 54 断言
 ./node_modules/.bin/tsc --noEmit
 npm run build
@@ -86,7 +86,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 ## 10. 已知未修（勿重复排查）
 
-- **大纲 LLM 兜底超时以 500 逃逸**：`engine.ts` `generateOutline` 的 LLM 兜底路径未包 `engineFailure()`，120s 超时（"This operation was aborted"）以 `INTERNAL_ERROR` 500 返回给用户（2026-08-19 22:22 实际发生过）。属大纲链路 = 契约冻结，待大纲会话处理。
+- **大纲错误口径已统一（2026-08-20 修）**：`engine.ts` `generateOutline` 兜底路径已包 `engineFailure()`——超时/非 JSON/未配置统一 `ENGINE_UNAVAILABLE` 503 可重试；空大纲保持 `OUTLINE_FAILED` 502。线上生效需部署。
 - 磁盘 78%（非 AnPPT 数据，53M）；导出文件（exports/）无清理机制，量大后需运维处理。
 - 注册仅需用户名+密码即送 100🌟，可换 IP 刷号薅生图成本（产品决策）。
 
