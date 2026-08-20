@@ -112,7 +112,10 @@ export async function createWechatNativeOrder(
 
   const outTradeNo = String(input.outTradeNo || '').trim();
   const amountFen = Math.max(1, Math.floor(Number(input.amountFen || 0)));
-  const description = String(input.description || 'AnPPT 🌟 星星').slice(0, 127);
+  // 微信网关拒收 4 字节 UTF-8（emoji 等），下单描述只保留 BMP 字符
+  const description = String(input.description || 'AnPPT 星星充值')
+    .replace(/[^\u0000-\uFFFF]/g, '')
+    .slice(0, 127) || 'AnPPT 星星充值';
 
   if (config.mock) {
     return {
