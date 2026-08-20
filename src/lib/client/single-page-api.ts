@@ -53,6 +53,20 @@ export function exportSinglePagesImagePptx(input: {
   return apiFetch<SingleExportResult>("/api/single-page/export-image-pptx", { body: input });
 }
 
+export interface SingleEditableExportStart {
+  exportId: string;
+  status: string;
+  credits: number;
+  pageCount: number;
+}
+
+/** 单页项目 → 可编辑 PPTX（20🌟/页，Codia 链）：202 返回任务句柄，轮询 /api/pptx-exports/{id} */
+export function startSingleEditableExport(projectId: string): Promise<SingleEditableExportStart> {
+  return apiFetch<SingleEditableExportStart>("/api/single-page/export-editable-pptx", {
+    body: { projectId },
+  });
+}
+
 export interface ProjectItem {
   id: string;
   projectType: "deck" | "single-page";

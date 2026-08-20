@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-08-20（生成链崩溃恢复 + 备份修复 + 软删清理上线）
+> 最后更新：2026-08-20（单页可编辑导出上线 + 备份纳入数据资产）
 
 ## 1. 系统是什么
 
@@ -17,7 +17,7 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 - 环境变量：`/opt/anppt-v2/shared/.env`（SMTP / epay / 微信 / LLM / IMAGE / ALIYUN_SMS_* / ANPPT_V2_CODIA_API_KEY 等）。**密钥绝不打印进会话/日志/仓库**。
 - DB：`/opt/anppt-v2/shared/data/anppt-v2.db`（env `ANPPT_V2_DB_PATH`）；上传/生成/导出文件在 `/opt/anppt-v2/shared/data/` 下。
 - **每日备份**：root cron `25 3 * * * /usr/local/sbin/anppt-v2-backup.sh`（日志 `/var/log/anppt-v2-backup.log`）。
-  内容 = `VACUUM INTO` 在线备份 DB（WAL 一致，勿用 cp）+ `.env`（600）+ 数据清单，保留 7 天于 `/opt/anppt-v2/backups/daily/`。
+  内容 = `VACUUM INTO` 在线备份 DB（WAL 一致，勿用 cp）+ `.env`（600）+ 数据清单 + `data-assets.tar.gz`（uploads/generated/exports 三目录打包，~50M），保留 7 天于 `/opt/anppt-v2/backups/daily/`。
   ⚠️ 老的 `anppt-daily-backup.sh`（03:15）备份的是 **slideflow 老系统**，与 anppt-v2 无关，别看错。
 - Caddy 反代：`ppt.an520.xin → 127.0.0.1:3100`（Caddyfile 备份 `/etc/caddy/Caddyfile.bak-anppt-20260819-205014`）。
 - 部署：仓库根 `bash deploy/deploy.sh`（本地 build → rsync → 服务器 npm ci → restart → 自检）。**restart 会打断在线用户的在途请求**，部署前知会用户。
@@ -50,25 +50,25 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 
 ## 6. 转可编辑 PPTX（Codia 链，20🌟/页）
 
-- 代码：`src/lib/server/codia.ts`（客户端）、`src/lib/server/exports.ts`（startDeckEditableExport + 管线 + 懒恢复）、路由 `POST /api/deck/[id]/export-editable`（202）、状态 `GET /api/pptx-exports/[id]`。
+- 代码：`src/lib/server/codia.ts`（客户端）、`src/lib/server/exports.ts`（`startDeckEditableExport` / `startSinglePageEditableExport` → 共用 `launchEditableExport` + 管线 + 懒恢复；`readExportSourceImages` 按 ref_type 分发取图）、路由 `POST /api/deck/[id]/export-editable` 与 `POST /api/single-page/export-editable-pptx`（均 202）、状态 `GET /api/pptx-exports/[id]`。
 - 流程：读整套页图 → pdf-lib 打 image-only PDF → Codia 上传（multipart `file`）→ 建任务（`Idempotency-Key: anppt-editable-{exportId}`）→ 4s 轮询 → 下载 ppt_url 落盘。
 - 失败语义：task failed 自动以 `-retry1` 键重建一次（上游对 failed 任务幂等退费，不双扣）；再失败 → 退星 + 行 failed。上游 402（Codia 余额不足）→ 立即退星 + journal 大字告警 `[anppt-v2][codia] ⚠️⚠️`。
 - 懒恢复：pending/processing 的 editable 行在 getExport/listExports 时被现场推进（有 task_id 现场 poll；无 task_id 且创建超 30s 后台重跑整条管线，幂等安全）。**没有硬超时**。
-- 限制：单套 ≤20 页（EXPORT_TOO_MANY_PAGES）；deck 必须 status==='generated'；同 deck 并发转换 409 EXPORT_RUNNING。
+- 限制：单套 ≤20 页（EXPORT_TOO_MANY_PAGES）；deck 必须 status==='generated'；单页项目取全部有 activeVersion 的页；同 ref 并发转换 409 EXPORT_RUNNING。
 - Codia 计费：13 credits/页，提交即扣；用户已订 $49/月档（5500 credits ≈ 423 页/月）。**禁止为测试真实调用 Codia**（测试全 mock）。
 - 官方文档：https://codia.ai/pdf-to-editable-ppt-api 、https://codia.ai/blog/notebooklm-style-pdf-to-editable-pptx-open-api
 
 ## 7. 前端要点
 
 - 工作台：`src/components/deck/deck-workbench.tsx` + `step-*.tsx`（生成 CTA 状态机：生成中禁用「正在生成中…」/部分完成「生成剩余 N 页」/全完成「使用此风格重新生成」）。
-- 转可编辑按钮：`step-generate.tsx`（仅 deck.status==='generated' 可点）→ 确认弹窗 → 4s 轮询 → 成功自动下载。
+- 转可编辑按钮：`step-generate.tsx`（仅 deck.status==='generated' 可点）→ 确认弹窗 → 4s 轮询 → 成功自动下载。单页生成器同款：`single-page-client.tsx` + `sp-panels.tsx` ExportPanel（doneCount×单价确认弹窗 → 轮询 getExportRecord → 自动下载/失败退星提示）。
 - 下载中心：`src/app/(main)/exports/page.tsx`（列表 + 状态 + 再下载，processing 自动刷新）。侧栏有「下载中心」入口。
-- 「图片转可编辑」侧栏入口和单页生成器的可编辑导出仍是占位（未做，属规划外）。
+- 「图片转可编辑」侧栏入口仍是占位（未做，属规划外）。
 
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node --experimental-strip-types scripts/test-generation.mjs  # 157 断言（含 [6b] Codia 全链 mock、[9] 崩溃恢复/清理）
+node --experimental-strip-types scripts/test-generation.mjs  # 172 断言（含 [6b] deck / [6c] 单页 Codia 全链 mock、[9] 崩溃恢复/清理）
 node --experimental-strip-types scripts/test-backend.mjs     # 54 断言
 ./node_modules/.bin/tsc --noEmit
 npm run build

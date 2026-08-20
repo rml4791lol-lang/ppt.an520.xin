@@ -3,7 +3,7 @@
 // 单页生成器右侧面板与画布下方组件（SINGLEPAGE-UI-SPEC §6/§7）。
 // - StylePanel：风格包选择 + 生成版本数 + 生成主按钮
 // - RefineBar / VersionBar：result 画布下方
-// - ExportPanel：导出选项（图片版 PPTX；可编辑版置灰「即将上线」）
+// - ExportPanel：导出选项（图片版 PPTX 免费；可编辑版 Codia 链按页计费）
 import Image from "next/image";
 import { useState } from "react";
 import { CheckIcon, SparklesIcon, WandIcon } from "@/components/icons";
@@ -250,11 +250,17 @@ export function ExportPanel({
   exporting,
   onExportImage,
   onRestyle,
+  editableBusy = false,
+  editableTotal = 0,
+  onExportEditable,
 }: {
   pages: SpPage[];
   exporting: boolean;
   onExportImage: () => void;
   onRestyle: () => void;
+  editableBusy?: boolean;
+  editableTotal?: number;
+  onExportEditable?: () => void;
 }) {
   const doneCount = pages.filter((p) => p.status === "done").length;
   return (
@@ -275,11 +281,12 @@ export function ExportPanel({
         </button>
         <button
           type="button"
-          disabled
-          title="可编辑导出即将上线"
-          className="w-full cursor-not-allowed rounded-full border border-line-strong py-2.5 text-sm text-ink-4"
+          disabled={doneCount === 0 || exporting || editableBusy || !onExportEditable}
+          title={doneCount === 0 ? "还没有已生成的页面，无法转换" : "把页面图转成元素级可编辑 PPTX（20🌟/页）"}
+          onClick={onExportEditable}
+          className="w-full rounded-full border border-line-strong py-2.5 text-sm text-ink-2 transition hover:border-brand-line disabled:cursor-not-allowed disabled:opacity-40"
         >
-          转为可编辑 PPTX · 即将上线
+          {editableBusy ? "转换中…" : `转为可编辑 PPTX · ${editableTotal}🌟`}
         </button>
       </div>
 

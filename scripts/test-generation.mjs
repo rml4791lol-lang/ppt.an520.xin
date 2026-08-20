@@ -867,6 +867,110 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
   }
 }
 
+console.log('\n[6c] 单页可编辑导出（Codia 链全 mock，零真实调用）');
+{
+  const codiaDeps = (fetchImpl) => ({ fetchImpl, config: baseConfig, pollIntervalMs: 1 });
+  const genDb = (await import('../src/lib/server/generation/db.ts')).getGenDb();
+  const imgFetcher6c = makeMockFetcher([{ match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
+  const imgDeps6c = { fetchImpl: imgFetcher6c, config: imageConfig };
+
+  // 造一个 2 页全成功的单页项目
+  const sp1 = await singlePages.generateSinglePage(uid, { pageId: 'sp-ed-1', title: 'S1', content: '单页可编辑第一页' }, imgDeps6c);
+  const sp2 = await singlePages.generateSinglePage(uid, { pageId: 'sp-ed-2', title: 'S2', content: '单页可编辑第二页', projectId: sp1.page.projectId }, imgDeps6c);
+  const spProject = sp1.page.projectId;
+  check('单页项目 2 页均成功且同项目', sp1.status === 'succeeded' && sp2.status === 'succeeded' && sp2.page.projectId === spProject);
+  credits.refundCredits(uid, 100, { reason: '测试补贴', idempotencyKey: 'test-topup-6c' });
+
+  // ---- 成功链：读单页图 → PDF → 上传 → 建任务 → poll → 落盘 ----
+  {
+    let pollN = 0;
+    const createInits = [];
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/', payload: () => ((pollN += 1) === 1
+          ? { code: 0, message: 'ok', data: { status: 'pending' } }
+          : { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/sp1.pptx', page_count: 2 } } }) },
+      { match: '/v2/open/tasks', payload: (init) => {
+          createInits.push(init);
+          return { code: 0, message: 'ok', data: { task_id: 'task_sp1', status: 'pending' } };
+        } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_sp' } } },
+      { match: 'sp1.pptx', payload: new Response(Buffer.from('mock-sp-pptx-binary')) },
+    ]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
+    check('单页可编辑发起：processing + 40🌟（20×2页）',
+      started.status === 'processing' && started.credits === 40 && started.pageCount === 2);
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('单页转换成功落盘', exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/'), `实际 ${exp.status} ${exp.error || ''}`);
+    check('净扣 40🌟', before - credits.getBalance(uid) === 40, `before=${before} after=${credits.getBalance(uid)}`);
+    const row = genDb.prepare('SELECT ref_type, ref_id FROM export_jobs WHERE id = ?').get(started.exportId);
+    check('export_jobs 行 ref_type=single-page', row?.ref_type === 'single-page' && row?.ref_id === spProject);
+    const createBody = JSON.parse(createInits[0].body);
+    check('建任务 page_no [0,1] + 幂等键', JSON.stringify(createBody.input.page_no) === '[0,1]'
+      && createInits[0].headers['Idempotency-Key'] === `anppt-editable-${started.exportId}`);
+  }
+
+  // ---- 两次 failed → 退星 + failed ----
+  {
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/', payload: { code: 0, message: 'ok', data: { status: 'failed', error: 'mock 持续失败' } } },
+      { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_spf', status: 'pending' } } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_spf' } } },
+    ]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('单页两次失败 → failed + 全额退星', exp.status === 'failed' && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
+    check('refund 键唯一', Number(genDb.prepare('SELECT COUNT(*) AS c FROM credit_ledger WHERE idempotency_key = ?')
+      .get(`export-editable:${spProject}:${started.exportId}:refund`)?.c || 0) === 1);
+  }
+
+  // ---- 余额不足 402：先校验再建行，不产生 export 行 ----
+  {
+    const poorE = await auth.registerWithPassword(
+      { account: 'sppoor', password: 'password123', confirmPassword: 'password123' },
+      '127.0.0.1',
+    );
+    const g = await singlePages.generateSinglePage(poorE.user.id, { pageId: 'sp-poor-1', content: '穷人单页' }, imgDeps6c);
+    check('穷人单页生成成功', g.status === 'succeeded');
+    credits.debitCredits(poorE.user.id, 75, { reason: '测试花掉', idempotencyKey: 'test-drain-6c' });
+    // 100（注册） - 10（生成 1 页） - 75 = 15 < 20（可编辑需 20×1）
+    await expectThrows('余额 15 < 20 → 402 INSUFFICIENT_CREDITS', () =>
+      exportsLib.startSinglePageEditableExport(poorE.user.id, g.page.projectId, codiaDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
+    const rows = Number(genDb.prepare("SELECT COUNT(*) AS c FROM export_jobs WHERE ref_id = ? AND kind = 'editable'").get(g.page.projectId)?.c || 0);
+    check('402 后不产生 export 行', rows === 0, `实际 ${rows}`);
+  }
+
+  // ---- 并发：processing 中再次 start → 409 EXPORT_RUNNING ----
+  {
+    let release = false;
+    const fetcher = makeMockFetcher([
+      { match: '/v2/open/tasks/', payload: () => (release
+          ? { code: 0, message: 'ok', data: { status: 'failed', error: 'mock 收尾失败' } }
+          : { code: 0, message: 'ok', data: { status: 'pending' } }) },
+      { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_spc', status: 'pending' } } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_spc' } } },
+    ]);
+    const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
+    await expectThrows('processing 中再次 start → 409 EXPORT_RUNNING', () =>
+      exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher)), 'EXPORT_RUNNING');
+    release = true;
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('收尾：并发用例终态 failed + 已退星', exp.status === 'failed');
+  }
+
+  // ---- 越权/不存在 ----
+  {
+    await expectThrows('他人单页项目 404', () =>
+      exportsLib.startSinglePageEditableExport('other-user', spProject, codiaDeps(makeMockFetcher([]))), 'PROJECT_NOT_FOUND');
+    await expectThrows('不存在项目 404', () =>
+      exportsLib.startSinglePageEditableExport(uid, 'proj_nope', codiaDeps(makeMockFetcher([]))), 'PROJECT_NOT_FOUND');
+  }
+}
+
 console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
 {
   const okFetcher = makeMockFetcher([{ match: '/images/generations', payload: (init) => {

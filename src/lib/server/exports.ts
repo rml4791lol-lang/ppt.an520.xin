@@ -228,14 +228,24 @@ async function buildImagePdf(images: Buffer[]): Promise<Buffer> {
   return Buffer.from(await pdf.save());
 }
 
-/** 读整套页图（activeVersionId → slide_versions.image_path），缺图即抛错 */
-async function readDeckPageImages(deckId: string, config: GenerationConfig): Promise<Buffer[]> {
+/** 读导出源页图：deck 走 slide_versions、single-page 走 single_page_versions，缺图即抛错 */
+async function readExportSourceImages(row: ExportRow, config: GenerationConfig): Promise<Buffer[]> {
+  if (String(row.ref_type) === 'single-page') {
+    const pages = listSingleProjectPages(String(row.user_id), String(row.ref_id)).filter((page) => page.activeVersionId);
+    const images: Buffer[] = [];
+    for (const page of pages) {
+      const image = await readSiteFile(getActiveVersionImagePath(page), config);
+      if (!image) throw new Error(`页面「${page.title}」图片文件缺失`);
+      images.push(image);
+    }
+    return images;
+  }
   const images: Buffer[] = [];
-  for (const slide of listSlides(deckId)) {
-    const row = slide.activeVersionId
+  for (const slide of listSlides(String(row.ref_id))) {
+    const versionRow = slide.activeVersionId
       ? getGenDb().prepare('SELECT image_path FROM slide_versions WHERE id = ?').get(slide.activeVersionId)
       : null;
-    const image = row ? await readSiteFile(String(row.image_path || ''), config) : null;
+    const image = versionRow ? await readSiteFile(String(versionRow.image_path || ''), config) : null;
     if (!image) throw new Error(`第 ${slide.pageIndex + 1} 页图片文件缺失`);
     images.push(image);
   }
@@ -250,7 +260,7 @@ function refundEditableCharge(row: ExportRow): void {
     refundCredits(String(row.user_id), charged, {
       reason: '可编辑导出失败退回',
       idempotencyKey: `export-editable:${row.ref_id}:${row.id}:refund`,
-      refType: 'deck',
+      refType: String(row.ref_type || 'deck'),
       refId: String(row.ref_id),
     });
   } catch (error) {
@@ -298,7 +308,7 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
   const config = deps.config ?? getGenerationConfig();
   const exportId = String(row.id);
   try {
-    const images = await readDeckPageImages(String(row.ref_id), config);
+    const images = await readExportSourceImages(row, config);
     const pdf = await buildImagePdf(images);
     const { uploadId } = await uploadPdf(pdf, `${exportId}.pdf`, deps);
     const pageNo = images.map((_, index) => index);
@@ -366,23 +376,34 @@ export async function startDeckEditableExport(
       false,
     );
   }
+  return launchEditableExport(userId, 'deck', deck.id, slides.length, deps);
+}
+
+/** 建行 + 扣费 + 启动后台管线（deck / single-page 共用）。余额不足 402 不建行不扣费。 */
+function launchEditableExport(
+  userId: string,
+  refType: 'deck' | 'single-page',
+  refId: string,
+  pageCount: number,
+  deps: EditableExportDeps,
+): StartedEditableExport {
   const running = getGenDb()
     .prepare(
       `SELECT id FROM export_jobs
-       WHERE user_id = ? AND ref_type = 'deck' AND ref_id = ? AND kind = 'editable' AND status IN ('pending', 'processing')
+       WHERE user_id = ? AND ref_type = ? AND ref_id = ? AND kind = 'editable' AND status IN ('pending', 'processing')
        LIMIT 1`,
     )
-    .get(userId, deck.id);
+    .get(userId, refType, refId);
   if (running) {
     throw new ApiError('EXPORT_RUNNING', '该项目的可编辑转换正在进行中，完成后可再次发起', 409, true);
   }
-  // 整单估价 + 余额校验：不足 402，不建行不扣费
-  const estimate = estimateCredits({ action: 'export_editable', pages: slides.length });
+  // 整单估价 + 余额校验
+  const estimate = estimateCredits({ action: 'export_editable', pages: pageCount });
   const balance = getBalance(userId);
   if (balance < estimate.credits) {
     throw new ApiError(
       'INSUFFICIENT_CREDITS',
-      `🌟 星星不足：本次需 ${estimate.credits}（${estimate.unitPrice}/页 × ${slides.length} 页），当前余额 ${balance}`,
+      `🌟 星星不足：本次需 ${estimate.credits}（${estimate.unitPrice}/页 × ${pageCount} 页），当前余额 ${balance}`,
       402,
       false,
     );
@@ -394,15 +415,15 @@ export async function startDeckEditableExport(
     .prepare(
       `INSERT INTO export_jobs
         (id, user_id, ref_type, ref_id, kind, status, page_count, file_path, file_url, error, upstream_task_id, charged_credits, created_at, updated_at)
-       VALUES (?, ?, 'deck', ?, 'editable', 'pending', ?, '', '', '', '', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, 'editable', 'pending', ?, '', '', '', '', ?, ?, ?)`,
     )
-    .run(exportId, userId, deck.id, slides.length, estimate.credits, now, now);
+    .run(exportId, userId, refType, refId, pageCount, estimate.credits, now, now);
   try {
     debitCredits(userId, estimate.credits, {
-      reason: `转可编辑 PPTX（${slides.length} 页）`,
-      idempotencyKey: `export-editable:${deck.id}:${exportId}`,
-      refType: 'deck',
-      refId: deck.id,
+      reason: `转可编辑 PPTX（${pageCount} 页）`,
+      idempotencyKey: `export-editable:${refId}:${exportId}`,
+      refType,
+      refId,
     });
   } catch (error) {
     // 余额竞争等扣费失败：不留孤儿行
@@ -412,7 +433,33 @@ export async function startDeckEditableExport(
 
   const row = getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow;
   const done = runEditableExportPipeline(row, deps);
-  return { exportId, status: 'processing', credits: estimate.credits, pageCount: slides.length, done };
+  return { exportId, status: 'processing', credits: estimate.credits, pageCount, done };
+}
+
+/** 单页项目 → 可编辑 PPTX（20🌟/页，同 Codia 管线）。纳入全部成功页，按页序。 */
+export async function startSinglePageEditableExport(
+  userId: string,
+  projectId: string,
+  deps: EditableExportDeps = {},
+): Promise<StartedEditableExport> {
+  const config = deps.config ?? getGenerationConfig();
+  if (!config.codiaApiKey) {
+    throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑导出尚未配置，请联系管理员', 503, false);
+  }
+  const cleanId = cleanString(projectId, 80);
+  const pages = listSingleProjectPages(userId, cleanId).filter((page) => page.activeVersionId);
+  if (pages.length === 0) {
+    throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
+  }
+  if (pages.length > EDITABLE_MAX_PAGES) {
+    throw new ApiError(
+      'EXPORT_TOO_MANY_PAGES',
+      `单套最多 ${EDITABLE_MAX_PAGES} 页可转可编辑，当前共 ${pages.length} 页`,
+      400,
+      false,
+    );
+  }
+  return launchEditableExport(userId, 'single-page', cleanId, pages.length, deps);
 }
 
 /** 懒恢复（服务器重启不丢单）：editable 且 pending/processing 的行现场推进 */

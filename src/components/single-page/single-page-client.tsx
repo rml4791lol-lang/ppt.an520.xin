@@ -22,9 +22,15 @@ import {
   getSinglePageProject,
   refineSinglePage,
   selectSinglePageVersion,
+  startSingleEditableExport,
   uploadAsset,
 } from "@/lib/client/single-page-api";
-import { renameProject, getCreditBalance } from "@/lib/client/deck-api";
+import {
+  estimateCredits,
+  getCreditBalance,
+  getExportRecord,
+  renameProject,
+} from "@/lib/client/deck-api";
 import {
   createPage,
   loadDraft,
@@ -64,6 +70,11 @@ export function SinglePageClient() {
   const [banner, setBanner] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState(false);
+  // ---------- 转可编辑 PPTX（Codia 链，按页计费） ----------
+  const [editableOpen, setEditableOpen] = useState(false);
+  const [editableBusy, setEditableBusy] = useState(false);
+  const [editableUnit, setEditableUnit] = useState(20);
+  const editableTimerRef = useRef<number | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const filesRef = useRef<Map<string, File>>(new Map()); // 图片页待上传的本地 File（不可持久化）
@@ -100,6 +111,16 @@ export function SinglePageClient() {
       })
       .catch(() => setLoggedIn(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 可编辑转换单价 + 轮询定时器卸载清理
+  useEffect(() => {
+    estimateCredits("export_editable", 1)
+      .then((e) => setEditableUnit(e.unitPrice))
+      .catch(() => {});
+    return () => {
+      if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+    };
   }, []);
 
   // ?projectId= 打开既有单页项目：拉详情重建页面队列（含状态/版本列表），并刷新 localStorage 草稿
@@ -419,6 +440,65 @@ export function SinglePageClient() {
     }
   };
 
+  // ---------- 转可编辑 PPTX（Codia 链，按页计费，失败退星） ----------
+  const doneCount = pages.filter((p) => p.status === "done").length;
+  const editableTotal = doneCount * editableUnit;
+
+  const pollEditable = (exportId: string) => {
+    if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+    editableTimerRef.current = window.setInterval(() => {
+      void (async () => {
+        try {
+          const rec = await getExportRecord(exportId);
+          if (rec.status === "succeeded") {
+            if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+            editableTimerRef.current = null;
+            setEditableBusy(false);
+            const a = document.createElement("a");
+            a.href = rec.url;
+            a.download = `${title || "单页PPT"}-可编辑.pptx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            toast("可编辑 PPTX 转换完成，已开始下载；可在下载中心随时再次下载", { duration: 8000 });
+          } else if (rec.status === "failed") {
+            if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
+            editableTimerRef.current = null;
+            setEditableBusy(false);
+            toast(rec.error || "可编辑转换失败，星星已退回", { duration: 8000 });
+            void getCreditBalance().then(setBalance).catch(() => {});
+          }
+        } catch {
+          // 网络抖动：继续轮询
+        }
+      })();
+    }, 4000);
+  };
+
+  const submitEditable = async () => {
+    if (!projectId || editableBusy) return;
+    setEditableBusy(true);
+    try {
+      const started = await startSingleEditableExport(projectId);
+      setEditableOpen(false);
+      void getCreditBalance().then(setBalance).catch(() => {});
+      pollEditable(started.exportId);
+    } catch (error) {
+      setEditableBusy(false);
+      const err = error instanceof ApiClientError ? error : null;
+      if (err?.isUnauthorized) {
+        redirectToLogin("/single-page");
+        return;
+      }
+      if (err?.isInsufficientCredits) {
+        setEditableOpen(false);
+        setInsufficient(err.message);
+        return;
+      }
+      toast(err?.message ?? "发起可编辑转换失败，请重新尝试");
+    }
+  };
+
   // ---------- 步骤条 ----------
   const currentStep = useMemo(() => {
     if (!activePage) return 0;
@@ -702,6 +782,9 @@ export function SinglePageClient() {
                 setExported(false);
                 setViewStep(1);
               }}
+              editableBusy={editableBusy}
+              editableTotal={editableTotal}
+              onExportEditable={() => setEditableOpen(true)}
             />
           )}
           {!showStylePanel && !showExportPanel && (
@@ -737,6 +820,39 @@ export function SinglePageClient() {
               className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-strong"
             >
               前往充值
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {editableOpen && (
+        <Modal title="转可编辑 PPTX" onClose={() => setEditableOpen(false)}>
+          <p className="text-sm leading-6 text-ink-2">
+            将把 <b>{doneCount}</b> 张已生成页面图转换为元素级可编辑的 PPTX
+            （文字、图形、表格均可在 PowerPoint / WPS 中直接修改），预计需要几分钟。
+          </p>
+          <div className="mt-3 rounded-xl bg-page px-4 py-3 text-sm text-ink-2">
+            {editableUnit}🌟/页 × {doneCount} 页 ={" "}
+            <b className="text-brand">{editableTotal} 🌟</b>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-ink-3">
+            转换失败自动退还星星。完成后自动开始下载，也可在「下载中心」随时再次下载。
+          </p>
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setEditableOpen(false)}
+              className="rounded-full border border-line-strong px-5 py-2 text-sm text-ink-2 transition hover:border-brand-line"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={editableBusy}
+              onClick={() => void submitEditable()}
+              className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {editableBusy ? "提交中…" : "确认转换"}
             </button>
           </div>
         </Modal>
