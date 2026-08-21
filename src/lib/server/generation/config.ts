@@ -20,6 +20,8 @@ export interface GenerationConfig {
   llmBaseUrl: string;
   llmApiKey: string;
   llmModel: string;
+  /** 主模型失败（超时/HTTP 错误/空响应）时的回退模型链，按序尝试 */
+  llmFallbackModels: string[];
   /** gpt-image-2 生图上游（OpenAI 兼容 /images/generations + /images/edits） */
   imageBaseUrl: string;
   imageApiKey: string;
@@ -68,6 +70,11 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     llmBaseUrl: stripTrailingSlash(trim(env.ANPPT_V2_LLM_BASE_URL) || 'http://127.0.0.1:6800/v1'),
     llmApiKey: trim(env.ANPPT_V2_LLM_API_KEY),
     llmModel: trim(env.ANPPT_V2_LLM_MODEL) || 'deepseek-v4-flash',
+    llmFallbackModels: (trim(env.ANPPT_V2_LLM_FALLBACK_MODELS) || '')
+      .split(',')
+      .map((m) => m.trim())
+      .filter(Boolean)
+      .slice(0, 3),
     imageBaseUrl: stripTrailingSlash(trim(env.ANPPT_V2_IMAGE_BASE_URL)),
     imageApiKey: trim(env.ANPPT_V2_IMAGE_API_KEY),
     imageModel: trim(env.ANPPT_V2_IMAGE_MODEL) || 'gpt-image-2',

@@ -149,6 +149,9 @@ function extractJson(text: string): unknown {
   throw new EngineUnavailableError('LLM 兜底返回内容不是有效 JSON');
 }
 
+/** 故障切换预算：第 1 个模型（快模型）45s、中间兜底 90s，末位模型拿满 LLM_TIMEOUT_MS */
+const FAILOVER_TIMEOUT_MS = [45_000, 90_000];
+
 async function chatCompletion(
   messages: { role: string; content: string }[],
   deps: EngineDeps,
@@ -157,19 +160,37 @@ async function chatCompletion(
   if (!llmConfigured(config)) {
     throw new EngineUnavailableError('引擎未配置且 LLM 兜底未配置（ANPPT_V2_LLM_BASE_URL/API_KEY）');
   }
+  const models = [...new Set([config.llmModel, ...config.llmFallbackModels])];
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const payload = await postJson(
-    `${config.llmBaseUrl}/chat/completions`,
-    { model: config.llmModel, messages, stream: false, temperature: 0.3 },
-    { Authorization: `Bearer ${config.llmApiKey}` },
-    LLM_TIMEOUT_MS,
-    fetchImpl,
-  );
-  const choices = payload.choices as Array<{ message?: { content?: unknown } }> | undefined;
-  const content = choices?.[0]?.message?.content;
-  const text = typeof content === 'string' ? content : '';
-  if (!text.trim()) throw new EngineUnavailableError('LLM 兜底返回空内容');
-  return text;
+  let lastError: unknown;
+  for (let i = 0; i < models.length; i += 1) {
+    const isLast = i === models.length - 1;
+    const timeoutMs = isLast ? LLM_TIMEOUT_MS : (FAILOVER_TIMEOUT_MS[i] ?? 90_000);
+    try {
+      const payload = await postJson(
+        `${config.llmBaseUrl}/chat/completions`,
+        { model: models[i], messages, stream: false, temperature: 0.3 },
+        { Authorization: `Bearer ${config.llmApiKey}` },
+        timeoutMs,
+        fetchImpl,
+      );
+      const choices = payload.choices as Array<{ message?: { content?: unknown } }> | undefined;
+      const content = choices?.[0]?.message?.content;
+      const text = typeof content === 'string' ? content : '';
+      if (!text.trim()) throw new EngineUnavailableError('LLM 兜底返回空内容');
+      return text;
+    } catch (error) {
+      lastError = error;
+      if (!isLast) {
+        console.warn(
+          `[anppt-v2][engine] LLM 模型 ${models[i]} 失败，切换 ${models[i + 1]}：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new EngineUnavailableError('LLM 兜底全部模型失败');
 }
 
 // ---------- 对外能力 ----------

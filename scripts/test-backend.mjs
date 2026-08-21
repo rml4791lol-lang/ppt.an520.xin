@@ -192,6 +192,37 @@ await expectThrows('未知动作被拒', async () => {
   }
 }, 'VALIDATION_ERROR');
 
+console.log('\n[9] LLM 回退链');
+{
+  const engine = await import('../src/lib/server/engine.ts');
+  const config = await import('../src/lib/server/generation/config.ts');
+  const base = {
+    engineBaseUrl: 'http://127.0.0.1:3002',
+    engineInternalToken: '',
+    llmBaseUrl: 'http://llm.test/v1',
+    llmApiKey: 'k',
+    llmModel: 'm-primary',
+    llmFallbackModels: ['m-fb1', 'm-fb2'],
+    dataDir: tmpDir, uploadsDir: tmpDir, generatedDir: tmpDir, exportsDir: tmpDir,
+    uploadMaxBytes: 1024, sourceTextMaxChars: 1000,
+    imageBaseUrl: '', imageApiKey: '', imageModel: 'gpt-image-2', imageSize: '1536x864',
+    imageTimeoutMs: 5000, generateConcurrency: 1, jobStaleMs: 600000,
+    codiaApiKey: '', codiaBaseUrl: 'http://codia.test', singlePageCredits: 10, projectRetentionDays: 7,
+  };
+  const okBody = JSON.stringify({ choices: [{ message: { content: '[{"title":"首页","role":"cover","chapter":"","summary":["要点"],"must_keep":[]}]' } }] });
+  const calls = [];
+  const fetchMock = async (url, init) => {
+    calls.push(JSON.parse(init.body).model);
+    const model = JSON.parse(init.body).model;
+    if (model === 'm-primary') throw new Error('upstream down');
+    if (model === 'm-fb1') return new Response(okBody, { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response('', { status: 200 });
+  };
+  const out = await engine.generateOutline({ sourceText: '文档', targetPageCount: 3 }, { config: { ...base, engineBaseUrl: '' }, fetchImpl: fetchMock });
+  check('主模型失败自动切兜底并返回', out.provider === 'llm-fallback' && out.slides.length === 1, `calls=${calls.join(',')}`);
+  check('回退链只试到成功模型为止', calls.join(',') === 'm-primary,m-fb1', `calls=${calls.join(',')}`);
+}
+
 console.log(`\n结果: ${passed} 通过, ${failed} 失败${failed ? ` — 失败项: ${failures.join('、')}` : ''}`);
 rmSync(tmpDir, { recursive: true, force: true });
 process.exit(failed > 0 ? 1 : 0);
