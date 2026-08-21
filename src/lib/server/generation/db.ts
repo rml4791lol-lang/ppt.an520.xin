@@ -127,18 +127,28 @@ CREATE TABLE IF NOT EXISTS export_jobs (
   user_id TEXT NOT NULL,
   ref_type TEXT NOT NULL DEFAULT 'deck',
   ref_id TEXT NOT NULL DEFAULT '',
+  source_fingerprint TEXT NOT NULL DEFAULT '',
+  source_path TEXT NOT NULL DEFAULT '',
+  source_name TEXT NOT NULL DEFAULT '',
+  source_mime TEXT NOT NULL DEFAULT '',
   kind TEXT NOT NULL DEFAULT 'image',
   status TEXT NOT NULL DEFAULT 'succeeded',
   page_count INTEGER NOT NULL DEFAULT 0,
+  progress INTEGER NOT NULL DEFAULT 0,
+  completed_pages INTEGER NOT NULL DEFAULT 0,
+  stage TEXT NOT NULL DEFAULT '',
   file_path TEXT NOT NULL DEFAULT '',
   file_url TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
   upstream_task_id TEXT NOT NULL DEFAULT '',
   charged_credits INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL DEFAULT 0
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  started_at INTEGER NOT NULL DEFAULT 0,
+  completed_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_export_jobs_user ON export_jobs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_export_jobs_ref ON export_jobs(user_id, ref_type, ref_id, kind, created_at DESC);
 `;
 
 const migrated = new WeakSet<DatabaseSync>();
@@ -156,6 +166,16 @@ export function getGenDb(): DatabaseSync {
     if (!colNames.has('upstream_task_id')) db.exec("ALTER TABLE export_jobs ADD COLUMN upstream_task_id TEXT NOT NULL DEFAULT ''");
     if (!colNames.has('charged_credits')) db.exec('ALTER TABLE export_jobs ADD COLUMN charged_credits INTEGER NOT NULL DEFAULT 0');
     if (!colNames.has('updated_at')) db.exec('ALTER TABLE export_jobs ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
+    if (!colNames.has('source_fingerprint')) db.exec("ALTER TABLE export_jobs ADD COLUMN source_fingerprint TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('source_path')) db.exec("ALTER TABLE export_jobs ADD COLUMN source_path TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('source_name')) db.exec("ALTER TABLE export_jobs ADD COLUMN source_name TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('source_mime')) db.exec("ALTER TABLE export_jobs ADD COLUMN source_mime TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('progress')) db.exec('ALTER TABLE export_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0');
+    if (!colNames.has('completed_pages')) db.exec('ALTER TABLE export_jobs ADD COLUMN completed_pages INTEGER NOT NULL DEFAULT 0');
+    if (!colNames.has('stage')) db.exec("ALTER TABLE export_jobs ADD COLUMN stage TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('started_at')) db.exec('ALTER TABLE export_jobs ADD COLUMN started_at INTEGER NOT NULL DEFAULT 0');
+    if (!colNames.has('completed_at')) db.exec('ALTER TABLE export_jobs ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_export_jobs_ref ON export_jobs(user_id, ref_type, ref_id, kind, created_at DESC)');
     // 单页版本表补 charge_key（崩溃恢复按它找孤儿扣费；新库 CREATE TABLE 已含）
     const singleVerCols = db.prepare("SELECT name FROM pragma_table_info('single_page_versions')").all() as Array<{ name: string }>;
     if (!singleVerCols.some((c) => c.name === 'charge_key')) {

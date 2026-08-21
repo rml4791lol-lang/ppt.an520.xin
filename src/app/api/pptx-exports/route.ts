@@ -14,6 +14,13 @@ export const GET = defineApiRoute(async (request) => {
     listExports(user.id, {
       page: Number(url.searchParams.get('page')) || 1,
       pageSize: Number(url.searchParams.get('pageSize')) || 20,
+      refType: url.searchParams.get('refType') === 'single-page' ? 'single-page'
+        : url.searchParams.get('refType') === 'deck' ? 'deck'
+        : url.searchParams.get('refType') === 'upload' ? 'upload' : undefined,
+      refId: url.searchParams.get('refId') || undefined,
+      kind: url.searchParams.get('kind') === 'editable' ? 'editable'
+        : url.searchParams.get('kind') === 'image' ? 'image' : undefined,
+      latest: url.searchParams.get('latest') === '1',
     }),
   );
 });

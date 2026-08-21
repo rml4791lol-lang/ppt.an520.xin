@@ -18,11 +18,19 @@ export interface CodiaTaskView {
   status: 'pending' | 'processing' | 'succeeded' | 'failed' | 'canceled';
   pptUrl: string;
   pageCount: number;
+  /** 上游真实进度百分比（0-100）；未提供时为 0。 */
+  progress: number;
+  /** 上游已完成页数；未提供时为 0。 */
+  completedPages: number;
+  /** 上游总页数；未提供时回退 result.page_count。 */
+  totalPages: number;
+  /** 上游阶段/进度说明；用于前端展示，不参与状态判断。 */
+  stage: string;
   error: string;
 }
 
-const UPLOAD_TIMEOUT_MS = 120_000;
-const REQUEST_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 480_000;
+const REQUEST_TIMEOUT_MS = 90_000;
 
 function requireCodiaConfig(config: GenerationConfig): { baseUrl: string; apiKey: string } {
   if (!config.codiaApiKey) {
@@ -35,6 +43,24 @@ interface CodiaEnvelope {
   code?: number;
   message?: string;
   data?: Record<string, unknown>;
+}
+
+function finiteNumber(value: unknown): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function percentOf(value: unknown): number {
+  const number = finiteNumber(value);
+  const percent = number > 0 && number <= 1 ? number * 100 : number;
+  return Math.min(100, Math.max(0, Math.round(percent)));
+}
+
+function taskStatusOf(value: unknown): CodiaTaskView['status'] {
+  const status = cleanString(value, 40);
+  return status === 'processing' || status === 'succeeded' || status === 'failed' || status === 'canceled'
+    ? status
+    : 'pending';
 }
 
 /** HTTP 错误语义：400 请求错（不重试）、401 key 错、402 上游余额不足（不重试）、429/5xx 可重试 */
@@ -134,10 +160,22 @@ export async function createPdfToPptTask(
 export async function getTask(taskId: string, deps: CodiaDeps = {}): Promise<CodiaTaskView> {
   const data = await codiaRequest('GET', `/v2/open/tasks/${encodeURIComponent(taskId)}`, { timeoutMs: REQUEST_TIMEOUT_MS }, deps);
   const result = (data.result ?? {}) as Record<string, unknown>;
+  const detail = (data.progress_detail ?? {}) as Record<string, unknown>;
+  const completedPages = finiteNumber(
+    data.completed_pages ?? detail.completed_pages ?? detail.completed ?? detail.finished_pages,
+  );
+  const resultPages = finiteNumber(result.page_count);
+  const totalPages = finiteNumber(data.total_pages ?? detail.total_pages ?? detail.total ?? resultPages);
+  const explicitProgress = percentOf(data.progress ?? detail.progress ?? detail.percentage ?? detail.percent);
+  const derivedProgress = totalPages > 0 ? Math.round((completedPages / totalPages) * 100) : 0;
   return {
-    status: (cleanString(data.status, 40) || 'pending') as CodiaTaskView['status'],
+    status: taskStatusOf(data.status),
     pptUrl: cleanString(result.ppt_url, 1000),
-    pageCount: Number(result.page_count) || 0,
+    pageCount: resultPages,
+    progress: Math.min(100, Math.max(explicitProgress, derivedProgress)),
+    completedPages,
+    totalPages,
+    stage: cleanString(data.stage ?? detail.stage ?? detail.message ?? detail.description, 200),
     error: cleanString(data.error, 500),
   };
 }

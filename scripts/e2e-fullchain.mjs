@@ -4,7 +4,7 @@
 //   ssh -L 6800:127.0.0.1:6800 hk-hermes   # 先打隧道
 //   BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs
 // 会真实消耗上游生图（页数控制在 2 页以内）与账户星星。截图输出 scripts/output/。
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
@@ -46,16 +46,6 @@ async function deckState(deckId) {
 async function action(deckId, body) {
   const { status, json } = await api(`/api/deck/${deckId}`, { method: 'POST', body });
   return { status, json };
-}
-
-async function waitDeck(deckId, want, timeoutMs = 120_000) {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const s = await deckState(deckId);
-    if (Array.isArray(want) ? want.includes(s.deck.status) : s.deck.status === want) return s;
-    if (Date.now() > deadline) throw new Error(`等待 ${want} 超时，实际 ${s.deck.status}`);
-    await sleep(2000);
-  }
 }
 
 console.log('[0] 注册（送 100🌟）');

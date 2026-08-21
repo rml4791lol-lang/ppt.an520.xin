@@ -251,16 +251,26 @@ export function ExportPanel({
   onExportImage,
   onRestyle,
   editableBusy = false,
+  editableRunning = false,
+  editableSucceeded = false,
+  editableProgressLabel = "",
+  editableWaitingCopy = "",
   editableTotal = 0,
   onExportEditable,
+  onReconvertEditable,
 }: {
   pages: SpPage[];
   exporting: boolean;
   onExportImage: () => void;
   onRestyle: () => void;
   editableBusy?: boolean;
+  editableRunning?: boolean;
+  editableSucceeded?: boolean;
+  editableProgressLabel?: string;
+  editableWaitingCopy?: string;
   editableTotal?: number;
   onExportEditable?: () => void;
+  onReconvertEditable?: () => void;
 }) {
   const doneCount = pages.filter((p) => p.status === "done").length;
   return (
@@ -286,9 +296,32 @@ export function ExportPanel({
           onClick={onExportEditable}
           className="w-full rounded-full border border-line-strong py-2.5 text-sm text-ink-2 transition hover:border-brand-line disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {editableBusy ? "转换中…" : `转为可编辑 PPTX · ${editableTotal}🌟`}
+          {editableRunning
+            ? editableProgressLabel || "转换中…"
+            : editableBusy
+              ? "提交中…"
+              : editableSucceeded
+                ? "下载可编辑版"
+                : `转为可编辑 PPTX · ${editableTotal}🌟`}
         </button>
+        {editableSucceeded && onReconvertEditable && (
+          <button
+            type="button"
+            onClick={onReconvertEditable}
+            className="w-full py-1 text-xs text-ink-4 underline decoration-dotted underline-offset-4 transition hover:text-brand"
+          >
+            重新转换（将再次扣星）
+          </button>
+        )}
       </div>
+
+      {editableRunning && (
+        <div className="mt-4 rounded-xl border border-brand-line bg-brand-softer px-3 py-2.5" role="status">
+          <p className="text-xs font-medium text-brand">{editableProgressLabel || "转换中"}</p>
+          <p className="mt-1 text-[11px] leading-4 text-ink-3">{editableWaitingCopy}</p>
+          <p className="mt-1 text-[10px] text-ink-4">可以安全刷新或离开，完成后会出现在下载中心。</p>
+        </div>
+      )}
 
       <div className="mt-4 border-t border-line pt-4">
         <button

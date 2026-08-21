@@ -1,5 +1,5 @@
 // 风格包加载与生图 prompt 组装。
-// 唯一对外风格库：src/data/style-packs.ts（旁门 27 包迁移）。
+// 唯一对外风格库：src/data/style-packs.ts（正式包过滤、旧 slug 兼容）。
 // 引擎侧烘焙产物 src/data/style-packs.runtime.json（{id, stylePrompt, palette, blueprint}[]）
 // 存在则优先用其 stylePrompt/blueprint，否则回退包名+描述（契约 §5）。
 import { readFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { cleanString } from './types';
 
 // 契约 §6「易于转可编辑」条款，逐字注入每页生图 prompt（放在风格/版式指令之后）。
 export const EDITABLE_FRIENDLY_CLAUSE =
-  '所有文字必须使用清晰可读的常规无衬线字体字形，水平排版，不得使用艺术字、变形字或竖排特效；文字只出现在纯色或低噪背景上，保持高对比度，不得压盖照片或复杂纹理；版式遵循清晰栅格，内容块边界分明、边缘对齐、留白充足；图表与图示使用扁平纯色矢量风格；每段文案只出现一次；不得渲染任何设计说明、坐标、字号、色值等元信息；不得出现水印、占位符或虚构 UI 元素。';
+  '中文统一使用 Noto Sans SC（思源黑体同源字形），英文与数字统一使用 Inter；只使用清晰可读的常规无衬线字形，水平排版，不得混用装饰字体，不得使用艺术字、变形字或竖排特效；文字只出现在纯色或低噪背景上，保持高对比度，不得压盖照片或复杂纹理；版式遵循清晰栅格，内容块边界分明、边缘对齐、留白充足；图表与图示使用扁平纯色矢量风格；每段文案只出现一次；不得渲染任何设计说明、坐标、字号、色值等元信息；不得出现水印、占位符或虚构 UI 元素。';
 
 export interface StylePackRuntimeEntry {
   id: string;
@@ -157,7 +157,7 @@ export function buildSlideImagePrompt(
   const parts = [
     '为一张 16:9 商务演示 PPT 幻灯片生成完整的最终视觉图（整页一张图，含全部排版与文字）。',
     deck && deck.totalPages > 1
-      ? `整套一致性要求：本页是全套 ${deck.totalPages} 页中的第 ${deck.pageIndex + 1} 页${deck.chapter ? `，属于「${deck.chapter}」章节` : ''}；全套页面必须保持完全一致的栅格系统、字号层级、配色方案、页眉页脚与页码位置、装饰元素语言，仅按页型变化版式。`
+      ? `整套一致性要求：本页是全套 ${deck.totalPages} 页中的第 ${deck.pageIndex + 1} 页${deck.chapter ? `，属于「${deck.chapter}」章节` : ''}；全套页面必须保持完全一致的栅格系统、字号层级、配色方案、页眉页脚与页码位置、装饰元素语言，仅按页型变化版式。内容页页眉必须使用较小字号、固定高度且不得抢过正文标题；若页眉含品牌图标或标识，所有内容页必须复用完全相同的图形、比例、颜色与坐标，禁止重新设计或随机变形。`
       : '',
     `页面角色：${slide.role || 'content'}${slide.pageType ? `（大纲标注版式：${slide.pageType}）` : ''}`,
     `版式要求（页型：${pageSpec.label}）：${pageSpec.layout}`,

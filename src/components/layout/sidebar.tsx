@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookIcon,
-  ClockIcon,
   CoinIcon,
   CloseIcon,
   DownloadIcon,
@@ -36,8 +35,6 @@ function isActive(pathname: string, hash: string, href?: string) {
     path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(path + "/");
   if (!pathMatch) return false;
   if (frag) return hash === `#${frag}`;
-  // 「我的项目」与「最近项目」同路径：带锚点激活时，无锚点项不高亮
-  if (path === "/projects" && hash === "#recent") return false;
   return true;
 }
 
@@ -72,7 +69,6 @@ export function SidebarNav({
       { key: "home", label: "首页", href: "/", icon: HomeIcon },
       { key: "styles", label: "设计风格", href: "/style-packs", icon: SparklesIcon },
       { key: "projects", label: "我的项目", href: "/projects", icon: FolderIcon },
-      { key: "recent", label: "最近项目", href: "/projects#recent", icon: ClockIcon },
       { key: "exports", label: "下载中心", href: "/exports", icon: DownloadIcon },
     ],
     [
@@ -87,11 +83,18 @@ export function SidebarNav({
     ],
     [
       {
-        key: "image2editable",
-        label: "图片转可编辑",
+        key: "file2editable",
+        label: "文件转可编辑 PPT",
+        href: "/tools/editable-converter",
         icon: LayersIcon,
-        disabled: true,
-        badge: "即将上线",
+        badge: "新",
+      },
+      {
+        key: "onlyoffice",
+        label: "免费 PPT 编辑",
+        href: "/tools/onlyoffice",
+        icon: BookIcon,
+        badge: "会员权益",
       },
       { key: "single-page", label: "创意页面生成器", href: "/single-page", icon: WandIcon },
     ],

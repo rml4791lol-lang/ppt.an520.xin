@@ -90,9 +90,3 @@ export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Pro
   }
   return json.data as T;
 }
-
-/** 未登录统一跳转：/login?next=<当前路径> */
-export function redirectToLogin(nextPath?: string): void {
-  const next = nextPath ?? `${window.location.pathname}${window.location.search}`;
-  window.location.href = `/login?next=${encodeURIComponent(next)}`;
-}

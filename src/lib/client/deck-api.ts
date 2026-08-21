@@ -159,15 +159,21 @@ export function exportDeckImage(deckId: string): Promise<DeckExportResult> {
 
 export interface EditableExportStart {
   exportId: string;
-  status: string;
+  status: "processing" | "succeeded";
   credits: number;
   pageCount: number;
+  progress: number;
+  completedPages: number;
+  totalPages: number;
+  stage: string;
+  url: string;
+  reused: boolean;
 }
 
 /** 可编辑 PPTX 导出（20🌟/页，Codia 链）：202 返回任务句柄，结果轮询 getExportRecord */
-export function startEditableExport(deckId: string): Promise<EditableExportStart> {
+export function startEditableExport(deckId: string, force = false): Promise<EditableExportStart> {
   return apiFetch<EditableExportStart>(`/api/deck/${encodeURIComponent(deckId)}/export-editable`, {
-    body: {},
+    body: { force },
   });
 }
 
@@ -175,13 +181,22 @@ export interface ExportRecord {
   exportId: string;
   refType: string;
   refId: string;
+  sourceName?: string;
   kind: string;
   status: "pending" | "processing" | "succeeded" | "failed";
   pageCount: number;
+  progress: number;
+  completedPages: number;
+  totalPages: number;
+  stage: string;
   url: string;
   error: string;
   chargedCredits: number;
   createdAt: number;
+  updatedAt: number;
+  startedAt: number;
+  completedAt: number;
+  isCurrentSource: boolean;
 }
 
 /** 导出详情（轮询用） */
@@ -193,8 +208,23 @@ export function getExportRecord(exportId: string): Promise<ExportRecord> {
 export function listExportRecords(
   page = 1,
   pageSize = 50,
+  filters: { refType?: "deck" | "single-page" | "upload"; refId?: string; kind?: "image" | "editable"; latest?: boolean } = {},
 ): Promise<{ items: ExportRecord[]; total: number; page: number; pageSize: number }> {
-  return apiFetch(`/api/pptx-exports?page=${page}&pageSize=${pageSize}`);
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (filters.refType) params.set("refType", filters.refType);
+  if (filters.refId) params.set("refId", filters.refId);
+  if (filters.kind) params.set("kind", filters.kind);
+  if (filters.latest) params.set("latest", "1");
+  return apiFetch(`/api/pptx-exports?${params.toString()}`);
+}
+
+/** 当前项目最近一次可编辑导出；用于刷新后恢复任务状态。 */
+export async function getLatestEditableExport(
+  refType: "deck" | "single-page",
+  refId: string,
+): Promise<ExportRecord | null> {
+  const result = await listExportRecords(1, 1, { refType, refId, kind: "editable", latest: true });
+  return result.items[0] ?? null;
 }
 
 export interface ParseDeckResult {

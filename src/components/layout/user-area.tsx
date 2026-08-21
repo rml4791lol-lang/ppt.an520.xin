@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StarIcon } from "@/components/icons";
 
-interface MeResponse {
+interface SessionResponse {
   ok: boolean;
   data?: {
+    authenticated?: boolean;
     user: { name?: string; nickname?: string; displayName?: string; username?: string; avatarUrl?: string | null } | null;
   };
 }
@@ -28,10 +29,10 @@ export function UserArea() {
     let cancelled = false;
     const load = async () => {
       try {
-        const meRes = await fetch("/api/me", { cache: "no-store" });
-        if (!meRes.ok) return;
-        const me = (await meRes.json()) as MeResponse;
-        const user = me.ok ? me.data?.user : null;
+        const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!sessionRes.ok) return;
+        const session = (await sessionRes.json()) as SessionResponse;
+        const user = session.ok && session.data?.authenticated ? session.data.user : null;
         if (cancelled || !user) return;
         setUserName(user.displayName ?? user.nickname ?? user.name ?? user.username ?? "已登录用户");
         const balRes = await fetch("/api/credits/balance", { cache: "no-store" });
@@ -43,12 +44,15 @@ export function UserArea() {
         /* 后端未就绪时保持占位态 */
       }
     };
-    void load();
+    const initialTimer = window.setTimeout(() => {
+      void load();
+    }, 0);
     // 充值到账 / 生成扣费后由业务侧派发该事件刷新余额（与 deck 工作台同一约定）
     const onRefresh = () => void load();
     window.addEventListener("anppt:credits-refresh", onRefresh);
     return () => {
       cancelled = true;
+      window.clearTimeout(initialTimer);
       window.removeEventListener("anppt:credits-refresh", onRefresh);
     };
   }, []);

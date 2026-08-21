@@ -4,8 +4,8 @@ import { PlusIcon } from "@/components/icons";
 import { ProjectsClient } from "@/components/projects/projects-client";
 
 export const metadata: Metadata = {
-  title: "我的项目",
-  description: "AnPPT 创作空间：你创建的 PPT 项目都会出现在这里。",
+  title: "项目中心",
+  description: "AnPPT 项目中心：全部项目按最近更新时间统一展示。",
 };
 
 export default function ProjectsPage() {
@@ -14,9 +14,9 @@ export default function ProjectsPage() {
       <p className="text-sm font-medium text-brand">创作空间</p>
       <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-ink">我的项目</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-ink">项目中心</h1>
           <p className="mt-2 text-sm text-ink-3">
-            项目不会自动过期；主动删除的项目会保留 7 天，之后自动彻底清除。
+            “我的项目”和“最近项目”已合并；全部作品按最近更新时间统一排列。
           </p>
         </div>
         <Link

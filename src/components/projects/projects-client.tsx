@@ -26,6 +26,13 @@ export function ProjectsClient() {
     setLoading(true);
     setUnauthorized(false);
     try {
+      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
+      const session = await sessionResponse.json().catch(() => null);
+      if (!sessionResponse.ok || !session?.ok || !session.data?.authenticated) {
+        setUnauthorized(true);
+        setProjects(null);
+        return;
+      }
       const res = await fetch("/api/projects?pageSize=50", { cache: "no-store" });
       if (res.status === 401) {
         setUnauthorized(true);
@@ -46,7 +53,10 @@ export function ProjectsClient() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const remove = async (id: string) => {
@@ -100,7 +110,7 @@ export function ProjectsClient() {
         <div className="rounded-2xl border border-line bg-card px-6 py-24 text-center text-sm text-ink-3 shadow-card">
           加载中…
         </div>
-      ) : projects && projects.length > 0 ? (
+      ) : unauthorized ? null : projects && projects.length > 0 ? (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {projects.map((p) => (
             <div key={p.id} className="group relative">

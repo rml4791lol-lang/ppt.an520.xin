@@ -4,7 +4,7 @@ import { STYLE_PACK_CATEGORIES, STYLE_PACKS } from "@/data/style-packs";
 
 export const metadata: Metadata = {
   title: "设计风格",
-  description: "AnPPT 设计师原创设计风格库：27 套精品 PPT 风格包任你选择。",
+  description: "AnPPT 设计风格库：正式风格包持续更新，测试资源不会进入公开列表。",
 };
 
 export default function StylePacksPage() {

@@ -15,7 +15,7 @@ import {
   StarIcon,
   TrashIcon,
 } from "@/components/icons";
-import { ApiClientError, redirectToLogin } from "@/lib/client/api";
+import { ApiClientError } from "@/lib/client/api";
 import {
   exportSinglePagesImagePptx,
   generateSinglePage,
@@ -28,7 +28,6 @@ import {
 import {
   estimateCredits,
   getCreditBalance,
-  getExportRecord,
   renameProject,
 } from "@/lib/client/deck-api";
 import {
@@ -50,6 +49,7 @@ import {
   type VersionCount,
 } from "@/components/single-page/sp-panels";
 import { Modal, Spinner, ToastStack, useToasts } from "@/components/deck/ui";
+import { useEditableExport } from "@/components/exports/use-editable-export";
 
 const FLOW_STEPS = ["添加内容", "选择风格", "生成结果", "下载可编辑版本"] as const;
 
@@ -72,55 +72,80 @@ export function SinglePageClient() {
   const [exported, setExported] = useState(false);
   // ---------- 转可编辑 PPTX（Codia 链，按页计费） ----------
   const [editableOpen, setEditableOpen] = useState(false);
-  const [editableBusy, setEditableBusy] = useState(false);
+  const [editableForce, setEditableForce] = useState(false);
   const [editableUnit, setEditableUnit] = useState(20);
-  const editableTimerRef = useRef<number | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const filesRef = useRef<Map<string, File>>(new Map()); // 图片页待上传的本地 File（不可持久化）
 
   const activePage = pages.find((p) => p.pageId === activeId) ?? pages[0];
+  const refreshBalance = useCallback(() => {
+    void getCreditBalance().then(setBalance).catch(() => {});
+  }, []);
+  const startEditableRequest = useCallback(
+    (force: boolean) => {
+      if (!projectId) return Promise.reject(new Error("项目尚未创建"));
+      return startSingleEditableExport(projectId, force);
+    },
+    [projectId],
+  );
+  const editable = useEditableExport({
+    refType: "single-page",
+    refId: projectId,
+    title: title || "单页PPT",
+    startRequest: startEditableRequest,
+    toast,
+    onCreditsChanged: refreshBalance,
+  });
 
   // ---------- 初始化：恢复草稿 / 打开既有项目 / 探登录态 ----------
   useEffect(() => {
-    const draft = loadDraft();
-    if (draft && draft.pages.length > 0) {
-      // objectURL 不可持久化：恢复时剔除失效的本地预览
-      const restored = draft.pages.map((p) => ({
-        ...p,
-        sourceImageUrl: p.sourceImagePath ? p.sourceImageUrl : undefined,
-        status: p.status === "generating" || p.status === "uploading" ? "ready" : p.status,
-      }));
-      setPages(restored);
-      setActiveId(restored[0].pageId);
-      setTitle(draft.projectTitle || "未命名单页项目");
-      setProjectId(draft.projectId);
-    } else {
-      const first = createPage();
-      setPages([first]);
-      setActiveId(first.pageId);
-    }
-    setHydrated(true);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const draft = loadDraft();
+      if (draft && draft.pages.length > 0) {
+        // objectURL 不可持久化：恢复时剔除失效的本地预览
+        const restored = draft.pages.map((p) => ({
+          ...p,
+          sourceImageUrl: p.sourceImagePath ? p.sourceImageUrl : undefined,
+          status: p.status === "generating" || p.status === "uploading" ? "ready" : p.status,
+        }));
+        setPages(restored);
+        setActiveId(restored[0].pageId);
+        setTitle(draft.projectTitle || "未命名单页项目");
+        setProjectId(draft.projectId);
+      } else {
+        const first = createPage();
+        setPages([first]);
+        setActiveId(first.pageId);
+      }
+      setHydrated(true);
 
-    fetch("/api/me", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        const user = json?.ok ? json.data?.user : null;
-        setLoggedIn(!!user);
-        if (user) void getCreditBalance().then(setBalance);
-      })
-      .catch(() => setLoggedIn(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      fetch("/api/auth/session", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json) => {
+          if (cancelled) return;
+          const user = json?.ok && json.data?.authenticated ? json.data.user : null;
+          setLoggedIn(!!user);
+          if (user) void getCreditBalance().then((value) => {
+            if (!cancelled) setBalance(value);
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setLoggedIn(false);
+        });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
-  // 可编辑转换单价 + 轮询定时器卸载清理
+  // 可编辑转换单价
   useEffect(() => {
     estimateCredits("export_editable", 1)
       .then((e) => setEditableUnit(e.unitPrice))
       .catch(() => {});
-    return () => {
-      if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
-    };
   }, []);
 
   // ?projectId= 打开既有单页项目：拉详情重建页面队列（含状态/版本列表），并刷新 localStorage 草稿
@@ -273,7 +298,6 @@ export function SinglePageClient() {
           title,
           content,
           stylePackId: page.stylePackId,
-          requestId: `${page.pageId}:${Date.now()}:${k}`,
           imagePath: uploaded.sourceImagePath,
         });
         if (!pid) {
@@ -314,7 +338,7 @@ export function SinglePageClient() {
     } catch (error) {
       const err = error instanceof ApiClientError ? error : null;
       if (err?.isUnauthorized) {
-        redirectToLogin("/single-page");
+        router.push("/login?next=%2Fsingle-page");
         return;
       }
       if (err?.isInsufficientCredits) {
@@ -365,7 +389,7 @@ export function SinglePageClient() {
     } catch (error) {
       const err = error instanceof ApiClientError ? error : null;
       if (err?.isUnauthorized) {
-        redirectToLogin("/single-page");
+        router.push("/login?next=%2Fsingle-page");
         return;
       }
       if (err?.isInsufficientCredits) setInsufficient(err.message);
@@ -401,7 +425,7 @@ export function SinglePageClient() {
     } catch (error) {
       const err = error instanceof ApiClientError ? error : null;
       if (err?.isUnauthorized) {
-        redirectToLogin("/single-page");
+        router.push("/login?next=%2Fsingle-page");
         return;
       }
       toast(err?.message ?? "切换版本失败，请重新尝试");
@@ -431,7 +455,7 @@ export function SinglePageClient() {
     } catch (error) {
       const err = error instanceof ApiClientError ? error : null;
       if (err?.isUnauthorized) {
-        redirectToLogin("/single-page");
+        router.push("/login?next=%2Fsingle-page");
         return;
       }
       toast(err?.message ?? "导出失败");
@@ -444,50 +468,15 @@ export function SinglePageClient() {
   const doneCount = pages.filter((p) => p.status === "done").length;
   const editableTotal = doneCount * editableUnit;
 
-  const pollEditable = (exportId: string) => {
-    if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
-    editableTimerRef.current = window.setInterval(() => {
-      void (async () => {
-        try {
-          const rec = await getExportRecord(exportId);
-          if (rec.status === "succeeded") {
-            if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
-            editableTimerRef.current = null;
-            setEditableBusy(false);
-            const a = document.createElement("a");
-            a.href = rec.url;
-            a.download = `${title || "单页PPT"}-可编辑.pptx`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            toast("可编辑 PPTX 转换完成，已开始下载；可在下载中心随时再次下载", { duration: 8000 });
-          } else if (rec.status === "failed") {
-            if (editableTimerRef.current !== null) window.clearInterval(editableTimerRef.current);
-            editableTimerRef.current = null;
-            setEditableBusy(false);
-            toast(rec.error || "可编辑转换失败，星星已退回", { duration: 8000 });
-            void getCreditBalance().then(setBalance).catch(() => {});
-          }
-        } catch {
-          // 网络抖动：继续轮询
-        }
-      })();
-    }, 4000);
-  };
-
   const submitEditable = async () => {
-    if (!projectId || editableBusy) return;
-    setEditableBusy(true);
+    if (!projectId || editable.submitting) return;
     try {
-      const started = await startSingleEditableExport(projectId);
-      setEditableOpen(false);
-      void getCreditBalance().then(setBalance).catch(() => {});
-      pollEditable(started.exportId);
+      const started = await editable.start(editableForce);
+      if (started) setEditableOpen(false);
     } catch (error) {
-      setEditableBusy(false);
       const err = error instanceof ApiClientError ? error : null;
       if (err?.isUnauthorized) {
-        redirectToLogin("/single-page");
+        router.push("/login?next=%2Fsingle-page");
         return;
       }
       if (err?.isInsufficientCredits) {
@@ -782,9 +771,23 @@ export function SinglePageClient() {
                 setExported(false);
                 setViewStep(1);
               }}
-              editableBusy={editableBusy}
+              editableBusy={editable.running || editable.submitting}
+              editableRunning={editable.running}
+              editableSucceeded={editable.succeeded}
+              editableProgressLabel={editable.progressLabel}
+              editableWaitingCopy={editable.waitingCopy}
               editableTotal={editableTotal}
-              onExportEditable={() => setEditableOpen(true)}
+              onExportEditable={() => {
+                if (editable.succeeded) editable.download();
+                else {
+                  setEditableForce(false);
+                  setEditableOpen(true);
+                }
+              }}
+              onReconvertEditable={editable.succeeded ? () => {
+                setEditableForce(true);
+                setEditableOpen(true);
+              } : undefined}
             />
           )}
           {!showStylePanel && !showExportPanel && (
@@ -826,17 +829,19 @@ export function SinglePageClient() {
       )}
 
       {editableOpen && (
-        <Modal title="转可编辑 PPTX" onClose={() => setEditableOpen(false)}>
+        <Modal title={editableForce ? "重新转换可编辑 PPTX" : "转可编辑 PPTX"} onClose={() => setEditableOpen(false)}>
           <p className="text-sm leading-6 text-ink-2">
             将把 <b>{doneCount}</b> 张已生成页面图转换为元素级可编辑的 PPTX
-            （文字、图形、表格均可在 PowerPoint / WPS 中直接修改），预计需要几分钟。
+            （文字、图形、表格均可在 PowerPoint / WPS 中直接修改）。
           </p>
           <div className="mt-3 rounded-xl bg-page px-4 py-3 text-sm text-ink-2">
             {editableUnit}🌟/页 × {doneCount} 页 ={" "}
             <b className="text-brand">{editableTotal} 🌟</b>
           </div>
           <p className="mt-2 text-xs leading-5 text-ink-3">
-            转换失败自动退还星星。完成后自动开始下载，也可在「下载中心」随时再次下载。
+            {editableForce
+              ? "这会创建一份新的转换结果并再次扣星；原文件仍保留在下载中心。"
+              : "提交后可以安全刷新或离开；完成后会出现在「下载中心」，转换失败自动退还星星。"}
           </p>
           <div className="mt-5 flex justify-end gap-3">
             <button
@@ -848,11 +853,11 @@ export function SinglePageClient() {
             </button>
             <button
               type="button"
-              disabled={editableBusy}
+              disabled={editable.submitting}
               onClick={() => void submitEditable()}
               className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {editableBusy ? "提交中…" : "确认转换"}
+              {editable.submitting ? "提交中…" : editableForce ? "确认重新转换" : "确认转换"}
             </button>
           </div>
         </Modal>

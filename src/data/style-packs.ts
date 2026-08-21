@@ -2,6 +2,8 @@ export interface StylePack {
   id: string
   name: string
   slug: string
+  /** 兼容迁移前的旧 slug；不再用于公开链接。 */
+  legacySlugs?: string[]
   category: string
   description: string | null
   previewUrl: string
@@ -15,7 +17,7 @@ export interface StylePack {
   visualKeywords: string[]
 }
 
-export const STYLE_PACKS: StylePack[] = [
+const RAW_STYLE_PACKS: StylePack[] = [
   {
     id: "cmrudmox70089a55901y20v3o",
     name: "现代简约扁平蓝色商务风格",
@@ -422,6 +424,16 @@ export const STYLE_PACKS: StylePack[] = [
     visualKeywords: ["翡翠绿到钴蓝横向渐变", "纯白内容底", "绿色大数字指标", "绿色线性医疗图标", "圆角白卡柔和投影", "通栏渐变结论横幅", "网状连接线底纹", "通透科技感"],
   },
 ]
+
+// 公开库只展示正式资产：测试目录包暂时下线，待按原创重制规范验收后再回归。
+// 公开 slug 与展示名保持一致；legacySlugs 继续兼容历史分享链接。
+export const STYLE_PACKS: StylePack[] = RAW_STYLE_PACKS
+  .filter((pack) => !pack.previewUrl.includes('/测试'))
+  .map((pack) => ({
+    ...pack,
+    slug: pack.name,
+    ...(pack.slug !== pack.name ? { legacySlugs: [pack.slug] } : {}),
+  }));
 
 // 分类筛选顺序与旁门一致；「营销活动」保留占位（当前无包）
 export const STYLE_PACK_CATEGORIES: string[] = ['商务/汇报', '学术答辩', '医疗/医药', '能源/电力', '科技/深色', '营销活动', '国风/古典', '酒店/地产']

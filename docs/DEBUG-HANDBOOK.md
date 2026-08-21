@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-08-20（微信支付直连上线 + emoji/BMP 过滤修复）
+> 最后更新：2026-08-21（会员工具、外部可编辑转换与并发升级）
 
 ## 1. 系统是什么
 
@@ -34,12 +34,12 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 
 ## 4. 业务主链路（整套 PPT）
 
-注册/登录（邮箱 OTP 或手机号短信 OTP 或密码，注册送 100🌟）→ 上传文档（txt/md/docx/pdf）或按页录入 → 大纲（LLM）→ 内容梳理（tagged DSL，结构校验+数据保真 diff）→ 确认冻结（contentLocked）→ 选风格包（27 包）→ 逐页生图（10🌟/页）→ 导出。
+注册/登录（邮箱 OTP 或手机号短信 OTP 或密码，注册送 100🌟）→ 上传文档（txt/md/docx/pdf）或按页录入 → 大纲（LLM）→ 内容梳理（tagged DSL，结构校验+数据保真 diff）→ 确认冻结（contentLocked）→ 选择公开正式风格包（测试资产已过滤）→ 逐页生图（10🌟/页）→ 导出。
 
 关键代码：
 - 大纲/引擎：`src/lib/server/engine.ts`（**引擎 3002 的 internal/ppt 契约端点未上线，无 PPT_ENGINE_INTERNAL_TOKEN 时走 LLM 兜底——这是定案**）。大纲链路由另一会话在优化，**契约冻结，勿动**。
 - 生图 prompt 组装：`src/lib/server/generation/style-packs.ts`（buildSlideImagePrompt = 整套一致性段 + 页型版式指令 + 文案段 + 风格指令含视觉关键词 + 易转可编辑条款）；页型归一：`src/lib/server/generation/page-types.ts`（16 页型，role 优先 + 关键词最长匹配）。
-- 生成管线：`src/lib/server/generation/generate.ts`（估价→整单 402 预检→建 job→逐页并发 3→debit 幂等键 `deck-generate:{deckId}:{jobId}:{slideId}`→失败 refund）。
+- 生成管线：`src/lib/server/generation/generate.ts`（估价→整单 402 预检→建 job→单套逐页并发 6；`images.ts` 再统一约束全站在途 20 / 每分钟启动 24→debit 幂等键 `deck-generate:{deckId}:{jobId}:{slideId}`→失败 refund）。
 - 状态机：decks.ts（parsed→outlined→structured→confirmed→generating→generated/partial；stale 作废机制）。
 - **崩溃恢复（2026-08-20 上线）**：`src/lib/server/generation/recovery.ts`。重启/崩溃打断生成后，deck 卡 generating（409 死锁）、页卡 queued/running、已扣费页无退款的问题由懒恢复解决：`getDeckState`/`startDeckGeneration`/单页读写入口触发 `reconcile*`，把中断页收敛为 failed、deck 收敛为 partial/confirmed，并按 ledger **实扣金额**补退款（refund 幂等键与正常失败退款同格式，不双退）。判定依据 = job 心跳（每页完成刷新 `generation_jobs.updated_at`）超过 `ANPPT_V2_JOB_STALE_MS`（默认生图超时+2min，下限 5min）或 job 已终态；本进程活跃任务有注册表守卫不会误伤。单页扣费键存 `single_page_versions.charge_key`（老库懒迁移补列）。
 - **软删清理（同日上线）**：`projects.ts` `listProjects` 时懒清理软删超 `ANPPT_V2_PROJECT_RETENTION_DAYS`（默认 7 天）的项目——行级联删除（FK ON）+ 生成图删除（deck 整目录、单页按 version.image_path）；导出文件与 uploads 不清；**credit_ledger 永不删除**。
@@ -60,27 +60,30 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 
 ## 6. 转可编辑 PPTX（Codia 链，20🌟/页）
 
-- 代码：`src/lib/server/codia.ts`（客户端）、`src/lib/server/exports.ts`（`startDeckEditableExport` / `startSinglePageEditableExport` → 共用 `launchEditableExport` + 管线 + 懒恢复；`readExportSourceImages` 按 ref_type 分发取图）、路由 `POST /api/deck/[id]/export-editable` 与 `POST /api/single-page/export-editable-pptx`（均 202）、状态 `GET /api/pptx-exports/[id]`。
-- 流程：读整套页图 → pdf-lib 打 image-only PDF → Codia 上传（multipart `file`）→ 建任务（`Idempotency-Key: anppt-editable-{exportId}`）→ 4s 轮询 → 下载 ppt_url 落盘。
-- 失败语义：task failed 自动以 `-retry1` 键重建一次（上游对 failed 任务幂等退费，不双扣）；再失败 → 退星 + 行 failed。上游 402（Codia 余额不足）→ 立即退星 + journal 大字告警 `[anppt-v2][codia] ⚠️⚠️`。
-- 懒恢复：pending/processing 的 editable 行在 getExport/listExports 时被现场推进（有 task_id 现场 poll；无 task_id 且创建超 30s 后台重跑整条管线，幂等安全）。**没有硬超时**。
-- 限制：单套 ≤20 页（EXPORT_TOO_MANY_PAGES）；deck 必须 status==='generated'；单页项目取全部有 activeVersion 的页；同 ref 并发转换 409 EXPORT_RUNNING。
+- 代码：`src/lib/server/codia.ts`（客户端）、`src/lib/server/exports.ts`（deck / single-page / upload 共用 `launchEditableExport` + 管线 + 懒恢复）、路由 `POST /api/deck/[id]/export-editable`、`POST /api/single-page/export-editable-pptx`、`POST /api/editable-conversions`，状态 `GET /api/pptx-exports/[id]`。
+- 流程：站内作品读页图，外部入口接受单份 PDF 或最多 20 张 PNG/JPG；图片先用 pdf-lib 合成 image-only PDF → Codia 上传（multipart `file`）→ 建任务（`Idempotency-Key: anppt-editable-{exportId}`）→ 4s 轮询真实进度 → PPTX 流式写临时文件并原子落盘。上传源 PDF 在所有终态安全删除。
+- 幂等：同项目进行中任务直接复用；同一来源指纹已有成功结果默认复用；只有显式 `force=true` 才重新建任务、重新扣星。查重、建行、扣费在同一 `BEGIN IMMEDIATE` 事务中。
+- 失败语义：task failed 自动以 `-retry1` 键重建一次（上游对 failed 任务幂等退费，不双扣）；再失败 → 幂等退星 + 行 failed，对用户统一显示“服务器开小差”。上游 402 → 立即退星 + journal 大字告警 `[anppt-v2][codia] ⚠️⚠️`。
+- 懒恢复：pending/processing 的 editable 行在 getExport/listExports 时被现场推进（有 task_id 现场 poll；无 task_id 且创建超 30s 后台重跑整条管线，幂等安全）。上游状态轮询没有虚假的前端倒计时。
+- 限制：每任务 ≤20 页（EXPORT_TOO_MANY_PAGES）；deck 必须 status==='generated'；单页项目取全部有 activeVersion 的页；同 ref 并发请求复用同一任务，不返回重复任务、不重复扣星。
 - Codia 计费：13 credits/页，提交即扣；用户已订 $49/月档（5500 credits ≈ 423 页/月）。**禁止为测试真实调用 Codia**（测试全 mock）。
 - 官方文档：https://codia.ai/pdf-to-editable-ppt-api 、https://codia.ai/blog/notebooklm-style-pdf-to-editable-pptx-open-api
 
 ## 7. 前端要点
 
 - 工作台：`src/components/deck/deck-workbench.tsx` + `step-*.tsx`（生成 CTA 状态机：生成中禁用「正在生成中…」/部分完成「生成剩余 N 页」/全完成「使用此风格重新生成」）。
-- 转可编辑按钮：`step-generate.tsx`（仅 deck.status==='generated' 可点）→ 确认弹窗 → 4s 轮询 → 成功自动下载。单页生成器同款：`single-page-client.tsx` + `sp-panels.tsx` ExportPanel（doneCount×单价确认弹窗 → 轮询 getExportRecord → 自动下载/失败退星提示）。
-- 下载中心：`src/app/(main)/exports/page.tsx`（列表 + 状态 + 再下载，processing 自动刷新）。侧栏有「下载中心」入口。
-- 「图片转可编辑」侧栏入口仍是占位（未做，属规划外）。
+- 转可编辑按钮：`step-generate.tsx`（仅 deck.status==='generated' 可点）与 `single-page-client.tsx` 共用 `useEditableExport`；刷新/离开后恢复原任务，完成时明确提示已进入下载中心，成功结果可直接下载，显式“重新转换”才再次扣星。
+- 下载中心：`src/app/(main)/exports/page.tsx`（来源文件名、真实页数/进度、状态、反复下载；processing 自动刷新）。侧栏有「下载中心」入口。
+- 外部文件转可编辑：侧栏 `/tools/editable-converter` 已上线，支持 PDF 与图片排序；未登录先引导登录，不会误发受保护请求。
+- 本地编辑器：侧栏 `/tools/onlyoffice` 已上线；未充值不显示下载链接，三个 Windows 下载路由再次做服务端权益校验。
 
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node --experimental-strip-types scripts/test-generation.mjs  # 172 断言（含 [6b] deck / [6c] 单页 Codia 全链 mock、[9] 崩溃恢复/清理）
-node --experimental-strip-types scripts/test-backend.mjs     # 56 断言（含微信 description 非 BMP 过滤）
-./node_modules/.bin/tsc --noEmit
+node scripts/test-generation.mjs  # 当前 192 断言，Codia/生图全部 mock
+node scripts/test-backend.mjs     # 当前 71 断言，含 ONLYOFFICE 权限/重定向安全
+npm run lint
+npx tsc --noEmit
 npm run build
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）
 BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实生图扣费（约 $0.08），慎用
@@ -118,3 +121,12 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 大纲生成链路契约冻结（另一会话在改），只能动生图 prompt 拼装层。
 - commit 用英文祈使句；部署前跑齐 4 项验证；部署会重启服务。
 - 竞品调研资料库：`/Users/an/ZCodeProject/anppt-v2-recon/`（旁门/花卷/抖研三站报告 + 可编辑路线调研 RESEARCH-image-to-editable-pptx-2026.md）。
+
+## 12. 2026-08-21 全站工具与并发升级
+
+- 外部文件转可编辑：`/tools/editable-converter`，接受单份 PDF 或最多 20 张 PNG/JPG；统一走 `pdf_to_ppt`，20🌟/页。任务记录 `ref_type=upload`，同内容指纹复用，刷新后从下载中心恢复。
+- ONLYOFFICE：`/tools/onlyoffice`。软件本身是第三方开源免费软件；AnPPT 的三个 Windows 一键下载入口、版本校验、兼容工具包与附带支持，仅在任意真实充值成功后永久解锁。权益判定为 `recharge_orders.status='paid'`，兑换码不算“充值一次”。
+- 项目导航：侧栏只保留一个「我的项目」，页面按 `updated_at DESC` 同时承担原“最近项目”视图。
+- 生图调度：单套默认并发 6、全站最大在途 20、滚动每分钟启动 24；429/5xx/网络抖动最多后台恢复 2 次，400/401/403/超时不盲目重试；单请求超时默认 8 分钟。
+- 下载：`/api/files/...` 使用文件流，支持 `HEAD`、`Range`、206 和 416；Codia PPTX 结果也直接流式落盘，避免并发时整文件进入 Node 堆内存。
+- 原创模板重制规范：`docs/ORIGINAL-TEMPLATE-REGEN.md`。本轮只落规范，不调用付费生图；后续按高校赛事、企业商务、政企工作三套逐张验收替换。

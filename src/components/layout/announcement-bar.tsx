@@ -20,12 +20,14 @@ export function AnnouncementBar({
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    try {
-      setVisible(localStorage.getItem(storageKey) !== "1");
-    } catch {
-      setVisible(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timer = window.setTimeout(() => {
+      try {
+        setVisible(localStorage.getItem(storageKey) !== "1");
+      } catch {
+        setVisible(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [storageKey]);
 
   if (!visible) return null;

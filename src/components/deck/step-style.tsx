@@ -1,7 +1,7 @@
 "use client";
 
 // Step 3 选择风格（WORKBENCH-UI-SPEC §6，剔除样稿步骤：确认风格后直接整套生成）。
-// 数据用 src/data/style-packs.ts 的 27 个风格包（公开静态数据）。
+// 数据用 src/data/style-packs.ts 的正式风格包（测试资产已过滤）。
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { CheckIcon } from "@/components/icons";

@@ -37,6 +37,14 @@ export function listRechargePlans(): RechargePlan[] {
   return getEnv().rechargePlans;
 }
 
+/** 任意一笔真实充值成功后，永久解锁附带会员服务。兑换码不计入‘充值一次’。 */
+export function hasEverPaid(userId: string): boolean {
+  const row = getDb()
+    .prepare("SELECT 1 AS ok FROM recharge_orders WHERE user_id = ? AND status = 'paid' LIMIT 1")
+    .get(String(userId).trim()) as { ok?: number } | undefined;
+  return Boolean(row?.ok);
+}
+
 export function findPlan(planId: unknown): RechargePlan {
   const id = String(planId ?? '').trim();
   const plan = getEnv().rechargePlans.find((item) => item.id === id);

@@ -10,7 +10,7 @@ import { readSiteFile, saveFile } from './storage';
 import { buildSlideImagePrompt, resolveStylePack } from './style-packs';
 import { cleanString } from './types';
 
-export interface SinglePageDeps extends ImageDeps {}
+export type SinglePageDeps = ImageDeps;
 
 type Row = Record<string, string | number | null>;
 

@@ -24,7 +24,7 @@ function statusChip(item: ExportRecord) {
   return (
     <span className="flex items-center rounded-full bg-brand-soft px-2 py-0.5 text-[11px] text-brand">
       <Spinner className="mr-1 text-[9px]" />
-      转换中
+      {item.completedPages > 0 ? `${item.completedPages}/${item.totalPages || item.pageCount} 页` : "转换中"}
     </span>
   );
 }
@@ -37,6 +37,13 @@ export function ExportsClient() {
   const load = useCallback(async () => {
     setUnauthorized(false);
     try {
+      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
+      const session = await sessionResponse.json().catch(() => null);
+      if (!sessionResponse.ok || !session?.ok || !session.data?.authenticated) {
+        setUnauthorized(true);
+        setItems(null);
+        return;
+      }
       const data = await listExportRecords();
       setItems(data.items);
     } catch (error) {
@@ -51,15 +58,27 @@ export function ExportsClient() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   // 有转换中的记录时 4s 自动刷新
   const hasRunning = (items ?? []).some((item) => item.status === "pending" || item.status === "processing");
   useEffect(() => {
     if (!hasRunning) return;
-    const timer = window.setInterval(() => void load(), 4000);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | null = null;
+    const refresh = async () => {
+      await load();
+      if (!cancelled) timer = window.setTimeout(refresh, 4000);
+    };
+    timer = window.setTimeout(refresh, 4000);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [hasRunning, load]);
 
   return (
@@ -80,10 +99,10 @@ export function ExportsClient() {
         <div className="rounded-2xl border border-line bg-card px-6 py-24 text-center text-sm text-ink-3 shadow-card">
           加载中…
         </div>
-      ) : items && items.length > 0 ? (
+      ) : unauthorized ? null : items && items.length > 0 ? (
         <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-card">
-          <div className="hidden grid-cols-[1fr_88px_64px_96px_96px] gap-3 border-b border-line bg-page px-5 py-2.5 text-xs text-ink-4 sm:grid">
-            <span>时间</span>
+          <div className="hidden grid-cols-[1.35fr_88px_64px_96px_96px] gap-3 border-b border-line bg-page px-5 py-2.5 text-xs text-ink-4 sm:grid">
+            <span>文件 / 时间</span>
             <span>类型</span>
             <span>页数</span>
             <span>状态</span>
@@ -93,17 +112,36 @@ export function ExportsClient() {
             {items.map((item) => (
               <li
                 key={item.exportId}
-                className="grid grid-cols-1 gap-2 px-5 py-3.5 text-sm sm:grid-cols-[1fr_88px_64px_96px_96px] sm:items-center sm:gap-3"
+                className="grid grid-cols-1 gap-2 px-5 py-3.5 text-sm sm:grid-cols-[1.35fr_88px_64px_96px_96px] sm:items-center sm:gap-3"
               >
-                <span className="text-ink-2">
-                  {new Date(item.createdAt).toLocaleString("zh-CN")}
+                <span className="min-w-0 text-ink-2">
+                  {item.sourceName && <span className="block truncate font-medium text-ink" title={item.sourceName}>{item.sourceName}</span>}
+                  <span className={item.sourceName ? "mt-0.5 block text-xs text-ink-4" : ""}>{new Date(item.createdAt).toLocaleString("zh-CN")}</span>
                   {item.status === "failed" && item.error && (
                     <span className="mt-0.5 block truncate text-xs text-danger" title={item.error}>
                       {item.error}
                     </span>
                   )}
+                  {(item.status === "pending" || item.status === "processing") && (
+                    <span className="mt-1.5 block max-w-xs" role="status">
+                      <span className="flex items-center justify-between text-[11px] text-ink-4">
+                        <span>
+                          {item.completedPages > 0
+                            ? `已完成 ${item.completedPages} / ${item.totalPages || item.pageCount} 页`
+                            : "小安正在逐页整理可编辑元素"}
+                        </span>
+                        <span>{item.progress > 0 ? `${item.progress}%` : "可安全离开"}</span>
+                      </span>
+                      <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-brand-soft">
+                        <span
+                          className="block h-full rounded-full bg-brand transition-[width] duration-500"
+                          style={{ width: `${Math.max(3, Math.min(100, item.progress || 3))}%` }}
+                        />
+                      </span>
+                    </span>
+                  )}
                 </span>
-                <span className="text-ink-3">{item.kind === "editable" ? "可编辑" : "图片版"}</span>
+                <span className="text-ink-3">{item.refType === "upload" ? "文件转换" : item.kind === "editable" ? "可编辑" : "图片版"}</span>
                 <span className="text-ink-3">{item.pageCount} 页</span>
                 <span>{statusChip(item)}</span>
                 <span className="sm:text-right">
@@ -116,7 +154,7 @@ export function ExportsClient() {
                       <DownloadIcon width={12} height={12} /> 下载
                     </a>
                   ) : (
-                    <span className="text-xs text-ink-4">{item.status === "failed" ? "不可用" : "待完成"}</span>
+                    <span className="text-xs text-ink-4">{item.status === "failed" ? "不可用" : "完成后可下载"}</span>
                   )}
                 </span>
               </li>

@@ -28,8 +28,16 @@ export interface GenerationConfig {
   imageModel: string;
   imageSize: string;
   imageTimeoutMs: number;
-  /** 逐页生图并发上限 */
+  /** 单套 PPT 内逐页生图并发上限 */
   generateConcurrency: number;
+  /** 全站生图最大在途请求数 */
+  imageGlobalConcurrency: number;
+  /** 全站每分钟最多启动的生图请求数 */
+  imageStartsPerMinute: number;
+  /** 429/5xx/网络抖动的后台自动重试次数 */
+  imageMaxRetries: number;
+  /** 自动重试基础退避毫秒数 */
+  imageRetryBaseMs: number;
   /** 生成 job 心跳卡死判定阈值：超过即视为进程中断，懒恢复可收敛（默认生图超时+2min，下限 5min） */
   jobStaleMs: number;
   /** Codia 开放 API（图片版 PPT 转可编辑 PPTX 上游） */
@@ -51,13 +59,18 @@ function intFrom(value: unknown, fallback: number): number {
   return Number.isSafeInteger(n) && n > 0 ? n : fallback;
 }
 
+function nonNegativeIntFrom(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 0 ? n : fallback;
+}
+
 function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
 }
 
 export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): GenerationConfig {
   const dataDir = trim(env.ANPPT_V2_DATA_DIR) || path.resolve(process.cwd(), 'data');
-  const imageTimeoutMs = intFrom(env.ANPPT_V2_IMAGE_TIMEOUT_MS, 300_000);
+  const imageTimeoutMs = intFrom(env.ANPPT_V2_IMAGE_TIMEOUT_MS, 480_000);
   return {
     dataDir,
     uploadsDir: trim(env.ANPPT_V2_UPLOADS_DIR) || path.join(dataDir, 'uploads'),
@@ -80,7 +93,11 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     imageModel: trim(env.ANPPT_V2_IMAGE_MODEL) || 'gpt-image-2',
     imageSize: trim(env.ANPPT_V2_IMAGE_SIZE) || '1536x864',
     imageTimeoutMs,
-    generateConcurrency: Math.min(8, intFrom(env.ANPPT_V2_GENERATE_CONCURRENCY, 3)),
+    generateConcurrency: Math.min(12, intFrom(env.ANPPT_V2_GENERATE_CONCURRENCY, 6)),
+    imageGlobalConcurrency: Math.min(40, intFrom(env.ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY, 20)),
+    imageStartsPerMinute: Math.min(120, intFrom(env.ANPPT_V2_IMAGE_STARTS_PER_MINUTE, 24)),
+    imageMaxRetries: Math.min(3, nonNegativeIntFrom(env.ANPPT_V2_IMAGE_MAX_RETRIES, 2)),
+    imageRetryBaseMs: Math.min(30_000, intFrom(env.ANPPT_V2_IMAGE_RETRY_BASE_MS, 2_000)),
     jobStaleMs: intFrom(env.ANPPT_V2_JOB_STALE_MS, Math.max(5 * 60_000, imageTimeoutMs + 120_000)),
     codiaApiKey: trim(env.ANPPT_V2_CODIA_API_KEY),
     codiaBaseUrl: stripTrailingSlash(trim(env.ANPPT_V2_CODIA_BASE_URL) || 'https://openapi.codia.ai'),

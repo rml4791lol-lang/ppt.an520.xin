@@ -24,7 +24,7 @@ import { markJobActive, markJobDone, reconcileDeckGeneration } from './recovery'
 import { extractCopyFromDsl } from './dsl';
 import { cleanString, type JobKind } from './types';
 
-export interface GenerateDeps extends ImageDeps {}
+export type GenerateDeps = ImageDeps;
 
 export interface StartedJob {
   jobId: string;

@@ -109,7 +109,7 @@ export const PRICING_RULES: PricingRule[] = [
     action: '可编辑导出',
     description: 'OCR 识别重建文本框，导出可编辑 PPTX',
     cost: '20 🌟/页',
-    badge: '即将上线',
+    badge: '已上线',
   },
   {
     group: '保障',
@@ -152,8 +152,9 @@ export const RECHARGE_BENEFITS: BenefitColumn[] = [
     title: '导出与项目管理',
     items: [
       { text: '图片版导出：图片版 PPTX 免费导出，可以直接演示和汇报', badge: '限时免费' },
-      { text: '可编辑导出：真正需要修改文字时，按页导出可编辑版本', badge: '即将上线' },
-      { text: '实时云端保存：项目云端实时保存，7 天内可随时下载', badge: null },
+      { text: '可编辑导出：作品、PDF 或图片可转为可编辑 PPTX', badge: '已上线' },
+      { text: '实时云端保存：项目云端保存，导出文件可在下载中心反复获取', badge: null },
+      { text: '充值任意一次：永久解锁 ONLYOFFICE 兼容工具包与附带服务', badge: '永久权益' },
     ],
   },
 ]

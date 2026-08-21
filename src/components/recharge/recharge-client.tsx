@@ -121,7 +121,7 @@ function PaymentPanel({
   onClose: (paid: boolean) => void;
 }) {
   const router = useRouter();
-  const [qr, setQr] = useState<string | null>(null);
+  const [qrResult, setQrResult] = useState<{ source: string; dataUrl: string | null } | null>(null);
   const [status, setStatus] = useState<OrderView["status"]>(order.status);
   const [pollError, setPollError] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -129,21 +129,21 @@ function PaymentPanel({
   const isWechat = order.provider === "wechat" || order.provider === "mock";
   const paid = status === "paid";
   const dead = status === "expired" || status === "cancelled";
+  const qr = qrResult?.source === order.codeUrl ? qrResult.dataUrl : null;
 
   // codeUrl → 二维码图片（qrcode 按需动态加载，不进首屏包）
   useEffect(() => {
     let alive = true;
-    setQr(null);
     if (order.codeUrl) {
       import("qrcode")
         .then((mod) =>
           mod.toDataURL(order.codeUrl, { width: 480, margin: 1 }),
         )
         .then((url) => {
-          if (alive) setQr(url);
+          if (alive) setQrResult({ source: order.codeUrl, dataUrl: url });
         })
         .catch(() => {
-          if (alive) setQr(null);
+          if (alive) setQrResult({ source: order.codeUrl, dataUrl: null });
         });
     }
     return () => {

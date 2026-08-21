@@ -55,15 +55,21 @@ export function exportSinglePagesImagePptx(input: {
 
 export interface SingleEditableExportStart {
   exportId: string;
-  status: string;
+  status: "processing" | "succeeded";
   credits: number;
   pageCount: number;
+  progress: number;
+  completedPages: number;
+  totalPages: number;
+  stage: string;
+  url: string;
+  reused: boolean;
 }
 
 /** 单页项目 → 可编辑 PPTX（20🌟/页，Codia 链）：202 返回任务句柄，轮询 /api/pptx-exports/{id} */
-export function startSingleEditableExport(projectId: string): Promise<SingleEditableExportStart> {
+export function startSingleEditableExport(projectId: string, force = false): Promise<SingleEditableExportStart> {
   return apiFetch<SingleEditableExportStart>("/api/single-page/export-editable-pptx", {
-    body: { projectId },
+    body: { projectId, force },
   });
 }
 

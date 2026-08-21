@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BenefitsCheck, RechargeClient } from "@/components/recharge/recharge-client";
 import { PRICING_RULES, RECHARGE_BENEFITS, RECHARGE_PLANS } from "@/data/recharge";
 
@@ -17,6 +18,14 @@ export default function RechargePage() {
       <p className="mt-2 text-sm text-ink-3">
         选择合适的积分套餐，生成、样稿与图片版导出都从这里开始。
       </p>
+
+      <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-brand-line bg-brand-soft px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-brand">任意充值一次，永久解锁附带服务</p>
+          <p className="mt-1 text-xs leading-5 text-ink-3">免费 ONLYOFFICE 下载导航、兼容工具包、可编辑文件衔接与会员问题支持。</p>
+        </div>
+        <Link href="/tools/onlyoffice" className="shrink-0 text-sm font-medium text-brand hover:text-brand-strong">查看会员权益 →</Link>
+      </div>
 
       <div className="mt-8">
         <RechargeClient plans={RECHARGE_PLANS} />

@@ -2,7 +2,7 @@
 // 生成链（阶段 C）lib 层全链路测试。node 直跑：
 //   node scripts/test-generation.mjs
 // 引擎 / LLM / 生图上游全部用 mock fetcher，绝不真实调用付费上游。
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { registerTsHooks } from './ts-hooks.mjs';
@@ -216,7 +216,16 @@ const projects = await import('../src/lib/server/generation/projects.ts');
 const { STYLE_PACKS } = await import('../src/data/style-packs.ts');
 
 const baseConfig = configMod.getGenerationConfig();
-const imageConfig = { ...baseConfig, imageBaseUrl: 'http://mock-image', imageApiKey: 'sk-mock' };
+check('生图自动重试可通过环境变量显式关闭', configMod.getGenerationConfig({ ...process.env, ANPPT_V2_IMAGE_MAX_RETRIES: '0' }).imageMaxRetries === 0);
+const imageConfig = {
+  ...baseConfig,
+  imageBaseUrl: 'http://mock-image',
+  imageApiKey: 'sk-mock',
+  imageGlobalConcurrency: 100,
+  imageStartsPerMinute: 10000,
+  imageMaxRetries: 0,
+  imageRetryBaseMs: 1,
+};
 const engineConfig = { ...imageConfig, engineInternalToken: 'tok', engineBaseUrl: 'http://mock-engine' };
 const llmConfig = {
   ...imageConfig,
@@ -298,6 +307,58 @@ console.log('\n[2b] 页型归一 + 生图 prompt 版式/整套一致性注入');
   check('参考图提示与 visualNote 框架约束共存', p4.includes('随附风格参考图') && p4.includes('在上述页型版式框架内执行'));
   check('styleDirective 注入视觉关键词行', stylePacks.styleDirective(pack).includes('视觉关键词：'));
   check('resolveStylePack 透出包数据视觉关键词', Array.isArray(pack.visualKeywords) && pack.visualKeywords.length >= 6);
+}
+
+
+console.log('\n[2c] 生图全站调度：并发上限 + 瞬态后台恢复');
+{
+  const images = await import('../src/lib/server/generation/images.ts');
+  images.resetImageSchedulerForTests();
+  let active = 0;
+  let maxActive = 0;
+  const concurrencyFetcher = async () => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active -= 1;
+    return jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] });
+  };
+  const schedulerConfig = {
+    ...imageConfig,
+    imageGlobalConcurrency: 2,
+    imageStartsPerMinute: 100,
+    imageMaxRetries: 0,
+  };
+  await Promise.all(Array.from({ length: 6 }, (_, index) =>
+    images.generateImage({ prompt: `调度测试 ${index}` }, { fetchImpl: concurrencyFetcher, config: schedulerConfig })));
+  check('全站在途生图不超过配置上限 2', maxActive === 2, `实际 ${maxActive}`);
+
+  images.resetImageSchedulerForTests();
+  let retryCalls = 0;
+  const retryFetcher = async () => {
+    retryCalls += 1;
+    return retryCalls < 3
+      ? jsonResponse({ error: { message: 'temporary' } }, 500)
+      : jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] });
+  };
+  const recovered = await images.generateImage(
+    { prompt: '瞬态恢复' },
+    { fetchImpl: retryFetcher, config: { ...schedulerConfig, imageMaxRetries: 2, imageRetryBaseMs: 1 } },
+  );
+  check('500 瞬态错误后台恢复两次后成功', recovered.length > 0 && retryCalls === 3, `调用 ${retryCalls}`);
+
+  images.resetImageSchedulerForTests();
+  let badCalls = 0;
+  try {
+    await images.generateImage(
+      { prompt: '请求错误不重试' },
+      { fetchImpl: async () => { badCalls += 1; return jsonResponse({ error: { message: 'bad input' } }, 400); }, config: schedulerConfig },
+    );
+  } catch {
+    // expected
+  }
+  check('400 请求错误不自动重试', badCalls === 1, `调用 ${badCalls}`);
+  images.resetImageSchedulerForTests();
 }
 
 console.log('\n[3] outline：引擎成功 + LLM 兜底两路');
@@ -683,6 +744,9 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
         && createBody.input.upload_id === 'upl_1'
         && JSON.stringify(createBody.input.page_no) === '[0,1]'
         && createInits[0].headers['Idempotency-Key'] === `anppt-editable-${started.exportId}`);
+    const reused = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    check('同源成功结果默认复用：同 exportId、0 扣星、无新上游请求',
+      reused.exportId === started.exportId && reused.reused && reused.credits === 0 && createInits.length === 1);
   }
 
   // ---- 首次 failed → 自动 retry（-retry1 幂等键）成功 ----
@@ -704,7 +768,7 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
       { match: 'r2.pptx', payload: new Response(Buffer.from('mock-pptx-binary-2')) },
     ]);
     const before = credits.getBalance(uid);
-    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     check('首次失败自动重试后成功', exp.status === 'succeeded', `实际 ${exp.status} ${exp.error}`);
@@ -726,7 +790,7 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
       { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_f' } } },
     ]);
     const before = credits.getBalance(uid);
-    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     check('两次失败 → status=failed 且 error 非空', exp.status === 'failed' && exp.error.length > 0, `实际 ${exp.status}`);
@@ -746,7 +810,7 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
       { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_402' } } },
     ]);
     const before = credits.getBalance(uid);
-    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     check('上游 402 → failed + error 含「暂时不可用」', exp.status === 'failed' && exp.error.includes('暂时不可用'), `实际 ${exp.error}`);
@@ -806,9 +870,9 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
       { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_c', status: 'pending' } } },
       { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_c' } } },
     ]);
-    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
-    await expectThrows('processing 中再次 start → 409 EXPORT_RUNNING', () =>
-      exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher)), 'EXPORT_RUNNING');
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
+    const reused = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    check('processing 中再次 start → 复用同一任务且不扣星', reused.exportId === started.exportId && reused.reused && reused.credits === 0);
     release = true;
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
@@ -864,6 +928,15 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
       { params: Promise.resolve({ id: deck.id }) },
     );
     check('export-editable 未登录 401', noAuth.status === 401, `实际 ${noAuth.status}`);
+    const routeToken = auth.createSessionForUser(uid);
+    const noBody = await editableRoute.POST(
+      new Request(`http://localhost/api/deck/${deck.id}/export-editable`, {
+        method: 'POST',
+        headers: { cookie: `anppt_v2_session=${routeToken}`, 'x-anppt-action': '1' },
+      }),
+      { params: Promise.resolve({ id: deck.id }) },
+    );
+    check('export-editable 兼容旧调用方无请求体', noBody.status !== 400, `实际 ${noBody.status}`);
   }
 }
 
@@ -919,7 +992,7 @@ console.log('\n[6c] 单页可编辑导出（Codia 链全 mock，零真实调用�
       { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_spf' } } },
     ]);
     const before = credits.getBalance(uid);
-    const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
+    const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher), { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     check('单页两次失败 → failed + 全额退星', exp.status === 'failed' && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
@@ -953,9 +1026,9 @@ console.log('\n[6c] 单页可编辑导出（Codia 链全 mock，零真实调用�
       { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_spc', status: 'pending' } } },
       { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_spc' } } },
     ]);
-    const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
-    await expectThrows('processing 中再次 start → 409 EXPORT_RUNNING', () =>
-      exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher)), 'EXPORT_RUNNING');
+    const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher), { force: true });
+    const reused = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
+    check('processing 中再次 start → 复用同一任务且不扣星', reused.exportId === started.exportId && reused.reused && reused.credits === 0);
     release = true;
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
@@ -969,6 +1042,100 @@ console.log('\n[6c] 单页可编辑导出（Codia 链全 mock，零真实调用�
     await expectThrows('不存在项目 404', () =>
       exportsLib.startSinglePageEditableExport(uid, 'proj_nope', codiaDeps(makeMockFetcher([]))), 'PROJECT_NOT_FOUND');
   }
+}
+
+
+console.log('\n[6d] 外部 PDF/图片转可编辑 + 文件 Range 流式下载');
+{
+  credits.refundCredits(uid, 100, { reason: '测试补贴', idempotencyKey: 'test-topup-6d' });
+  const token = auth.createSessionForUser(uid);
+  const uploadDb = (await import('../src/lib/server/generation/db.ts')).getGenDb();
+  let taskBody = null;
+  const binary = Buffer.from('0123456789-upload-editable-pptx');
+  const fetcher = makeMockFetcher([
+    { match: '/v2/open/tasks/task_upload', payload: { code: 0, message: 'ok', data: {
+      status: 'succeeded', progress: 1, completed_pages: 2, total_pages: 2,
+      result: { ppt_url: 'http://mock-codia/files/upload.pptx', page_count: 2 },
+    } } },
+    { match: '/v2/open/tasks', payload: (init) => {
+      taskBody = JSON.parse(init.body);
+      return { code: 0, message: 'ok', data: { task_id: 'task_upload', status: 'pending' } };
+    } },
+    { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_external' } } },
+    { match: 'upload.pptx', payload: new Response(binary) },
+  ]);
+  const before = credits.getBalance(uid);
+  const started = await exportsLib.startUploadedEditableExport(uid, [
+    { name: '01.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
+    { name: '02.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
+  ], { fetchImpl: fetcher, config: baseConfig, pollIntervalMs: 1 });
+  await started.done;
+  const exp = await exportsLib.getExport(uid, started.exportId);
+  const uploadSourceRow = uploadDb.prepare('SELECT source_path FROM export_jobs WHERE id = ?').get(started.exportId);
+  const uploadSourceAbs = path.join(baseConfig.uploadsDir, String(uploadSourceRow?.source_path || '').split('/').slice(1).join('/'));
+  check('两张图片成功转为 2 页可编辑 PPTX', exp.status === 'succeeded' && exp.pageCount === 2 && exp.refType === 'upload');
+  check('外部转换按 20🌟/页扣 40', before - credits.getBalance(uid) === 40);
+  check('图片顺序映射为 page_no [0,1]', JSON.stringify(taskBody?.input?.page_no) === '[0,1]');
+  check('下载中心保留外部来源名', exp.sourceName === '2 张图片');
+  check('外部转换终态后清理临时 PDF 源文件', !existsSync(uploadSourceAbs));
+  const reused = await exportsLib.startUploadedEditableExport(uid, [
+    { name: '01.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
+    { name: '02.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
+  ], { fetchImpl: fetcher, config: baseConfig, pollIntervalMs: 1 });
+  check('重复上传相同内容复用成功结果且不扣星', reused.reused && reused.exportId === started.exportId && reused.credits === 0);
+  check('复用成功结果不会遗留重复源文件', !existsSync(uploadSourceAbs));
+
+  const poorUpload = await auth.registerWithPassword(
+    { account: 'uploadpoor', password: 'password123', confirmPassword: 'password123' },
+    '127.0.0.1',
+  );
+  await expectThrows('外部转换余额不足时不建任务', () =>
+    exportsLib.startUploadedEditableExport(
+      poorUpload.user.id,
+      Array.from({ length: 6 }, (_, index) => ({
+        name: `${index + 1}.png`, mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64'),
+      })),
+      { fetchImpl: makeMockFetcher([]), config: baseConfig, pollIntervalMs: 1 },
+    ), 'INSUFFICIENT_CREDITS');
+  const poorSourceDir = path.join(baseConfig.uploadsDir, poorUpload.user.id, 'editable-sources');
+  check('外部转换启动失败时清理临时 PDF', !existsSync(poorSourceDir) || readdirSync(poorSourceDir).length === 0);
+
+  const editableRoute = await import('../src/app/api/editable-conversions/route.ts');
+  const oldUploadLimit = process.env.ANPPT_V2_UPLOAD_MAX_BYTES;
+  process.env.ANPPT_V2_UPLOAD_MAX_BYTES = '16';
+  try {
+    const oversizedForm = new FormData();
+    oversizedForm.append('files', new File([Buffer.alloc(32)], 'oversized.png', { type: 'image/png' }));
+    const oversizedResponse = await editableRoute.POST(new Request('http://localhost/api/editable-conversions', {
+      method: 'POST',
+      headers: { cookie: `anppt_v2_session=${token}`, 'x-anppt-action': '1' },
+      body: oversizedForm,
+    }));
+    check('外部上传在读取 Buffer 前按 File.size 返回 413', oversizedResponse.status === 413);
+  } finally {
+    if (oldUploadLimit === undefined) delete process.env.ANPPT_V2_UPLOAD_MAX_BYTES;
+    else process.env.ANPPT_V2_UPLOAD_MAX_BYTES = oldUploadLimit;
+  }
+
+  const fileRoute = await import('../src/app/api/files/[...path]/route.ts');
+  const segments = exp.url.replace('/api/files/', '').split('/');
+  const rangeResponse = await fileRoute.GET(new Request(`http://localhost${exp.url}`, {
+    headers: { cookie: `anppt_v2_session=${token}`, range: 'bytes=2-7' },
+  }), { params: Promise.resolve({ path: segments }) });
+  check('Range 下载返回 206 + 正确 Content-Range', rangeResponse.status === 206
+    && rangeResponse.headers.get('content-range') === `bytes 2-7/${binary.length}`);
+  check('Range 下载只返回指定字节', Buffer.from(await rangeResponse.arrayBuffer()).equals(binary.subarray(2, 8)));
+  const headResponse = await fileRoute.HEAD(new Request(`http://localhost${exp.url}`, {
+    method: 'HEAD', headers: { cookie: `anppt_v2_session=${token}` },
+  }), { params: Promise.resolve({ path: segments }) });
+  check('HEAD 返回文件长度且无正文', headResponse.status === 200
+    && Number(headResponse.headers.get('content-length')) === binary.length
+    && (await headResponse.arrayBuffer()).byteLength === 0);
+  const invalidRange = await fileRoute.GET(new Request(`http://localhost${exp.url}`, {
+    headers: { cookie: `anppt_v2_session=${token}`, range: `bytes=${binary.length + 1}-` },
+  }), { params: Promise.resolve({ path: segments }) });
+  check('越界 Range 返回 416', invalidRange.status === 416
+    && invalidRange.headers.get('content-range') === `bytes */${binary.length}`);
 }
 
 console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');

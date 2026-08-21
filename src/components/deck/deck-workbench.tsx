@@ -71,7 +71,7 @@ type ConfirmKind =
 
 export function DeckWorkbench({ deckId }: { deckId: string }) {
   const router = useRouter();
-  const { state, fatalError, refresh, applyState } = useDeckState(deckId);
+  const { state, fatalError, applyState } = useDeckState(deckId);
   const balance = useCreditBalance();
   const { toasts, push: toast, dismiss } = useToasts();
 
@@ -141,7 +141,15 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
     if (!state || outlineRequestedRef.current) return;
     if (state.deck.status === "parsed" && state.slides.length === 0) {
       outlineRequestedRef.current = true;
-      void triggerOutline(false);
+      let started = false;
+      const timer = window.setTimeout(() => {
+        started = true;
+        void triggerOutline(false);
+      }, 0);
+      return () => {
+        window.clearTimeout(timer);
+        if (!started) outlineRequestedRef.current = false;
+      };
     }
   }, [state, triggerOutline]);
 

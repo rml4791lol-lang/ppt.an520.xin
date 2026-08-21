@@ -150,7 +150,7 @@ export async function readSiteFile(
   const absPath = absPathForRelPath(relPathOrUrl, config);
   if (!absPath) return null;
   try {
-    return await readFile(absPath);
+    return await readFile(/* turbopackIgnore: true */ absPath);
   } catch {
     return null;
   }

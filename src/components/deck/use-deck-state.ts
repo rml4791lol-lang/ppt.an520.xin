@@ -37,7 +37,9 @@ export function useDeckState(deckId: string) {
 
   useEffect(() => {
     stoppedRef.current = false;
-    void refresh();
+    const initialTimer = window.setTimeout(() => {
+      void refresh();
+    }, 0);
     const timer = window.setInterval(() => {
       if (document.hidden) return; // 页面隐藏时暂停
       void refresh();
@@ -48,6 +50,7 @@ export function useDeckState(deckId: string) {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       stoppedRef.current = true;
+      window.clearTimeout(initialTimer);
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -71,10 +74,15 @@ export function useCreditBalance() {
   }, []);
 
   useEffect(() => {
-    void reload();
+    const initialTimer = window.setTimeout(() => {
+      void reload();
+    }, 0);
     const handler = () => void reload();
     window.addEventListener("anppt:credits-refresh", handler);
-    return () => window.removeEventListener("anppt:credits-refresh", handler);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.removeEventListener("anppt:credits-refresh", handler);
+    };
   }, [reload]);
 
   return balance;

@@ -314,9 +314,11 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
     const value = new URLSearchParams(window.location.search).get("style");
     if (!value) return;
     const found = packs.find(
-      (p) => p.slug === value || p.id === value || p.name === value,
+      (p) => p.slug === value || p.id === value || p.name === value || p.legacySlugs?.includes(value),
     );
-    if (found) setStyle(found);
+    if (!found) return;
+    const timer = window.setTimeout(() => setStyle(found), 0);
+    return () => window.clearTimeout(timer);
   }, [packs]);
 
   const flash = (msg: string) => {
