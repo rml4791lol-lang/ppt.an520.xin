@@ -100,6 +100,17 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 磁盘 78%（非 AnPPT 数据，53M）；导出文件（exports/）无清理机制，量大后需运维处理。
 - 注册仅需用户名+密码即送 100🌟，可换 IP 刷号薅生图成本（产品决策）。
 
+## 10.1 LLM 模型链与回退（2026-08-21 上线）
+
+- 大纲/内容梳理的 LLM 兜底走「模型链」：`ANPPT_V2_LLM_MODEL`（主）+ `ANPPT_V2_LLM_FALLBACK_MODELS`（回退，逗号分隔，最多 3 个）。
+- 当前线上：主 `gemini-3.1-flash-lite`（快：20 页大纲 ~10s，原 deepseek-v4-flash 要 31s，kel 真实文档 123s），回退 `gpt-5.6-luna` → `deepseek-v4-flash`（末位兜底）。
+- 切换策略：主模型失败（超时/HTTP 错/空响应）自动换下一个；超时梯度 45s/90s/末位 120s。切模型会打日志 `[anppt-v2][engine] LLM 模型 X 失败，切换 Y`——看到即说明主模型有问题。
+- **回退操作**（改 env 两行 + `systemctl restart anppt-v2`，改前备份 .env、查在途任务）：
+  - 换回 deepseek：`ANPPT_V2_LLM_MODEL=deepseek-v4-flash`、`ANPPT_V2_LLM_FALLBACK_MODELS=`
+  - 换主模型：改 `ANPPT_V2_LLM_MODEL`（可用模型见中转 `/v1/models`）
+  - 上次备份：`/opt/anppt-v2/shared/.env.bak-20260821-llm`
+- 背景：deepseek-v4-flash 是推理模型，出 20 页结构化大纲思考极慢（kel 两单 101s/123s，贴 120s 硬超时悬崖）；gemini-3.1-flash-lite 同任务 9.5s 且输出结构合法。
+
 ## 11. 禁区与注意事项
 
 - Caddy 禁区：api/console.an520.xin（另一套系统）、6800 隧道、老机 101.32.220.164、slideflow 3300 服务（不杀、只不再代理）。
