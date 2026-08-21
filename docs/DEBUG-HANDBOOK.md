@@ -22,7 +22,7 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 - Caddy 反代：`ppt.an520.xin → 127.0.0.1:3100`（Caddyfile 备份 `/etc/caddy/Caddyfile.bak-anppt-20260819-205014`）。
 - 部署：仓库根 `bash deploy/deploy.sh`（本地 build → rsync → 服务器 npm ci → restart → 自检）。**restart 会打断在线用户的在途请求**，部署前知会用户。
 - **部署前必查在途生成任务**（restart 会把生成中页面打断成「生成中断（服务重启）」）：
-  `ssh hk-hermes 'sudo -n sqlite3 /opt/anppt-v2/shared/data/anppt-v2.db "SELECT count(*) FROM generation_jobs WHERE status IN ('\''queued'\'','\''running'\'');"'`
+  `ssh hk-hermes 'sudo -n node -e "const{DatabaseSync}=require(\"node:sqlite\");const db=new DatabaseSync(\"/opt/anppt-v2/shared/data/anppt-v2.db\",{readOnly:true});console.log(db.prepare(\"SELECT count(*) c FROM generation_jobs WHERE status IN('queued','running')\").get().c)"'`
   结果 > 0 → 等任务跑完或与用户确认后再部署（崩溃恢复会退款并标失败，但 20 页套图被打断体验极差，2026-08-20 连续部署窗口曾造成 14 页失败）。
 - 看日志：`ssh hk-hermes 'sudo -n journalctl -u anppt-v2.service -n 200 --no-pager'`。
 
