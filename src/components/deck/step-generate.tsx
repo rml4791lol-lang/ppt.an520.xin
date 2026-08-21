@@ -146,7 +146,6 @@ export function StepGenerate({
     const result = await run("generate-slide", { slideId: slide.slideId });
     setRetryingId(null);
     if (result) notifyCreditsRefresh();
-    else toast("本页生成失败，本次失败不扣除星星，可单页重试。");
   };
 
   const retryFailed = async () => {
@@ -169,18 +168,22 @@ export function StepGenerate({
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pb-28 pt-6 sm:px-6">
       {/* 顶部 banner */}
-      {pageSummary.failed > 0 && !generating && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-danger/20 bg-danger-soft px-4 py-3" role="alert">
+      {pageSummary.failed > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-danger/20 bg-danger-soft px-4 py-3" role="alert">
           <p className="text-sm text-ink-2">
-            整套生成已结束：{pageSummary.failed} 页失败。失败页不影响其他页面，可在画布中单页重试，重试不扣星星。
+            {generating
+              ? `其余页面仍在生成中：已有 ${pageSummary.failed} 页失败（该次费用已自动退回），本轮结束后可一键重试失败页。`
+              : `整套生成已结束：${pageSummary.failed} 页失败。失败页不影响其他页面；失败的星星已退回，重试会重新计费，再次失败仍会退回。`}
           </p>
-          <button
-            type="button"
-            onClick={() => void retryFailed()}
-            className="shrink-0 rounded-full bg-danger px-4 py-1.5 text-xs font-medium text-white transition hover:opacity-90"
-          >
-            重试失败页
-          </button>
+          {!generating && (
+            <button
+              type="button"
+              onClick={() => void retryFailed()}
+              className="shrink-0 rounded-full bg-danger px-4 py-1.5 text-xs font-medium text-white transition hover:opacity-90"
+            >
+              重试失败页
+            </button>
+          )}
         </div>
       )}
       {state.deck.error && (
@@ -290,7 +293,8 @@ export function StepGenerate({
                           </span>
                           <button
                             type="button"
-                            disabled={running}
+                            disabled={running || generating}
+                            title={generating ? "整套生成进行中，结束后可重试本页" : undefined}
                             onClick={() => void retrySlide(slide)}
                             className="flex shrink-0 items-center gap-1 rounded-full border border-line-strong px-3 py-1 text-xs text-ink-2 transition hover:border-brand-line disabled:opacity-40"
                           >
@@ -301,6 +305,8 @@ export function StepGenerate({
                       {slide.genStatus === "succeeded" && (
                         <button
                           type="button"
+                          disabled={generating}
+                          title={generating ? "整套生成进行中，结束后可优化本页" : undefined}
                           onClick={() => setRefineTarget(slide)}
                           className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-brand-soft px-3 py-1 text-xs font-medium text-brand transition hover:bg-brand-line"
                         >
