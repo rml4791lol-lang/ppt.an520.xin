@@ -20,7 +20,7 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
   内容 = `VACUUM INTO` 在线备份 DB（WAL 一致，勿用 cp）+ `.env`（600）+ 数据清单 + `data-assets.tar.gz`（uploads/generated/exports 三目录打包，~50M），保留 7 天于 `/opt/anppt-v2/backups/daily/`。
   ⚠️ 老的 `anppt-daily-backup.sh`（03:15）备份的是 **slideflow 老系统**，与 anppt-v2 无关，别看错。
 - Caddy 反代：`ppt.an520.xin → 127.0.0.1:3100`（Caddyfile 备份 `/etc/caddy/Caddyfile.bak-anppt-20260819-205014`）。
-- 部署：仓库根 `bash deploy/deploy.sh`（本地 build → rsync → 服务器 npm ci → restart → 自检）。**restart 会打断在线用户的在途请求**，只能在双队列均为 0 时执行。
+- 部署：仓库根 `bash deploy/deploy.sh`（本地 build → rsync → 服务器 npm ci → **脚本再次检查双队列** → restart → 自检）。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时脚本会拒绝重启。
 - **部署前必须同时检查生成与导出队列**（可编辑转换也可能在后台下载结果）：
 
 ```bash
