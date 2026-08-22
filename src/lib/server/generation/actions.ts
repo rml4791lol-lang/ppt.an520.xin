@@ -5,6 +5,7 @@ import { ApiError, validationError } from '../http';
 import type { EngineDeps } from '../engine';
 import { generateOutline, splitSlide, structureSlides, structureOneSlide } from '../engine';
 import { cleanString, type OutlineSlide } from './types';
+import { validateTaggedDsl } from './dsl';
 import {
   deleteSlide,
   getDeckState,
@@ -153,6 +154,14 @@ export async function dispatchDeckAction(
       assertContentEditable(deck);
       const slideId = cleanString(body.slideId, 80);
       if (!slideId) throw validationError('缺少 slideId');
+      const structuredContent = body.structuredContent === undefined
+        ? undefined
+        : cleanString(body.structuredContent, 12000);
+      if (structuredContent !== undefined) {
+        if (!structuredContent) throw validationError('梳理内容不能为空');
+        const validation = validateTaggedDsl(structuredContent);
+        if (!validation.ok) throw validationError(validation.errors[0] || '梳理内容格式不正确');
+      }
       const { contentChanged } = updateSlideContent(deck.id, slideId, {
         role: body.role as OutlineSlide['role'] | undefined,
         chapter: body.chapter as string | undefined,
@@ -162,10 +171,14 @@ export async function dispatchDeckAction(
         rawText: body.rawText as string | undefined,
         summary: body.summary as string[] | undefined,
         visualNote: body.visualNote as string | undefined,
-        structuredContent: body.structuredContent as string | undefined,
+        structuredContent,
       });
       // 标题/原文变更后该页需重新梳理；deck 状态回退到 outlined（章节等弱变更不动状态）
-      if (contentChanged && deck.status !== 'outlined') touchDeck(deck.id, { status: 'outlined' });
+      if (structuredContent !== undefined) {
+        if (deck.status !== 'structured') touchDeck(deck.id, { status: 'structured', error: '' });
+      } else if (contentChanged && deck.status !== 'outlined') {
+        touchDeck(deck.id, { status: 'outlined' });
+      }
       return { state: getDeckState(userId, deck.id), extra: { contentChanged }, status: 200 };
     }
 

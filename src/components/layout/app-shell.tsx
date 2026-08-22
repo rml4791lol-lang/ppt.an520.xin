@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, MenuIcon } from "@/components/icons";
 import { AnnouncementBar } from "@/components/layout/announcement-bar";
 import { SidebarBrand, SidebarNav } from "@/components/layout/sidebar";
@@ -21,6 +21,22 @@ interface AppShellProps {
   children: React.ReactNode;
 }
 
+export interface ShellSessionUser {
+  id: string;
+  username?: string;
+  email?: string | null;
+  displayName?: string;
+  role?: string;
+}
+
+interface SessionResponse {
+  ok: boolean;
+  data?: {
+    authenticated?: boolean;
+    user?: ShellSessionUser | null;
+  };
+}
+
 export function AppShell({
   announcement,
   serviceEmail,
@@ -30,6 +46,29 @@ export function AppShell({
 }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sessionUser, setSessionUser] = useState<ShellSessionUser | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadSession = async () => {
+      try {
+        const response = await fetch("/api/auth/session", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as SessionResponse;
+        setSessionUser(payload.ok && payload.data?.authenticated ? payload.data.user ?? null : null);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setSessionUser(null);
+      } finally {
+        if (!controller.signal.aborted) setSessionReady(true);
+      }
+    };
+    void loadSession();
+    return () => controller.abort();
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -69,6 +108,7 @@ export function AppShell({
               collapsed={collapsed}
               serviceEmail={serviceEmail}
               tutorialUrl={tutorialUrl}
+              isAdmin={sessionUser?.role === "admin"}
             />
           </div>
         </aside>
@@ -87,6 +127,7 @@ export function AppShell({
                   collapsed={false}
                   serviceEmail={serviceEmail}
                   tutorialUrl={tutorialUrl}
+                  isAdmin={sessionUser?.role === "admin"}
                   onNavigate={() => setDrawerOpen(false)}
                 />
               </div>
@@ -113,7 +154,7 @@ export function AppShell({
               className="h-7 w-auto lg:hidden"
             />
             <div className="ml-auto">
-              <UserArea />
+              <UserArea user={sessionUser} sessionReady={sessionReady} />
             </div>
           </header>
 

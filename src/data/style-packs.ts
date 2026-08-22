@@ -1,3 +1,5 @@
+import { getStyleDesignDna } from "./style-design-dna"
+
 export interface StylePack {
   id: string
   name: string
@@ -18,6 +20,72 @@ export interface StylePack {
 }
 
 const RAW_STYLE_PACKS: StylePack[] = [
+  {
+    id: "anppt-original-innovation-20260822",
+    name: "深海蓝创新赛事答辩风",
+    slug: "深海蓝创新赛事答辩风",
+    category: "赛事/竞赛",
+    description: "面向挑战杯、创新创业与科研项目路演的深海蓝赛事视觉，以真实研发场景、证据链和技术路线强化评审扫读。",
+    previewUrl: "/assets/style-packs/深海蓝创新赛事答辩风/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/深海蓝创新赛事答辩风/cover.webp",
+      "/assets/style-packs/深海蓝创新赛事答辩风/toc.webp",
+      "/assets/style-packs/深海蓝创新赛事答辩风/section.webp",
+      "/assets/style-packs/深海蓝创新赛事答辩风/content.webp",
+      "/assets/style-packs/深海蓝创新赛事答辩风/data.webp",
+      "/assets/style-packs/深海蓝创新赛事答辩风/process.webp",
+    ],
+    badgeText: "原创赛事",
+    tags: ["挑战杯", "创新创业"],
+    suitablePageTypes: ["创新创业路演", "挑战杯答辩", "科研项目评审"],
+    suitableScenarios: ["高校赛事答辩", "创新创业路演", "科研成果评审"],
+    recommendationWeight: 105,
+    visualKeywords: ["深海军蓝底", "冷青蓝精密光线", "琥珀橙证据强调", "真实高校研发摄影", "斜切技术栅格", "评审证据链", "编号导航系统", "技术路线图"],
+  },
+  {
+    id: "anppt-original-skill-20260822",
+    name: "精密制造技能竞赛风",
+    slug: "精密制造技能竞赛风",
+    category: "赛事/竞赛",
+    description: "面向职业技能竞赛、教学能力比赛与实训成果汇报，以精密制造摄影、工程制图和标准作业流程呈现专业度。",
+    previewUrl: "/assets/style-packs/精密制造技能竞赛风/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/精密制造技能竞赛风/cover.webp",
+      "/assets/style-packs/精密制造技能竞赛风/toc.webp",
+      "/assets/style-packs/精密制造技能竞赛风/section.webp",
+      "/assets/style-packs/精密制造技能竞赛风/content.webp",
+      "/assets/style-packs/精密制造技能竞赛风/data.webp",
+      "/assets/style-packs/精密制造技能竞赛风/process.webp",
+    ],
+    badgeText: "技能竞赛",
+    tags: ["技能竞赛", "教学成果"],
+    suitablePageTypes: ["职业技能竞赛", "教学能力比赛", "实训成果汇报"],
+    suitableScenarios: ["职业技能竞赛", "技能教学答辩", "实训质量汇报"],
+    recommendationWeight: 104,
+    visualKeywords: ["精密白底", "深靛蓝工程边界", "安全橙步骤强调", "真实实训摄影", "机械工程制图", "毫米刻度", "标准作业流程", "质量控制图"],
+  },
+  {
+    id: "anppt-original-career-20260822",
+    name: "暖橙职业成长答辩风",
+    slug: "暖橙职业成长答辩风",
+    category: "赛事/竞赛",
+    description: "面向职业生涯规划大赛与个人成长答辩，以克制暖橙、编辑式留白和行动证据路径呈现真实成长。",
+    previewUrl: "/assets/style-packs/暖橙职业成长答辩风/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/暖橙职业成长答辩风/cover.webp",
+      "/assets/style-packs/暖橙职业成长答辩风/toc.webp",
+      "/assets/style-packs/暖橙职业成长答辩风/section.webp",
+      "/assets/style-packs/暖橙职业成长答辩风/content.webp",
+      "/assets/style-packs/暖橙职业成长答辩风/data.webp",
+      "/assets/style-packs/暖橙职业成长答辩风/process.webp",
+    ],
+    badgeText: "职业规划",
+    tags: ["职业规划", "成长答辩"],
+    suitablePageTypes: ["职业生涯规划", "个人成长答辩", "学习实践复盘"],
+    suitableScenarios: ["职业规划大赛", "成长答辩", "个人发展汇报"],
+    recommendationWeight: 103,
+    visualKeywords: ["象牙白编辑底", "深墨蓝正文", "暖橙红重点", "细金坐标路径", "真实学习实践摄影", "杂志式留白", "成长证据节点", "行动路线图"],
+  },
   {
     id: "cmrudmox70089a55901y20v3o",
     name: "现代简约扁平蓝色商务风格",
@@ -425,15 +493,34 @@ const RAW_STYLE_PACKS: StylePack[] = [
   },
 ]
 
+const PUBLIC_STYLE_NAMES: Readonly<Record<string, string>> = {
+  // 稳定 id 与资产路径不变，只把面向用户的第三方品牌式命名改成 AnPPT 自有名称。
+  cms5q2vfl02qz13yh2jhgo8p3: "冷白极简经营汇报风",
+  cmrn8kjb002lyy1o1b81fikbr: "深绿算力基础设施风",
+  cmrk9saju00bh10zkedkn6l09: "云雾蓝磨砂轻商务风",
+}
+
 // 公开库只展示正式资产：测试目录包暂时下线，待按原创重制规范验收后再回归。
 // 公开 slug 与展示名保持一致；legacySlugs 继续兼容历史分享链接。
 export const STYLE_PACKS: StylePack[] = RAW_STYLE_PACKS
   .filter((pack) => !pack.previewUrl.includes('/测试'))
-  .map((pack) => ({
-    ...pack,
-    slug: pack.name,
-    ...(pack.slug !== pack.name ? { legacySlugs: [pack.slug] } : {}),
-  }));
+  .map((pack) => {
+    const dna = getStyleDesignDna(pack.id)
+    const publicName = PUBLIC_STYLE_NAMES[pack.id] || pack.name
+    const coverIndex = dna.references.cover.find((index) => Boolean(pack.previewImageUrls[index])) ?? 0
+    const legacySlugs = [...new Set([...(pack.legacySlugs || []), pack.slug, pack.name])]
+      .filter((slug) => slug !== publicName)
+    return {
+      ...pack,
+      name: publicName,
+      // 卡片优先展示人工核验过的封面样张，避免把数据页误当作风格封面。
+      previewUrl: pack.previewImageUrls[coverIndex] || pack.previewUrl,
+      // 旧项目仍按稳定 id 解析；公开 slug 与展示名统一，历史名称与 slug 继续兼容。
+      slug: publicName,
+      suitableScenarios: pack.suitableScenarios.length > 0 ? pack.suitableScenarios : dna.scenarioLabels,
+      ...(legacySlugs.length > 0 ? { legacySlugs } : {}),
+    }
+  });
 
-// 分类筛选顺序与旁门一致；「营销活动」保留占位（当前无包）
-export const STYLE_PACK_CATEGORIES: string[] = ['商务/汇报', '学术答辩', '医疗/医药', '能源/电力', '科技/深色', '营销活动', '国风/古典', '酒店/地产']
+// 沿用现有产品筛选顺序；「营销活动」保留占位（当前无包）
+export const STYLE_PACK_CATEGORIES: string[] = ['赛事/竞赛', '商务/汇报', '学术答辩', '医疗/医药', '能源/电力', '科技/深色', '营销活动', '国风/古典', '酒店/地产']

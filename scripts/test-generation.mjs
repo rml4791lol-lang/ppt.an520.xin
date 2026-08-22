@@ -59,7 +59,7 @@ function makeMockFetcher(handlers) {
     for (const handler of handlers) {
       if (u.includes(handler.match)) {
         const payload = typeof handler.payload === 'function' ? handler.payload(init) : handler.payload;
-        if (payload instanceof Response) return payload;
+        if (payload instanceof Response) return payload.clone();
         return jsonResponse(payload, handler.status || 200);
       }
     }
@@ -207,7 +207,10 @@ const credits = await import('../src/lib/server/credits.ts');
 const documents = await import('../src/lib/server/documents.ts');
 const engine = await import('../src/lib/server/engine.ts');
 const dsl = await import('../src/lib/server/generation/dsl.ts');
+const clientDsl = await import('../src/lib/client/dsl.ts');
+const codia = await import('../src/lib/server/codia.ts');
 const configMod = await import('../src/lib/server/generation/config.ts');
+const generationDb = await import('../src/lib/server/generation/db.ts');
 const decks = await import('../src/lib/server/generation/decks.ts');
 const actions = await import('../src/lib/server/generation/actions.ts');
 const exportsLib = await import('../src/lib/server/exports.ts');
@@ -216,6 +219,10 @@ const projects = await import('../src/lib/server/generation/projects.ts');
 const { STYLE_PACKS } = await import('../src/data/style-packs.ts');
 
 const baseConfig = configMod.getGenerationConfig();
+const documentedDefaults = configMod.getGenerationConfig({});
+check('默认 LLM 链与生产文档一致',
+  documentedDefaults.llmModel === 'gemini-3.1-flash-lite'
+    && documentedDefaults.llmFallbackModels.join(',') === 'gpt-5.6-luna,deepseek-v4-flash');
 check('生图自动重试可通过环境变量显式关闭', configMod.getGenerationConfig({ ...process.env, ANPPT_V2_IMAGE_MAX_RETRIES: '0' }).imageMaxRetries === 0);
 const imageConfig = {
   ...baseConfig,
@@ -273,12 +280,123 @@ console.log('\n[2] tagged DSL 校验');
   check('数据保真 diff 生效', !fidelity.ok && fidelity.errors.some((e) => e.includes('9999')));
   const copy = dsl.extractCopyFromDsl('【标题】T\n【区域：左栏】\n【正文】要点一');
   check('DSL 提取文案段', copy.title === 'T' && copy.lines.some((l) => l.includes('要点一')));
+  const clientParsed = clientDsl.parseDsl('【标题】T\n【区域：左栏】\n【模块标题】要点\n【正文】内容');
+  const clientRoundTrip = clientDsl.parseDsl(clientDsl.serializeDsl(clientParsed.blocks));
+  check('浏览器可视化 DSL 序列化往返稳定',
+    clientParsed.errors.length === 0
+      && clientRoundTrip.errors.length === 0
+      && clientRoundTrip.blocks.map((block) => `${block.tag}:${block.arg}:${block.content}`).join('|')
+        === clientParsed.blocks.map((block) => `${block.tag}:${block.arg}:${block.content}`).join('|'));
+  const multilineBlocks = clientDsl.parseDsl('【标题】T\n【正文】第一段').blocks;
+  multilineBlocks[1].content = '第一段\n第二段';
+  const multilineRoundTrip = clientDsl.parseDsl(clientDsl.serializeDsl(multilineBlocks));
+  check('可视化正文换行保存后仍是合法 DSL',
+    multilineRoundTrip.errors.length === 0 && multilineRoundTrip.blocks[1].content === '第一段 第二段');
 }
 
-console.log('\n[2b] 页型归一 + 生图 prompt 版式/整套一致性注入');
+console.log('\n[2a] Codia 网络抖动安全降级与自动恢复（全 mock）');
+{
+  const config = { ...baseConfig, codiaBaseUrl: 'http://mock-codia', codiaApiKey: 'sk-codia-test' };
+  let networkCalls = 0;
+  try {
+    await codia.getTask('network-down', {
+      config,
+      retryDelayMs: 0,
+      fetchImpl: async () => {
+        networkCalls += 1;
+        throw new TypeError('fetch failed: 44.247.196.94:443');
+      },
+    });
+    check('Codia 网络错误映射为可重试安全错误', false, '未抛出错误');
+  } catch (error) {
+    check('Codia 网络错误映射为可重试安全错误',
+      error?.code === 'CODIA_UPSTREAM_UNAVAILABLE'
+        && error?.retryable === true
+        && !String(error?.message).includes('44.247.196.94')
+        && String(error?.message).includes('下载中心'));
+  }
+  check('Codia GET 网络错误自动短退避重试 2 次', networkCalls === 3, `实际请求 ${networkCalls} 次`);
+
+  let gatewayCalls = 0;
+  try {
+    await codia.getTask('gateway-down', {
+      config,
+      retryDelayMs: 0,
+      fetchImpl: async () => {
+        gatewayCalls += 1;
+        return new Response('<html>504 Gateway Timeout</html>', { status: 504 });
+      },
+    });
+    check('Codia 504 不泄露 HTML 错误页', false, '未抛出错误');
+  } catch (error) {
+    check('Codia 504 不泄露 HTML 错误页',
+      error?.code === 'CODIA_UPSTREAM_UNAVAILABLE'
+        && error?.retryable === true
+        && !String(error?.message).includes('<html>'));
+  }
+  check('Codia 504 自动恢复请求次数受控', gatewayCalls === 3, `实际请求 ${gatewayCalls} 次`);
+
+  let badRequestCalls = 0;
+  try {
+    await codia.getTask('bad-input', {
+      config, retryDelayMs: 0,
+      fetchImpl: async () => {
+        badRequestCalls += 1;
+        return new Response('<html>400 Bad Request</html>', { status: 400 });
+      },
+    });
+    check('Codia 非 JSON 400 不盲目重试', false, '未抛出错误');
+  } catch (error) {
+    check('Codia 非 JSON 400 不盲目重试',
+      error?.code === 'CODIA_BAD_REQUEST' && error?.retryable === false && badRequestCalls === 1);
+  }
+
+  try {
+    await codia.getTask('auth-private', {
+      config, retryDelayMs: 0,
+      fetchImpl: async () => jsonResponse({ message: 'private gateway 10.0.0.8 token detail' }, 401),
+    });
+    check('Codia 鉴权错误对普通用户隐藏供应商与网关细节', false, '未抛出错误');
+  } catch (error) {
+    check('Codia 鉴权错误对普通用户隐藏供应商与网关细节',
+      error?.code === 'UPSTREAM_AUTH'
+        && !/Codia|10\.0\.0\.8|token detail/i.test(String(error?.message)));
+  }
+
+  let recoveryCalls = 0;
+  const recovered = await codia.getTask('recover', {
+    config,
+    retryDelayMs: 0,
+    fetchImpl: async () => {
+      recoveryCalls += 1;
+      if (recoveryCalls === 1) return jsonResponse({ message: 'temporary' }, 502);
+      return jsonResponse({ code: 0, data: { status: 'succeeded', result: { ppt_url: 'http://files/ok.pptx', page_count: 2 } } });
+    },
+  });
+  check('Codia 短暂 502 后自动恢复成功',
+    recovered.status === 'succeeded' && recovered.pptUrl.endsWith('/ok.pptx') && recoveryCalls === 2);
+
+  const taskCalls = [];
+  await codia.createPdfToPptTask(
+    { uploadId: 'upl', pageNo: [0], title: '测试', idempotencyKey: 'idem-safe' },
+    {
+      config,
+      retryDelayMs: 0,
+      fetchImpl: async (_url, init) => {
+        taskCalls.push(init?.headers?.['Idempotency-Key']);
+        if (taskCalls.length === 1) return jsonResponse({ message: 'temporary' }, 502);
+        return jsonResponse({ code: 0, data: { task_id: 'task-ok', status: 'pending' } });
+      },
+    },
+  );
+  check('Codia 建任务重试始终复用 Idempotency-Key', taskCalls.length === 2 && taskCalls.every((key) => key === 'idem-safe'));
+}
+
+console.log('\n[2b] 页型归一 + 场景推断 + 原创风格 DNA + 逐页参考图');
 {
   const pageTypes = await import('../src/lib/server/generation/page-types.ts');
   const stylePacks = await import('../src/lib/server/generation/style-packs.ts');
+  const styleDna = await import('../src/data/style-design-dna.ts');
   check('role 优先：cover 直接封面页', pageTypes.resolvePageType('数据图表', 'cover').key === 'cover');
   check('role 优先：ending 直接结尾页', pageTypes.resolvePageType('', 'ending').key === 'ending');
   check('关键词命中：数据图表 → data-chart', pageTypes.resolvePageType('数据图表', 'content').key === 'data-chart');
@@ -288,6 +406,13 @@ console.log('\n[2b] 页型归一 + 生图 prompt 版式/整套一致性注入');
     && pageTypes.resolvePageType('实施步骤', 'content').key === 'process'
     && pageTypes.resolvePageType('竞品对比', 'content').key === 'comparison'
     && pageTypes.resolvePageType('参数表格', 'content').key === 'table');
+  check('赛事高价值页型覆盖解决方案/技术路线/商业模式/社会价值/技能展示',
+    pageTypes.resolvePageType('bp_solution', 'content').key === 'solution'
+    && pageTypes.resolvePageType('核心技术路线', 'content').key === 'technical-route'
+    && pageTypes.resolvePageType('商业模式', 'content').key === 'business-model'
+    && pageTypes.resolvePageType('社会价值', 'content').key === 'social-impact'
+    && pageTypes.resolvePageType('技能演示', 'content').key === 'skills-showcase');
+  check('页型注册表从通用 16 型扩展为 30+ 信息任务', pageTypes.PAGE_TYPES.length >= 30, `实际 ${pageTypes.PAGE_TYPES.length}`);
   check('自由文本兜底通用内容页', pageTypes.resolvePageType('随便写点什么', 'content').key === 'content');
   check('空 pageType 兜底通用内容页', pageTypes.resolvePageType('', 'content').key === 'content');
 
@@ -296,19 +421,109 @@ console.log('\n[2b] 页型归一 + 生图 prompt 版式/整套一致性注入');
   const p1 = stylePacks.buildSlideImagePrompt(slide, pack, {
     deckContext: { totalPages: 10, pageIndex: 2, chapter: '背景' },
   });
-  check('prompt 含页型版式指令', p1.includes('版式要求（页型：数据图表页）'));
+  check('prompt 含页型信息任务与版式指令',
+    p1.includes('本页信息任务（页型：数据图表页）') && p1.includes('版式要求：'));
   check('prompt 含整套一致性段（总页数+页码+章节）', p1.includes('全套 10 页中的第 3 页') && p1.includes('「背景」章节'));
   check('prompt 保留易转可编辑条款', p1.includes(stylePacks.EDITABLE_FRIENDLY_CLAUSE));
+  check('prompt 禁止通用 AI 图与虚构 Logo/奖项/数据',
+    p1.includes('通用 AI 大脑') && p1.includes('不得生成页面文案未提供的 Logo') && p1.includes('不得自行生成百分比'));
   const p2 = stylePacks.buildSlideImagePrompt(slide, pack, { deckContext: { totalPages: 1, pageIndex: 0, chapter: '' } });
   check('单页整套不注入一致性段', !p2.includes('整套一致性要求'));
   const p3 = stylePacks.buildSlideImagePrompt(slide, pack);
   check('无 deckContext 不注入一致性段', !p3.includes('整套一致性要求'));
   const p4 = stylePacks.buildSlideImagePrompt({ ...slide, visualNote: '放柱状图' }, pack, { withStyleReferenceHint: true });
-  check('参考图提示与 visualNote 框架约束共存', p4.includes('随附风格参考图') && p4.includes('在上述页型版式框架内执行'));
-  check('styleDirective 注入视觉关键词行', stylePacks.styleDirective(pack).includes('视觉关键词：'));
+  check('参考图提示与 visualNote 页型约束共存', p4.includes('随附一张同风格参考样张') && p4.includes('只能在上述信息任务与页型框架内执行'));
+  check('参考图提示明确禁止复制参考文字/Logo/数字',
+    p4.includes('不得复制参考图的文字、Logo、数字') && p4.includes('不得把封面布局硬套到内容页'));
+  check('styleDirective 注入视觉关键词行', stylePacks.styleDirective(pack).includes('现有样张视觉关键词：'));
   check('resolveStylePack 透出包数据视觉关键词', Array.isArray(pack.visualKeywords) && pack.visualKeywords.length >= 6);
-}
+  check('每个公开风格包都有原创设计 DNA 和有效封面样张', STYLE_PACKS.every((item) => {
+    const dna = styleDna.getStyleDesignDna(item.id);
+    return dna.palette.length >= 4 && dna.grid.length > 20 && existsSync(path.join(process.cwd(), 'public', item.previewUrl.replace(/^\/+/, '')));
+  }));
+  const originalCompetitionPacks = [
+    { id: 'anppt-original-innovation-20260822', dir: '深海蓝创新赛事答辩风' },
+    { id: 'anppt-original-skill-20260822', dir: '精密制造技能竞赛风' },
+    { id: 'anppt-original-career-20260822', dir: '暖橙职业成长答辩风' },
+  ];
+  const expectedReferenceRoles = ['cover', 'toc', 'section', 'content', 'data', 'process'];
+  const originalCompetitionEntries = originalCompetitionPacks.map(({ id, dir }) => ({
+    id,
+    dir,
+    pack: STYLE_PACKS.find((item) => item.id === id),
+  }));
+  check('三套原创赛事风格包均以稳定 id 公开',
+    originalCompetitionEntries.every(({ pack }) => Boolean(pack)));
+  check('三套原创赛事风格包归入赛事/竞赛分类',
+    originalCompetitionEntries.every(({ pack }) => pack?.category === '赛事/竞赛'));
+  check('三套原创赛事风格包各有六类且文件完整的预览资产',
+    originalCompetitionEntries.every(({ pack }) => pack?.previewImageUrls.length === expectedReferenceRoles.length
+      && pack.previewImageUrls.every((assetUrl) => existsSync(path.join(process.cwd(), 'public', assetUrl.replace(/^\/+/, ''))))));
+  check('三套原创赛事 DNA 按 cover/toc/section/content/data/process 精确映射',
+    originalCompetitionEntries.every(({ id, pack }) => {
+      if (!pack) return false;
+      const references = styleDna.getStyleDesignDna(id).references;
+      return expectedReferenceRoles.every((role, index) => references[role]?.length === 1
+        && references[role][0] === index
+        && path.basename(pack.previewImageUrls[index]) === `${role}.webp`);
+    }));
+  check('三套原创赛事资产 manifest 已通过人工视觉审核',
+    originalCompetitionEntries.every(({ id, dir }) => {
+      const manifestPath = path.join(process.cwd(), 'public', 'assets', 'style-packs', dir, 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      return manifest.stylePackId === id
+        && manifest.reviewStatus === 'passed-manual-visual-qc'
+        && Array.isArray(manifest.files)
+        && manifest.files.length === expectedReferenceRoles.length;
+    }));
+  check('三套原创赛事公开路径和名称不含第三方模板品牌',
+    originalCompetitionEntries.every(({ pack }) => pack
+      && !/(抖研|douyan)/i.test([pack.name, pack.slug, pack.previewUrl, ...pack.previewImageUrls].join(' '))));
+  check('易转可编辑条款包含 Codia 元素分区硬约束',
+    stylePacks.EDITABLE_FRIENDLY_CLAUSE.includes('照片区域不得承载文字')
+      && stylePacks.EDITABLE_FRIENDLY_CLAUSE.includes('单页不超过 5 个主要文本组')
+      && stylePacks.EDITABLE_FRIENDLY_CLAUSE.includes('避免多层透明叠加、复杂蒙版、过细描边和跨区斜切文字'));
+  check('自有风格名称不再使用第三方品牌式命名',
+    STYLE_PACKS.every((item) => !/(Apple|苹果|NVIDIA|Microsoft|微软)/i.test(item.name)));
+  check('品牌式旧名称仍作为 legacySlugs 兼容历史链接',
+    STYLE_PACKS.some((item) => item.legacySlugs?.includes('苹果商务汇报极简风格'))
+    && STYLE_PACKS.some((item) => item.legacySlugs?.includes('NVIDIA式深绿光感科技风格'))
+    && STYLE_PACKS.some((item) => item.legacySlugs?.includes('Microsoft Fluent磨砂玻璃风格')));
 
+  const competitionContext = stylePacks.inferPresentationContext({
+    role: 'content', pageType: '痛点分析', title: '挑战杯项目痛点', goal: '面向评委证明需求',
+    copyLines: ['智慧农业赛道，服务水稻种植农户'], visualNote: '',
+  }, pack);
+  check('语境推断识别高校赛事 + 农业赛道',
+    competitionContext.audience === 'competition' && competitionContext.domain === 'agriculture',
+    `实际 ${competitionContext.audience}/${competitionContext.domain}`);
+  const deckContextSignal = stylePacks.inferPresentationContext({
+    role: 'content', pageType: '解决方案', title: '核心方案', goal: '说明方案',
+    copyLines: ['覆盖育种、种植与服务环节'], visualNote: '',
+  }, pack, {
+    totalPages: 20, pageIndex: 6, deckTitle: '挑战杯智慧农业项目答辩',
+    sourceContext: '面向水稻种植与乡村振兴赛道，为评委展示参赛项目证据链。',
+  });
+  check('整套标题与原文信号可为通用页面补足赛事/行业语境',
+    deckContextSignal.audience === 'competition' && deckContextSignal.domain === 'agriculture',
+    `实际 ${deckContextSignal.audience}/${deckContextSignal.domain}`);
+  const publicContext = stylePacks.inferPresentationContext({
+    role: 'content', pageType: '工作成效', title: '公共医疗服务年度成效', goal: '',
+    copyLines: ['事业单位持续提升基层诊疗能力'], visualNote: '',
+  }, pack);
+  check('语境推断识别工作单位 + 医疗场景',
+    publicContext.audience === 'public-sector' && publicContext.domain === 'medical',
+    `实际 ${publicContext.audience}/${publicContext.domain}`);
+
+  const coverSlide = { ...slide, role: 'cover', pageType: '封面', title: '年度经营汇报' };
+  const dataSlide = { ...slide, pageType: '经营数据', title: '核心经营指标' };
+  const coverRef = stylePacks.selectStyleReferencePath(coverSlide, pack, { totalPages: 10, pageIndex: 0 });
+  const dataRef = stylePacks.selectStyleReferencePath(dataSlide, pack, { totalPages: 10, pageIndex: 5 });
+  check('封面与数据页选择同包不同页型参考图', Boolean(coverRef) && Boolean(dataRef) && coverRef !== dataRef,
+    `cover=${coverRef} data=${dataRef}`);
+  check('参考图选择确定性稳定', dataRef === stylePacks.selectStyleReferencePath(dataSlide, pack, { totalPages: 10, pageIndex: 5 }));
+  check('参考图可读取为 data URL', stylePacks.loadStyleReferenceDataUrl(pack, dataRef)?.startsWith('data:image/') === true);
+}
 
 console.log('\n[2c] 生图全站调度：并发上限 + 瞬态后台恢复');
 {
@@ -382,6 +597,11 @@ console.log('\n[3] outline：引擎成功 + LLM 兜底两路');
     { fetchImpl: llmFetcher, config: llmConfig },
   );
   check('无 token 走 llm-fallback 且解析出大纲', viaLlm.provider === 'llm-fallback' && viaLlm.slides.length === 2);
+  const outlineRequest = JSON.parse(llmFetcher.calls[0].init.body);
+  const outlineSystemPrompt = outlineRequest.messages?.find((message) => message.role === 'system')?.content || '';
+  check('大纲提示包含赛事/技能/职业/企业/政企/科研六类自有叙事骨架',
+    ['创新创业/挑战杯类', '技能/教学/世校赛类', '职业规划类', '企业经营类', '政企、学校行政与工作单位类', '科研学术类']
+      .every((label) => outlineSystemPrompt.includes(label)));
 
   // 兜底路径失败口径：统一 ENGINE_UNAVAILABLE 503 可重试（不裸 500）
   const capture = async (fetcher) => {
@@ -496,8 +716,15 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   const genPrompts = fullFetcher.calls
     .filter((c) => c.url.includes('/images/generations'))
     .map((c) => JSON.parse(c.init.body).prompt);
-  check('链路 prompt 实含页型版式指令（封面页+数据图表页）',
-    genPrompts.some((p) => p.includes('版式要求（页型：封面页）')) && genPrompts.some((p) => p.includes('版式要求（页型：数据图表页）')));
+  check('链路 prompt 实含页型信息任务（封面页+数据图表页）',
+    genPrompts.some((p) => p.includes('本页信息任务（页型：封面页）')) && genPrompts.some((p) => p.includes('本页信息任务（页型：数据图表页）')));
+  const genBodies = fullFetcher.calls
+    .filter((c) => c.url.includes('/images/generations'))
+    .map((c) => JSON.parse(c.init.body));
+  check('整套生成每一页都携带同风格参考图', genBodies.length === 2
+    && genBodies.every((body) => Array.isArray(body.reference_images) && body.reference_images[0]?.url?.startsWith('data:image/')));
+  check('封面与数据页使用不同的页型参考样张',
+    new Set(genBodies.map((body) => body.reference_images?.[0]?.url)).size === 2);
   check('链路 prompt 实含整套一致性（总页数+页码+章节）',
     genPrompts.some((p) => p.includes('全套 2 页中的第 2 页') && p.includes('「业绩」章节')));
 
@@ -525,6 +752,63 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   const r8 = await actions.dispatchDeckAction(uid, deck.id, { action: 'unlock-structure' }, fullDeps);
   check('unlock 后 status=structured 且页变 stale', r8.state.deck.status === 'structured' && r8.state.slides.every((s) => s.genStatus === 'stale'));
   check('unlock 返回作废提示', String(r8.extra.warning || '').includes('作废'));
+}
+
+console.log('\n[4a] 已启动整套生成固定运行时配置快照');
+{
+  const snapshotUser = await auth.registerWithPassword(
+    { account: 'snapshotgen', password: 'password123', confirmPassword: 'password123' },
+    '127.0.0.21',
+  );
+  const snapshotDeck = decks.createDeck(snapshotUser.user.id, {
+    title: '配置快照测试', sourceFileName: '', sourceText: '两页内容',
+    durationMinutes: 10, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+  });
+  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'outline' }, fullDeps);
+  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'structure' }, fullDeps);
+  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'confirm-structure' }, fullDeps);
+  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, fullDeps);
+
+  const envKeys = [
+    'ANPPT_V2_IMAGE_BASE_URL', 'ANPPT_V2_IMAGE_API_KEY', 'ANPPT_V2_IMAGE_MODEL',
+    'ANPPT_V2_GENERATE_CONCURRENCY', 'ANPPT_V2_IMAGE_MAX_RETRIES',
+  ];
+  const previous = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    ANPPT_V2_IMAGE_BASE_URL: 'http://snapshot-image-a.test',
+    ANPPT_V2_IMAGE_API_KEY: 'snapshot-key-a',
+    ANPPT_V2_IMAGE_MODEL: 'snapshot-model-a',
+    ANPPT_V2_GENERATE_CONCURRENCY: '1',
+    ANPPT_V2_IMAGE_MAX_RETRIES: '0',
+  });
+  const requestModels = [];
+  const requestUrls = [];
+  const snapshotFetcher = async (url, init = {}) => {
+    requestUrls.push(String(url));
+    const body = JSON.parse(init.body);
+    requestModels.push(body.model);
+    if (requestModels.length === 1) {
+      process.env.ANPPT_V2_IMAGE_BASE_URL = 'http://snapshot-image-b.test';
+      process.env.ANPPT_V2_IMAGE_API_KEY = 'snapshot-key-b';
+      process.env.ANPPT_V2_IMAGE_MODEL = 'snapshot-model-b';
+    }
+    return jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] });
+  };
+  try {
+    const started = await actions.dispatchDeckAction(
+      snapshotUser.user.id, snapshotDeck.id, { action: 'generate' }, { fetchImpl: snapshotFetcher },
+    );
+    await started.job.done;
+    check('管理员中途改配置不影响已启动整套生成',
+      requestModels.length === 2
+        && requestModels.every((model) => model === 'snapshot-model-a')
+        && requestUrls.every((url) => url.startsWith('http://snapshot-image-a.test/')));
+  } finally {
+    for (const key of envKeys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 }
 
 console.log('\n[4b] 按页录入路由（POST /api/deck/paged-copy-v2）');
@@ -592,6 +876,21 @@ console.log('\n[4c] update-slide / select-slide-version');
   const u2 = await actions.dispatchDeckAction(uid, d3.id, { action: 'update-slide', slideId: s0, chapter: '第二章' }, okDeps);
   check('仅改章节：deck 不回退且梳理结果保留',
     u2.state.deck.status === 'structured' && u2.state.slides[0].structureStatus === 'ok' && u2.state.slides[0].chapter === '第二章');
+  generationDb.getGenDb().prepare("UPDATE deck_slides SET structure_warnings = '[\"旧提示\"]' WHERE id = ?").run(s0);
+  const manualDsl = '【标题】人工新标题\n【区域：核心区域】\n【模块标题】人工模块\n【重点正文】人工调整后的梳理内容';
+  const manual = await actions.dispatchDeckAction(uid, d3.id,
+    { action: 'update-slide', slideId: s0, title: '人工新标题', structuredContent: manualDsl }, okDeps);
+  check('人工编辑梳理内容后保持 structured + 本页 ok',
+    manual.state.deck.status === 'structured'
+      && manual.state.slides[0].structureStatus === 'ok'
+      && manual.state.slides[0].structuredContent === manualDsl);
+  check('人工编辑梳理内容后清除旧 warnings', manual.state.slides[0].structureWarnings.length === 0);
+  await expectThrows('人工保存非法 DSL 被拒', () =>
+    actions.dispatchDeckAction(uid, d3.id,
+      { action: 'update-slide', slideId: s0, structuredContent: '这不是合法 DSL' }, okDeps), 'VALIDATION_ERROR');
+  await expectThrows('人工保存空 DSL 被拒', () =>
+    actions.dispatchDeckAction(uid, d3.id,
+      { action: 'update-slide', slideId: s0, structuredContent: '   ' }, okDeps), 'VALIDATION_ERROR');
   const u3 = await actions.dispatchDeckAction(uid, d3.id,
     { action: 'update-slide', slideId: s0, rawText: '销售额 1200 万元，同比增长 20%，补充第二季度展望' }, okDeps);
   check('改原文：页打回 pending、deck 回 outlined',
@@ -705,6 +1004,52 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
     credits.estimateCredits({ action: 'export_editable', pages: 3 }).credits === 60);
   credits.refundCredits(uid, 500, { reason: '测试补贴', idempotencyKey: 'test-topup-6b' });
 
+  // ---- 已启动任务固定 Codia 配置快照：管理员中途切换只影响后续新任务 ----
+  {
+    const envKeys = ['ANPPT_V2_CODIA_BASE_URL', 'ANPPT_V2_CODIA_API_KEY'];
+    const previous = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+    process.env.ANPPT_V2_CODIA_BASE_URL = 'http://snapshot-codia-a.test';
+    process.env.ANPPT_V2_CODIA_API_KEY = 'snapshot-codia-key-a';
+    let pollN = 0;
+    const upstreamCalls = [];
+    const fetcher = async (url, init = {}) => {
+      const href = String(url);
+      upstreamCalls.push({ href, auth: init.headers?.Authorization || '' });
+      if (href.includes('/v2/open/uploads')) {
+        process.env.ANPPT_V2_CODIA_BASE_URL = 'http://snapshot-codia-b.test';
+        process.env.ANPPT_V2_CODIA_API_KEY = 'snapshot-codia-key-b';
+        return jsonResponse({ code: 0, data: { upload_id: 'snapshot-upload' } });
+      }
+      if (href.endsWith('/v2/open/tasks')) {
+        return jsonResponse({ code: 0, data: { task_id: 'snapshot-task', status: 'pending' } });
+      }
+      if (href.includes('/v2/open/tasks/snapshot-task')) {
+        pollN += 1;
+        return jsonResponse({ code: 0, data: pollN === 1
+          ? { status: 'pending' }
+          : { status: 'succeeded', result: { ppt_url: 'http://snapshot-files/result.pptx', page_count: 2 } } });
+      }
+      if (href === 'http://snapshot-files/result.pptx') return new Response(Buffer.from('snapshot-pptx'));
+      throw new Error(`snapshot fetch 未命中: ${href}`);
+    };
+    try {
+      const started = await exportsLib.startDeckEditableExport(
+        uid, deck.id, { fetchImpl: fetcher, pollIntervalMs: 1, retryDelayMs: 0 }, { force: true },
+      );
+      await started.done;
+      const codiaCalls = upstreamCalls.filter((call) => call.href.includes('/v2/open/'));
+      check('管理员中途改配置不影响已启动可编辑管线',
+        codiaCalls.length >= 4
+          && codiaCalls.every((call) => call.href.startsWith('http://snapshot-codia-a.test/'))
+          && codiaCalls.every((call) => call.auth === 'Bearer snapshot-codia-key-a'));
+    } finally {
+      for (const key of envKeys) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+    }
+  }
+
   // ---- 成功链：uploads → tasks → poll(pending→succeeded) → 下载落盘 ----
   {
     let pollN = 0;
@@ -725,7 +1070,7 @@ console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
       { match: 'r1.pptx', payload: new Response(Buffer.from('mock-pptx-binary')) },
     ]);
     const before = credits.getBalance(uid);
-    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
     check('可编辑导出发起：processing + 40🌟（20×2页）',
       started.status === 'processing' && started.credits === 40 && started.pageCount === 2);
     await started.done;
@@ -1152,6 +1497,9 @@ console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
     pageId: 'page-001', title: '单页一', content: '第一季度营收 1200 万元', stylePackId: STYLE_PACKS[0].id,
   }, okDeps);
   check('单页生成成功出图', g1.status === 'succeeded' && g1.imageUrl.startsWith('/api/files/generated/'));
+  const singleGenerateBody = JSON.parse(okFetcher.calls.find((c) => c.url.includes('/images/generations')).init.body);
+  check('单页生成也携带所选风格的内容页参考图',
+    Array.isArray(singleGenerateBody.reference_images) && singleGenerateBody.reference_images[0]?.url?.startsWith('data:image/'));
   check('单页扣 10🌟', before - g1.balance === 10, `before=${before} after=${g1.balance}`);
 
   const g2 = await singlePages.refineSinglePage(uid, { pageId: 'page-001', editInstruction: '改成深色背景' }, okDeps);

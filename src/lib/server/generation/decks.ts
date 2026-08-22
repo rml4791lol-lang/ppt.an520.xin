@@ -483,7 +483,7 @@ export function updateSlideContent(
   }
   if (patch.structuredContent !== undefined) {
     // 人工直改结构化内容 = 人工确认该页结构
-    sets.push('structured_content = ?', 'structure_status = ?');
+    sets.push('structured_content = ?', 'structure_status = ?', "structure_warnings = '[]'");
     const value = cleanString(patch.structuredContent, 12000);
     params.push(value, value ? 'ok' : 'pending');
   } else if (contentChanged) {

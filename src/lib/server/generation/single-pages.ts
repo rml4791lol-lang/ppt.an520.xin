@@ -7,7 +7,13 @@ import { genId, getGenDb, nowMs } from './db';
 import { markSinglePageActive, markSinglePageDone, reconcileSinglePage } from './recovery';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';
-import { buildSlideImagePrompt, resolveStylePack } from './style-packs';
+import {
+  buildSlideImagePrompt,
+  loadStyleReferenceDataUrl,
+  resolveStylePack,
+  selectStyleReferencePath,
+  type SlidePromptInput,
+} from './style-packs';
 import { cleanString } from './types';
 
 export type SinglePageDeps = ImageDeps;
@@ -122,21 +128,33 @@ function upsertPage(
   return getOwnedPage(userId, input.pageId);
 }
 
-function buildPagePrompt(page: SinglePageRow, refineInstruction?: string): string {
+function buildPagePrompt(
+  page: SinglePageRow,
+  refineInstruction?: string,
+): { prompt: string; referencePath: string | null } {
   const pack = resolveStylePack(page.stylePackId);
-  const base = buildSlideImagePrompt(
-    {
-      role: 'content',
-      pageType: '',
-      title: page.title,
-      goal: '',
-      copyLines: page.content.split(/\n+/).map((line) => line.trim()).filter(Boolean),
-      visualNote: '',
-    },
-    pack,
-  );
-  if (!refineInstruction) return base;
-  return `${base}\n\n改图要求（保持整体风格与版式）：${cleanString(refineInstruction, 1000)}`;
+  const slideInput: SlidePromptInput = {
+    role: 'content',
+    pageType: '',
+    title: page.title,
+    goal: '',
+    copyLines: page.content.split(/\n+/).map((line) => line.trim()).filter(Boolean),
+    visualNote: '',
+  };
+  const deckContext = { totalPages: 1, pageIndex: page.pageIndex, chapter: '' };
+  const referencePath = selectStyleReferencePath(slideInput, pack, deckContext);
+  const base = buildSlideImagePrompt(slideInput, pack, {
+    withStyleReferenceHint: Boolean(referencePath),
+    deckContext,
+  });
+  return {
+    prompt: refineInstruction
+      ? `${base}
+
+改图要求（保持整体风格与版式）：${cleanString(refineInstruction, 1000)}`
+      : base,
+    referencePath,
+  };
 }
 
 export interface SingleGenerateInput {
@@ -177,12 +195,13 @@ async function runSinglePageJob(
   deps: SinglePageDeps,
 ): Promise<SingleRunResult> {
   const config = deps.config ?? getGenerationConfig();
+  const runDeps: SinglePageDeps = { ...deps, config };
   const unitPrice = config.singlePageCredits;
   const jobId = genId('job');
   // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费
   const chargeKey = `single-page:${page.pageId}:${opts.requestId || jobId}`.trim().slice(0, 128);
   const refundKey = `${chargeKey}:refund`;
-  const prompt = buildPagePrompt(page, opts.refineInstruction);
+  const { prompt, referencePath } = buildPagePrompt(page, opts.refineInstruction);
 
   const versionId = genId('ver');
   const ts = nowMs();
@@ -238,17 +257,21 @@ async function runSinglePageJob(
           : null;
         const source = current ? await readSiteFile(String(current.image_path || ''), config) : null;
         if (!source) throw new Error('原图不存在，无法改图');
-        image = await editImage({ image: source, instruction: opts.refineInstruction || '' }, deps);
+        image = await editImage({ image: source, instruction: opts.refineInstruction || '' }, runDeps);
       } else if (opts.sourceImagePath) {
         // i2i 原稿重设计：以上传图为底，按风格化 prompt 全面重绘
         const source = await readSiteFile(opts.sourceImagePath, config);
         if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
         image = await editImage(
           { image: source, instruction: `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。` },
-          deps,
+          runDeps,
         );
       } else {
-        image = await generateImage({ prompt }, deps);
+        const pack = resolveStylePack(page.stylePackId);
+        const referenceImages = referencePath
+          ? [loadStyleReferenceDataUrl(pack, referencePath)].filter((item): item is string => Boolean(item))
+          : [];
+        image = await generateImage({ prompt, referenceImages }, runDeps);
       }
       const saved = await saveFile('generated', page.userId, image, { kind: 'single', ext: '.png', id: versionId }, config);
       finish('succeeded', saved.relPath, saved.url, '');

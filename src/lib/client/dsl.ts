@@ -62,6 +62,31 @@ export function parseDsl(text: string): { blocks: DslBlock[]; errors: string[] }
   return { blocks, errors };
 }
 
+function inlineContent(value: string): string {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * 可视化编辑器把 block 写回稳定的 tagged DSL。
+ * tagged DSL 只有表格允许无标签续行，因此普通 textarea 中的换行会在保存时合并为空格，
+ * 避免刷新后被解析成“无法识别的内容行”。
+ */
+export function serializeDsl(blocks: DslBlock[]): string {
+  const lines: string[] = [];
+  for (const block of blocks) {
+    const tag = block.tag === "区域" ? `区域：${block.arg.trim() || "未命名区域"}` : block.tag;
+    lines.push(`【${tag}】${inlineContent(block.content)}`);
+    if (block.tag === "表格") {
+      lines.push(...block.tableRows.map((row) => row.trim()).filter(Boolean));
+    }
+  }
+  return lines.join("\n");
+}
+
 /** markdown 管道行 → 单元格数组 */
 export function tableRowCells(row: string): string[] {
   return row

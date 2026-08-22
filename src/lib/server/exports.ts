@@ -167,6 +167,12 @@ export interface EditableExportDeps {
   config?: GenerationConfig;
   /** 测试用：覆盖轮询间隔（默认 4s） */
   pollIntervalMs?: number;
+  /** 测试用：覆盖 Codia 请求自动恢复的退避时间。 */
+  retryDelayMs?: number;
+}
+
+function snapshotEditableDeps(deps: EditableExportDeps): EditableExportDeps & { config: GenerationConfig } {
+  return { ...deps, config: deps.config ?? getGenerationConfig() };
 }
 
 export interface StartedEditableExport {
@@ -215,7 +221,8 @@ function ensureEditablePipeline(row: ExportRow, deps: EditableExportDeps): Promi
   const exportId = String(row.id);
   const existing = editablePipelines.get(exportId);
   if (existing) return existing;
-  const running = runEditableExportPipeline(row, deps).finally(() => {
+  const runDeps = snapshotEditableDeps(deps);
+  const running = runEditableExportPipeline(row, runDeps).finally(() => {
     if (editablePipelines.get(exportId) === running) editablePipelines.delete(exportId);
   });
   editablePipelines.set(exportId, running);
@@ -488,14 +495,15 @@ async function saveEditableResult(
  * 再失败/异常 → 退星 + 行标 failed。上游 402（站方余额不足）：立即终态退星 + 大字日志。
  */
 async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
-  const config = deps.config ?? getGenerationConfig();
+  const runDeps = snapshotEditableDeps(deps);
+  const config = runDeps.config;
   const exportId = String(row.id);
   try {
     updateExportRow(exportId, { status: 'processing', stage: 'preparing', startedAt: Number(row.started_at) || nowMs() });
     updateExportRow(exportId, { stage: 'building-pdf' });
     const { pdf, pageCount } = await prepareEditablePdf(row, config);
     updateExportRow(exportId, { stage: 'uploading' });
-    const { uploadId } = await uploadPdf(pdf, `${exportId}.pdf`, deps);
+    const { uploadId } = await uploadPdf(pdf, `${exportId}.pdf`, runDeps);
     const pageNo = Array.from({ length: pageCount }, (_, index) => index);
     let lastError = '上游转换失败';
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -503,12 +511,12 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
       try {
         const task = await createPdfToPptTask(
           { uploadId, pageNo, title: `anppt-editable-${exportId}`, idempotencyKey },
-          deps,
+          runDeps,
         );
         updateExportRow(exportId, { upstreamTaskId: task.taskId, status: 'processing', stage: 'waiting' });
-        const terminal = await pollCodiaTask(exportId, task.taskId, pageCount, deps);
+        const terminal = await pollCodiaTask(exportId, task.taskId, pageCount, runDeps);
         if (terminal.status === 'succeeded' && terminal.pptUrl) {
-          await saveEditableResult(exportId, String(row.user_id), terminal.pptUrl, deps);
+          await saveEditableResult(exportId, String(row.user_id), terminal.pptUrl, runDeps);
           return;
         }
         lastError = terminal.error || (terminal.status === 'canceled' ? '上游任务被取消' : '上游未返回可下载文件');
@@ -546,7 +554,8 @@ export async function startDeckEditableExport(
   deps: EditableExportDeps = {},
   options: { force?: boolean } = {},
 ): Promise<StartedEditableExport> {
-  const config = deps.config ?? getGenerationConfig();
+  const runDeps = snapshotEditableDeps(deps);
+  const config = runDeps.config;
   if (!config.codiaApiKey) {
     throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑导出尚未配置，请联系管理员', 503, false);
   }
@@ -576,7 +585,7 @@ export async function startDeckEditableExport(
     deck.id,
     slides.length,
     fingerprintSource('deck', versionIds),
-    deps,
+    runDeps,
     options,
   );
 }
@@ -599,6 +608,7 @@ async function launchEditableExport(
   options: { force?: boolean },
   source: EditableSourceMeta = {},
 ): Promise<StartedEditableExport> {
+  const runDeps = snapshotEditableDeps(deps);
   const db = getGenDb();
   const estimate = estimateCredits({ action: 'export_editable', pages: pageCount });
   const decision = withTransaction(db, (): LaunchDecision => {
@@ -670,9 +680,9 @@ async function launchEditableExport(
   let row = decision.row;
   let done: Promise<void>;
   if (decision.created) {
-    done = ensureEditablePipeline(row, deps);
+    done = ensureEditablePipeline(row, runDeps);
   } else {
-    row = await recoverEditableExport(row, deps);
+    row = await recoverEditableExport(row, runDeps);
     done = editablePipelines.get(String(row.id)) ?? Promise.resolve();
   }
   const view = toExportView(row, sourceFingerprint);
@@ -698,7 +708,8 @@ export async function startSinglePageEditableExport(
   deps: EditableExportDeps = {},
   options: { force?: boolean } = {},
 ): Promise<StartedEditableExport> {
-  const config = deps.config ?? getGenerationConfig();
+  const runDeps = snapshotEditableDeps(deps);
+  const config = runDeps.config;
   if (!config.codiaApiKey) {
     throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑导出尚未配置，请联系管理员', 503, false);
   }
@@ -722,7 +733,7 @@ export async function startSinglePageEditableExport(
     cleanId,
     pages.length,
     fingerprintSource('single-page', versionIds),
-    deps,
+    runDeps,
     options,
   );
 }
@@ -734,7 +745,8 @@ export async function startUploadedEditableExport(
   deps: EditableExportDeps = {},
   options: { force?: boolean } = {},
 ): Promise<StartedEditableExport> {
-  const config = deps.config ?? getGenerationConfig();
+  const runDeps = snapshotEditableDeps(deps);
+  const config = runDeps.config;
   if (!config.codiaApiKey) {
     throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑转换服务尚未配置，请联系管理员', 503, false);
   }
@@ -790,7 +802,7 @@ export async function startUploadedEditableExport(
       sourceId,
       pageCount,
       fingerprint,
-      deps,
+      runDeps,
       options,
       { path: saved.relPath, name: sourceName, mime: 'application/pdf' },
     );
@@ -806,6 +818,7 @@ export async function startUploadedEditableExport(
 
 /** 懒恢复（服务器重启不丢单）：editable 且 pending/processing 的行现场推进 */
 async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): Promise<ExportRow> {
+  const runDeps = snapshotEditableDeps(deps);
   if (String(row.kind) !== 'editable') return row;
   if (!['pending', 'processing'].includes(String(row.status))) return row;
   const exportId = String(row.id);
@@ -813,14 +826,14 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
   if (taskId) {
     // 已有上游任务：现场 poll 一次并推进状态
     try {
-      const view = await getTask(taskId, deps);
+      const view = await getTask(taskId, runDeps);
       persistCodiaProgress(exportId, view, Number(row.page_count) || 0);
       if (view.status === 'succeeded' && view.pptUrl) {
-        await saveEditableResult(exportId, String(row.user_id), view.pptUrl, deps);
+        await saveEditableResult(exportId, String(row.user_id), view.pptUrl, runDeps);
       } else if (view.status === 'failed' || view.status === 'canceled') {
         // 进程可能在第一次失败后、创建 retry1 之前重启。用同一幂等键重跑管线，
         // 由 Codia 返回原 failed 任务后继续 retry1；ensure 防止同进程重复启动。
-        ensureEditablePipeline(row, deps);
+        ensureEditablePipeline(row, runDeps);
       }
     } catch (error) {
       // 上游暂不可达：保持原状态，下次访问再推进
@@ -832,7 +845,7 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
   if (nowMs() - Number(row.created_at) > RECOVERY_GRACE_MS) {
     // 建行后未建上游任务（进程中断）：后台重跑整条管线
     // （debit 幂等键 + Codia Idempotency-Key 防重，重跑安全）
-    ensureEditablePipeline(row, deps);
+    ensureEditablePipeline(row, runDeps);
   }
   return row;
 }

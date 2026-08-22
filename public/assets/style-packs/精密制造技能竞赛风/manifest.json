@@ -1,0 +1,54 @@
+{
+  "stylePackId": "anppt-original-skill-20260822",
+  "name": "精密制造技能竞赛风",
+  "scenario": "技能教学 / 职业技能竞赛",
+  "assetVersion": "2026-08-22-v1",
+  "generatedAt": "2026-08-22",
+  "generator": "gpt-image-2",
+  "sourcePolicy": "AnPPT original generation; no third-party template image, logo, CDN, PPTX, or brand copy used as an input asset.",
+  "reviewStatus": "passed-manual-visual-qc",
+  "files": [
+    {
+      "role": "cover",
+      "file": "cover.webp",
+      "width": 1536,
+      "height": 864,
+      "sha256": "20847dd8d2dba85516f922e2d162056a598d9f7219588b63f9c74f9b8a1d68af"
+    },
+    {
+      "role": "toc",
+      "file": "toc.webp",
+      "width": 1536,
+      "height": 864,
+      "sha256": "dd2954f9691dba2037109860c97c0ce7e0ce1cf666b8471c559f66a07f0aa3ac"
+    },
+    {
+      "role": "section",
+      "file": "section.webp",
+      "width": 1536,
+      "height": 864,
+      "sha256": "f59f7c1468a4f92350d31fc81cd22ed17d6c6e7fa3cf3e4fed67feed175b447d"
+    },
+    {
+      "role": "content",
+      "file": "content.webp",
+      "width": 1536,
+      "height": 864,
+      "sha256": "a56a5e006e583deceb0d8b81994d464042f6c1fad3f47163e0fc4940a2728542"
+    },
+    {
+      "role": "data",
+      "file": "data.webp",
+      "width": 1536,
+      "height": 864,
+      "sha256": "ead214607968fb8b10e456ff2f91df4b70a533c24e3e091d97a23faec21a33a6"
+    },
+    {
+      "role": "process",
+      "file": "process.webp",
+      "width": 1536,
+      "height": 864,
+      "sha256": "b27f7bea9acf9b678a86db7622793ef9bb9f43e909d320cdf66bea07bf18a27e"
+    }
+  ]
+}

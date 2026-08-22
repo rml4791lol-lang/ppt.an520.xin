@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StarIcon } from "@/components/icons";
-
-interface SessionResponse {
-  ok: boolean;
-  data?: {
-    authenticated?: boolean;
-    user: { name?: string; nickname?: string; displayName?: string; username?: string; avatarUrl?: string | null } | null;
-  };
-}
+import type { ShellSessionUser } from "@/components/layout/app-shell";
 
 interface BalanceResponse {
   ok: boolean;
@@ -21,20 +14,24 @@ interface BalanceResponse {
  * 顶部右侧用户区：积分 pill + 购买与兑换 + 登录/用户。
  * 未登录或后端未就绪时显示「积分 --」与登录按钮。
  */
-export function UserArea() {
-  const [userName, setUserName] = useState<string | null>(null);
+export function UserArea({
+  user,
+  sessionReady,
+}: {
+  user: ShellSessionUser | null;
+  sessionReady: boolean;
+}) {
   const [balance, setBalance] = useState<number | null>(null);
+  const userName = user?.displayName ?? user?.username ?? user?.email ?? null;
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      if (!user) {
+        setBalance(null);
+        return;
+      }
       try {
-        const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
-        if (!sessionRes.ok) return;
-        const session = (await sessionRes.json()) as SessionResponse;
-        const user = session.ok && session.data?.authenticated ? session.data.user : null;
-        if (cancelled || !user) return;
-        setUserName(user.displayName ?? user.nickname ?? user.name ?? user.username ?? "已登录用户");
         const balRes = await fetch("/api/credits/balance", { cache: "no-store" });
         if (!balRes.ok) return;
         const bal = (await balRes.json()) as BalanceResponse;
@@ -55,7 +52,7 @@ export function UserArea() {
       window.clearTimeout(initialTimer);
       window.removeEventListener("anppt:credits-refresh", onRefresh);
     };
-  }, []);
+  }, [user]);
 
   return (
     <div className="flex items-center gap-2.5">
@@ -72,16 +69,26 @@ export function UserArea() {
         </Link>
       </div>
       {userName ? (
-        <span className="flex h-9 items-center rounded-full bg-dark px-4 text-[13px] font-medium text-white">
-          {userName}
-        </span>
+        <div className="flex h-9 items-center overflow-hidden rounded-full bg-dark text-[13px] font-medium text-white">
+          {user?.role === "admin" && (
+            <Link
+              href="/admin"
+              className="ml-1 rounded-full bg-brand px-2 py-1 text-[10px] font-semibold tracking-wide text-white transition hover:bg-brand-strong"
+            >
+              管理员
+            </Link>
+          )}
+          <span className="max-w-28 truncate px-3 sm:max-w-40">{userName}</span>
+        </div>
       ) : (
-        <Link
-          href="/login"
-          className="flex h-9 items-center rounded-full bg-dark px-4 text-[13px] font-medium text-white transition hover:bg-ink"
-        >
-          登录
-        </Link>
+        sessionReady && (
+          <Link
+            href="/login"
+            className="flex h-9 items-center rounded-full bg-dark px-4 text-[13px] font-medium text-white transition hover:bg-ink"
+          >
+            登录
+          </Link>
+        )
       )}
     </div>
   );

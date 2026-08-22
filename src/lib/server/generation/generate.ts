@@ -1,4 +1,4 @@
-// 逐页生图管线：估价 → 整单余额校验（不足 402）→ 建持久化 job → 逐页并发（上限 3）
+// 逐页生图管线：估价 → 整单余额校验（不足 402）→ 建持久化 job → 按配置逐页并发
 // debit（幂等键 deck-generate:{deckId}:{jobId}:{slideId}）→ 成功落盘 / 失败 refund。
 import { ApiError } from '../http';
 import { debitCredits, estimateCredits, getBalance, refundCredits } from '../credits';
@@ -19,7 +19,14 @@ import {
 } from './decks';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';
-import { buildSlideImagePrompt, loadStyleReferenceDataUrl, resolveStylePack, type DeckContext } from './style-packs';
+import {
+  buildSlideImagePrompt,
+  loadStyleReferenceDataUrl,
+  resolveStylePack,
+  selectStyleReferencePath,
+  type DeckContext,
+  type SlidePromptInput,
+} from './style-packs';
 import { markJobActive, markJobDone, reconcileDeckGeneration } from './recovery';
 import { extractCopyFromDsl } from './dsl';
 import { cleanString, type JobKind } from './types';
@@ -51,35 +58,34 @@ function promptForSlide(
   stylePackId: string,
   refineInstruction?: string,
   deckContext?: DeckContext,
-): { prompt: string; withReference: boolean } {
+): { prompt: string; referencePath: string | null } {
   const pack = resolveStylePack(stylePackId);
   const copy = extractCopyFromDsl(slide.structuredContent);
   const copyLines = copy.lines.length > 0 ? copy.lines : slide.summary;
-  const title = copy.title || slide.title;
-  const withReference = slide.pageIndex === 0 || slide.role === 'cover';
-  const prompt = buildSlideImagePrompt(
-    {
-      role: slide.role,
-      pageType: slide.pageType,
-      title,
-      goal: slide.goal,
-      copyLines,
-      visualNote: slide.visualNote,
-    },
-    pack,
-    {
-      withStyleReferenceHint: withReference,
-      deckContext: deckContext ?? {
-        totalPages: 1,
-        pageIndex: slide.pageIndex,
-        chapter: slide.chapter,
-      },
-    },
-  );
-  if (!refineInstruction) return { prompt, withReference };
+  const slideInput: SlidePromptInput = {
+    role: slide.role,
+    pageType: slide.pageType,
+    title: copy.title || slide.title,
+    goal: slide.goal,
+    copyLines,
+    visualNote: slide.visualNote,
+  };
+  const resolvedDeckContext = deckContext ?? {
+    totalPages: 1,
+    pageIndex: slide.pageIndex,
+    chapter: slide.chapter,
+  };
+  const referencePath = selectStyleReferencePath(slideInput, pack, resolvedDeckContext);
+  const prompt = buildSlideImagePrompt(slideInput, pack, {
+    withStyleReferenceHint: Boolean(referencePath),
+    deckContext: resolvedDeckContext,
+  });
+  if (!refineInstruction) return { prompt, referencePath };
   return {
-    prompt: `${prompt}\n\n改图要求（在保持整体风格与版式的前提下执行）：${cleanString(refineInstruction, 1000)}`,
-    withReference,
+    prompt: `${prompt}
+
+改图要求（在保持整体风格与版式的前提下执行）：${cleanString(refineInstruction, 1000)}`,
+    referencePath,
   };
 }
 
@@ -96,7 +102,7 @@ async function runSlideGeneration(
   // 幂等键含 jobId（契约口径 deck-generate:{deckId}:{jobId}，逐页追加 slideId 保证唯一）
   const chargeKey = `deck-generate:${deck.id}:${jobId}:${slide.slideId}`;
   const refundKey = `${chargeKey}:refund`;
-  const { prompt, withReference } = promptForSlide(slide, deck.stylePackId, opts.refineInstruction, opts.deckContext);
+  const { prompt, referencePath } = promptForSlide(slide, deck.stylePackId, opts.refineInstruction, opts.deckContext);
   const version = createSlideVersion(slide, {
     kind: kind === 'deck-refine' ? 'refine' : 'generate',
     prompt,
@@ -139,8 +145,8 @@ async function runSlideGeneration(
       );
     } else {
       const pack = resolveStylePack(deck.stylePackId);
-      const referenceImages = withReference
-        ? [loadStyleReferenceDataUrl(pack)].filter((item): item is string => Boolean(item))
+      const referenceImages = referencePath
+        ? [loadStyleReferenceDataUrl(pack, referencePath)].filter((item): item is string => Boolean(item))
         : [];
       image = await generateImage({ prompt, referenceImages }, deps);
     }
@@ -198,6 +204,7 @@ export async function startDeckGeneration(
   deps: GenerateDeps = {},
 ): Promise<StartedJob> {
   const config = deps.config ?? getGenerationConfig();
+  const runDeps: GenerateDeps = { ...deps, config };
   let deck = getOwnedDeck(userId, deckId);
   // 先收敛历史中断（重启死锁/孤儿扣费），否则卡死的 generating 会永远 409
   if (reconcileDeckGeneration(deck)) deck = getOwnedDeck(userId, deckId);
@@ -249,7 +256,7 @@ export async function startDeckGeneration(
     markJobActive(job.jobId);
     let succeeded = 0;
     let failed = 0;
-    // 逐页并发，上限 config.generateConcurrency（默认 3）
+    // 逐页并发，上限 config.generateConcurrency（默认 6）
     let cursor = 0;
     const worker = async () => {
       while (cursor < targets.length) {
@@ -257,8 +264,14 @@ export async function startDeckGeneration(
         cursor += 1;
         const result = await runSlideGeneration(deck, slide, job.jobId, kind, {
           refineInstruction: options.refineInstruction,
-          deckContext: { totalPages: allSlides.length, pageIndex: slide.pageIndex, chapter: slide.chapter },
-        }, deps);
+          deckContext: {
+            totalPages: allSlides.length,
+            pageIndex: slide.pageIndex,
+            chapter: slide.chapter,
+            deckTitle: deck.title,
+            sourceContext: cleanString(deck.sourceText, 6_000),
+          },
+        }, runDeps);
         if (result === 'succeeded') succeeded += 1;
         else failed += 1;
         // 心跳：每页完成即刷新 job.updated_at，供崩溃恢复区分「在跑」与「已死」

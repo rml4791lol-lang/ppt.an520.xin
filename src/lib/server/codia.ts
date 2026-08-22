@@ -12,6 +12,8 @@ import { cleanString } from './generation/types';
 export interface CodiaDeps {
   fetchImpl?: typeof fetch;
   config?: GenerationConfig;
+  /** 测试用：覆盖请求自动恢复的退避时间。 */
+  retryDelayMs?: number;
 }
 
 export interface CodiaTaskView {
@@ -63,24 +65,38 @@ function taskStatusOf(value: unknown): CodiaTaskView['status'] {
     : 'pending';
 }
 
-/** HTTP 错误语义：400 请求错（不重试）、401 key 错、402 上游余额不足（不重试）、429/5xx 可重试 */
+const UPSTREAM_BUSY_MESSAGE = '可编辑转换服务暂时开小差了，系统会继续检查；完成后可在下载中心查看。';
+
+function retryDelay(attempt: number, deps: CodiaDeps): Promise<void> {
+  const baseMs = Math.max(0, deps.retryDelayMs ?? 600);
+  return new Promise((resolve) => setTimeout(resolve, baseMs * 2 ** attempt));
+}
+
+function mapNetworkError(error: unknown): ApiError {
+  const timedOut = error instanceof Error && error.name === 'AbortError';
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  console.error(`[anppt-v2][codia] ${timedOut ? 'request timeout' : 'network error'}: ${cleanString(detail, 500)}`);
+  return new ApiError('CODIA_UPSTREAM_UNAVAILABLE', UPSTREAM_BUSY_MESSAGE, 502, true);
+}
+
+/** HTTP 错误语义：400 请求错（不重试）、401 key 错、402 上游余额不足（不重试）、429/5xx 可重试。 */
 function mapHttpError(status: number, payload: CodiaEnvelope, raw: string): ApiError {
   const message = cleanString(payload?.message, 300) || cleanString(raw, 300) || `HTTP ${status}`;
   // 运营可见性：上游原始错误进服务器日志，对外统一走错误码口径
   console.error(`[anppt-v2][codia] HTTP ${status}: ${message}`);
   if (status === 401 || status === 403) {
-    return new ApiError('UPSTREAM_AUTH', `Codia 鉴权失败：${message}`, 502, false);
+    return new ApiError('UPSTREAM_AUTH', '可编辑转换服务配置异常，请联系管理员。', 502, false);
   }
   if (status === 402) {
-    return new ApiError('UPSTREAM_NO_CREDITS', `Codia 上游余额不足：${message}`, 502, false);
+    return new ApiError('UPSTREAM_NO_CREDITS', '可编辑转换服务额度暂时不足，请联系管理员。', 502, false);
   }
   if (status === 429) {
-    return new ApiError('CODIA_RATE_LIMITED', `Codia 限流：${message}`, 429, true);
+    return new ApiError('CODIA_RATE_LIMITED', UPSTREAM_BUSY_MESSAGE, 429, true);
   }
   if (status >= 500) {
-    return new ApiError('CODIA_UPSTREAM_ERROR', `Codia 服务异常：${message}`, 502, true);
+    return new ApiError('CODIA_UPSTREAM_UNAVAILABLE', UPSTREAM_BUSY_MESSAGE, 502, true);
   }
-  return new ApiError('CODIA_BAD_REQUEST', `Codia 请求被拒：${message}`, 400, false);
+  return new ApiError('CODIA_BAD_REQUEST', '可编辑转换请求未被服务接受，请检查文件后重新尝试。', 400, false);
 }
 
 async function codiaRequest(
@@ -95,32 +111,45 @@ async function codiaRequest(
   const headers: Record<string, string> = { Authorization: `Bearer ${apiKey}` };
   if (opts.json !== undefined) headers['Content-Type'] = 'application/json';
   if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-  let response: Response;
-  try {
-    response = await fetchImpl(`${baseUrl}${path}`, {
-      method,
-      headers,
-      body: opts.form ?? (opts.json !== undefined ? JSON.stringify(opts.json) : undefined),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
+  // GET、幂等建任务以及无扣费的上传，在连接抖动/429/5xx 时做短退避自动恢复。
+  // 建任务始终复用同一 Idempotency-Key；上传重发最多只产生一个未使用 upload_id，不会创建付费转换任务。
+  const maxAttempts = method === 'GET' ? 3 : opts.idempotencyKey || opts.form ? 2 : 1;
+  let lastError: ApiError | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+    try {
+      const response = await fetchImpl(`${baseUrl}${path}`, {
+        method,
+        headers,
+        body: opts.form ?? (opts.json !== undefined ? JSON.stringify(opts.json) : undefined),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let payload: CodiaEnvelope = {};
+      try {
+        payload = text ? (JSON.parse(text) as CodiaEnvelope) : {};
+      } catch {
+        console.error(`[anppt-v2][codia] HTTP ${response.status}: non-JSON response`);
+        if (!response.ok) throw mapHttpError(response.status, {}, text);
+        throw new ApiError('CODIA_UPSTREAM_UNAVAILABLE', UPSTREAM_BUSY_MESSAGE, 502, true);
+      }
+      if (!response.ok) throw mapHttpError(response.status, payload, text);
+      if (payload.code !== 0) {
+        console.error(`[anppt-v2][codia] envelope code=${payload.code}: ${cleanString(payload.message, 300)}`);
+        throw new ApiError('CODIA_UPSTREAM_ERROR', '可编辑转换服务返回异常，请稍后重试。', 502, false);
+      }
+      return payload.data ?? {};
+    } catch (error) {
+      lastError = error instanceof ApiError ? error : mapNetworkError(error);
+      if (!lastError.retryable || attempt === maxAttempts - 1) throw lastError;
+      console.warn(`[anppt-v2][codia] request retry ${attempt + 1}/${maxAttempts - 1}: ${method} ${path}`);
+      await retryDelay(attempt, deps);
+    } finally {
+      clearTimeout(timer);
+    }
   }
-  const text = await response.text();
-  let payload: CodiaEnvelope = {};
-  try {
-    payload = text ? (JSON.parse(text) as CodiaEnvelope) : {};
-  } catch {
-    throw new ApiError('CODIA_UPSTREAM_ERROR', `HTTP ${response.status}: Codia 返回非 JSON`, 502, true);
-  }
-  if (!response.ok) throw mapHttpError(response.status, payload, text);
-  if (payload.code !== 0) {
-    console.error(`[anppt-v2][codia] envelope code=${payload.code}: ${cleanString(payload.message, 300)}`);
-    throw new ApiError('CODIA_UPSTREAM_ERROR', cleanString(payload.message, 300) || 'Codia 返回业务错误', 502, false);
-  }
-  return payload.data ?? {};
+  throw lastError ?? new ApiError('CODIA_UPSTREAM_UNAVAILABLE', UPSTREAM_BUSY_MESSAGE, 502, true);
 }
 
 /** 上传 PDF（multipart 字段 file），返回 upload_id */
@@ -129,7 +158,7 @@ export async function uploadPdf(pdf: Buffer, filename: string, deps: CodiaDeps =
   form.append('file', new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), filename);
   const data = await codiaRequest('POST', '/v2/open/uploads', { form, timeoutMs: UPLOAD_TIMEOUT_MS }, deps);
   const uploadId = cleanString(data.upload_id, 200);
-  if (!uploadId) throw new ApiError('CODIA_UPSTREAM_ERROR', 'Codia 上传未返回 upload_id', 502, true);
+  if (!uploadId) throw new ApiError('CODIA_UPSTREAM_ERROR', UPSTREAM_BUSY_MESSAGE, 502, true);
   return { uploadId };
 }
 
@@ -152,7 +181,7 @@ export async function createPdfToPptTask(
     deps,
   );
   const taskId = cleanString(data.task_id, 200);
-  if (!taskId) throw new ApiError('CODIA_UPSTREAM_ERROR', 'Codia 建任务未返回 task_id', 502, true);
+  if (!taskId) throw new ApiError('CODIA_UPSTREAM_ERROR', UPSTREAM_BUSY_MESSAGE, 502, true);
   return { taskId, status: cleanString(data.status, 40) || 'pending' };
 }
 

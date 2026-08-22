@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* 品牌主色（旁门橙，取自截图取色微调） */
+  /* AnPPT 品牌主色 */
   --color-brand: #f2571a;
   --color-brand-strong: #d9440c;
   --color-brand-soft: #fef1e9;

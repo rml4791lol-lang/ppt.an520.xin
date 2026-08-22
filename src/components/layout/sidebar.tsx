@@ -14,6 +14,7 @@ import {
   HomeIcon,
   LayersIcon,
   ReceiptIcon,
+  ShieldIcon,
   SparklesIcon,
   WandIcon,
 } from "@/components/icons";
@@ -53,11 +54,13 @@ export function SidebarNav({
   collapsed,
   serviceEmail,
   tutorialUrl,
+  isAdmin,
   onNavigate,
 }: {
   collapsed: boolean;
   serviceEmail: string;
   tutorialUrl: string;
+  isAdmin: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -98,6 +101,17 @@ export function SidebarNav({
       },
       { key: "single-page", label: "创意页面生成器", href: "/single-page", icon: WandIcon },
     ],
+    ...(isAdmin
+      ? [[
+          {
+            key: "admin",
+            label: "系统管理",
+            href: "/admin",
+            icon: ShieldIcon,
+            badge: "管理员",
+          },
+        ]]
+      : []),
   ];
 
   return (

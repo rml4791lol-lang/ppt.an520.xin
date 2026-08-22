@@ -108,6 +108,32 @@ CREATE TABLE IF NOT EXISTS redemption_records (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_redemption_records_once ON redemption_records(code_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_redemption_records_user ON redemption_records(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS admin_runtime_config (
+  key TEXT PRIMARY KEY,
+  encrypted_value TEXT NOT NULL,
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id TEXT PRIMARY KEY,
+  admin_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL DEFAULT '',
+  target_id TEXT NOT NULL DEFAULT '',
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_logs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS admin_user_watches (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  label TEXT NOT NULL DEFAULT '',
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admin_user_watches_created ON admin_user_watches(created_at DESC);
 `;
 
 const globalRef = globalThis as { __anpptV2Db?: DatabaseSync };

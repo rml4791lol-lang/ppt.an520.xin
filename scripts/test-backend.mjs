@@ -9,6 +9,11 @@ import { registerTsHooks } from './ts-hooks.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
+process.env.ANPPT_V2_DATA_DIR = path.join(tmpDir, 'data');
+process.env.ANPPT_V2_ADMIN_CONFIG_KEY = 'anppt-v2-test-admin-config-master-key-2026';
+process.env.ANPPT_V2_LLM_BASE_URL = 'http://127.0.0.1:6800/v1';
+process.env.ANPPT_V2_LLM_API_KEY = 'env-llm-secret';
+process.env.ANPPT_V2_LLM_MODEL = 'env-main-model';
 process.env.OTP_DEV_ECHO = 'true';
 process.env.WECHAT_PAY_MOCK = 'true';
 process.env.EPAY_MOCK = 'true';
@@ -311,6 +316,212 @@ console.log('\n[9] LLM 回退链');
   const out = await engine.generateOutline({ sourceText: '文档', targetPageCount: 3 }, { config: { ...base, engineBaseUrl: '' }, fetchImpl: fetchMock });
   check('主模型失败自动切兜底并返回', out.provider === 'llm-fallback' && out.slides.length === 1, `calls=${calls.join(',')}`);
   check('回退链只试到成功模型为止', calls.join(',') === 'm-primary,m-fb1', `calls=${calls.join(',')}`);
+}
+
+console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
+{
+  const { getDb } = await import('../src/lib/server/db.ts');
+  const admin = await import('../src/lib/server/admin.ts');
+  const adminConfig = await import('../src/lib/server/admin-config.ts');
+  const dashboard = await import('../src/lib/server/admin-dashboard.ts');
+  const adminIntegrations = await import('../src/lib/server/admin-integrations.ts');
+  const generationConfig = await import('../src/lib/server/generation/config.ts');
+  const decks = await import('../src/lib/server/generation/decks.ts');
+
+  const adminAccount = await auth.registerWithPassword(
+    { account: 'siteowner01', password: 'password123', confirmPassword: 'password123', email: 'owner@example.com' },
+    '127.0.1.10',
+  );
+  getDb().prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(adminAccount.user.id);
+  const boss = await auth.registerWithPassword(
+    { account: 'boss1000', password: 'password123', confirmPassword: 'password123', displayName: '老板测试账号' },
+    '127.0.1.11',
+  );
+  const bossCode = redemption.generateRedemptionCodes({ credits: 1000, count: 1, batch: 'boss-test' })[0];
+  redemption.redeemCode(boss.user.id, bossCode);
+
+  const cookie = (token) => `anppt_v2_session=${encodeURIComponent(token)}`;
+  const normalRequest = new Request('http://localhost/api/admin/overview', {
+    headers: { cookie: cookie(reg.sessionToken) },
+  });
+  const adminRequest = (url, init = {}) => new Request(url, {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      cookie: cookie(adminAccount.sessionToken),
+    },
+  });
+
+  await expectThrows('普通用户 requireAdmin → 403', () => admin.requireAdmin(normalRequest), 'ADMIN_FORBIDDEN');
+  const adminSession = admin.requireAdmin(adminRequest('http://localhost/api/admin/overview'));
+  check('管理员角色从数据库 session 实时生效', adminSession.user.role === 'admin');
+
+  const overviewRoute = await import('../src/app/api/admin/overview/route.ts');
+  const noAuthOverview = await overviewRoute.GET(new Request('http://localhost/api/admin/overview'));
+  check('管理员 overview 未登录 401', noAuthOverview.status === 401, `实际 ${noAuthOverview.status}`);
+  const normalOverview = await overviewRoute.GET(normalRequest);
+  check('管理员 overview 普通用户 403', normalOverview.status === 403, `实际 ${normalOverview.status}`);
+
+  const configRoute = await import('../src/app/api/admin/config/route.ts');
+  const secretValue = 'runtime-secret-must-never-be-returned';
+  const putConfig = await configRoute.PUT(adminRequest('http://localhost/api/admin/config', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({
+      values: {
+        ANPPT_V2_LLM_API_KEY: secretValue,
+        ANPPT_V2_LLM_MODEL: 'runtime-main-model',
+        ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY: '25',
+      },
+    }),
+  }));
+  const putConfigJson = await putConfig.json();
+  check('管理员可保存运行时配置', putConfig.status === 200 && putConfigJson?.ok === true, `实际 ${putConfig.status}`);
+  const storedRows = getDb().prepare('SELECT key, encrypted_value FROM admin_runtime_config').all();
+  check('运行时配置数据库不含密钥明文',
+    storedRows.length === 3 && !JSON.stringify(storedRows).includes(secretValue));
+  check('配置 API 从不回显密钥明文',
+    !JSON.stringify(putConfigJson).includes(secretValue)
+      && putConfigJson?.data?.config?.fields?.find((field) => field.key === 'ANPPT_V2_LLM_API_KEY')?.value === null);
+
+  const effective = generationConfig.getGenerationConfig();
+  check('运行时覆盖立即作用到真实生成配置',
+    effective.llmApiKey === secretValue
+      && effective.llmModel === 'runtime-main-model'
+      && effective.imageGlobalConcurrency === 25);
+  const explicit = generationConfig.getGenerationConfig({
+    ...process.env,
+    ANPPT_V2_LLM_API_KEY: 'explicit-test-key',
+    ANPPT_V2_LLM_MODEL: 'explicit-test-model',
+  });
+  check('显式测试 env 不受数据库运行时覆盖污染',
+    explicit.llmApiKey === 'explicit-test-key' && explicit.llmModel === 'explicit-test-model');
+
+  await expectThrows('公网 HTTP API 地址被 SSRF 规则拒绝', () =>
+    Promise.resolve(adminConfig.normalizeAdminConfigValue('ANPPT_V2_LLM_BASE_URL', 'http://example.com/v1')), 'VALIDATION_ERROR');
+  await expectThrows('API 地址中的凭据与查询参数被拒绝', () =>
+    Promise.resolve(adminConfig.normalizeAdminConfigValue('ANPPT_V2_LLM_BASE_URL', 'https://u:p@example.com/v1?q=1')), 'VALIDATION_ERROR');
+  check('本机 HTTP API 地址允许',
+    adminConfig.normalizeAdminConfigValue('ANPPT_V2_LLM_BASE_URL', 'http://127.0.0.1:6800/v1') === 'http://127.0.0.1:6800/v1');
+
+  const integrationCalls = [];
+  const integrationFetch = async (url, init) => {
+    integrationCalls.push({
+      url: String(url), method: init?.method, auth: init?.headers?.Authorization, redirect: init?.redirect,
+    });
+    if (String(url).endsWith('/v2/open/credits')) {
+      return Response.json({ code: 0, data: { credits: 321 } });
+    }
+    return Response.json({ data: [{ id: 'runtime-main-model' }, { id: 'image-test-model' }] });
+  };
+  const llmCheck = await adminIntegrations.checkAdminIntegration('llm', undefined, integrationFetch);
+  const imageCheck = await adminIntegrations.checkAdminIntegration('image', {
+    ANPPT_V2_IMAGE_BASE_URL: 'http://127.0.0.1:6801/v1',
+    ANPPT_V2_IMAGE_API_KEY: 'image-test-key',
+    ANPPT_V2_IMAGE_MODEL: 'image-test-model',
+  }, integrationFetch);
+  const codiaCheck = await adminIntegrations.checkAdminIntegration('editable', {
+    ANPPT_V2_CODIA_BASE_URL: 'https://openapi.codia.ai',
+    ANPPT_V2_CODIA_API_KEY: 'codia-test-key',
+  }, integrationFetch);
+  check('LLM/Image/Codia 检查全部只发 GET 且不创建付费任务',
+    integrationCalls.length === 3
+      && integrationCalls.every((call) => call.method === 'GET' && call.redirect === 'error')
+      && !integrationCalls.some((call) => /\/tasks|\/uploads/.test(call.url)));
+  check('无付费连接检查返回模型与 Codia 额度',
+    llmCheck.ok && imageCheck.ok && codiaCheck.ok && codiaCheck.details.credits === 321);
+
+  const redemptionRoute = await import('../src/app/api/admin/redemption-codes/route.ts');
+  const generatedResponse = await redemptionRoute.POST(adminRequest('http://localhost/api/admin/redemption-codes', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({ credits: 1000, count: 1, batch: 'admin-test' }),
+  }));
+  const generatedJson = await generatedResponse.json();
+  check('管理员端可生成 1000 星兑换码',
+    generatedResponse.status === 200
+      && generatedJson?.data?.codes?.length === 1
+      && generatedJson?.data?.credits === 1000);
+
+  const fakeDeck = decks.createDeck(boss.user.id, {
+    title: '监控测试项目',
+    sourceFileName: 'secret.docx',
+    sourceText: 'PRIVATE_SOURCE_TEXT_MUST_NOT_LEAK',
+    durationMinutes: 5,
+    targetPageCount: 1,
+    qualityTier: 'standard',
+    stylePackId: '',
+  });
+  decks.replaceSlides(fakeDeck.id, [{
+    pageIndex: 0,
+    role: 'content',
+    chapter: '测试',
+    pageType: '内容页',
+    title: '测试页',
+    goal: '测试',
+    rawText: 'PRIVATE_SLIDE_TEXT_MUST_NOT_LEAK',
+    summary: ['测试'],
+    mustKeep: [],
+    visualNote: '',
+  }]);
+  const fakeSlide = decks.listSlides(fakeDeck.id)[0];
+  decks.createSlideVersion(fakeSlide, { kind: 'generate', prompt: 'PRIVATE_PROMPT_MUST_NOT_LEAK', jobId: '' });
+
+  dashboard.watchAdminUser({
+    adminUserId: adminAccount.user.id,
+    targetUserId: boss.user.id,
+    label: '老板 · 1000🌟 兑换用户',
+  });
+  admin.recordAdminAudit({
+    adminUserId: adminAccount.user.id,
+    action: 'test.secret.redaction',
+    detail: { apiKey: secretValue, nested: { authorization: `Bearer ${secretValue}` }, note: `Bearer ${secretValue}` },
+  });
+  const overviewResponse = await overviewRoute.GET(adminRequest('http://localhost/api/admin/overview'));
+  const overviewJson = await overviewResponse.json();
+  const overviewText = JSON.stringify(overviewJson);
+  const watchedBoss = overviewJson?.data?.watchedUsers?.find((user) => user.id === boss.user.id);
+  check('重点 1000 星用户余额与健康状态可视化正确',
+    watchedBoss?.balance === 1100 && watchedBoss?.accountHealthy === true && watchedBoss?.watchLabel.includes('1000'));
+  check('管理员 overview 不返回文档正文、页面原文、prompt 或密钥',
+    !overviewText.includes('PRIVATE_SOURCE_TEXT_MUST_NOT_LEAK')
+      && !overviewText.includes('PRIVATE_SLIDE_TEXT_MUST_NOT_LEAK')
+      && !overviewText.includes('PRIVATE_PROMPT_MUST_NOT_LEAK')
+      && !overviewText.includes(secretValue));
+  const auditRows = getDb().prepare('SELECT detail_json FROM admin_audit_logs').all();
+  check('管理员审计日志递归脱敏密钥与 Bearer',
+    !JSON.stringify(auditRows).includes(secretValue) && JSON.stringify(auditRows).includes('[REDACTED]'));
+
+  const compactResponse = await overviewRoute.GET(adminRequest('http://localhost/api/admin/overview?compact=1'));
+  const compactJson = await compactResponse.json();
+  check('轻量轮询不返回资源/最新用户/审计大对象',
+    compactJson?.data?.compact === true
+      && compactJson?.data?.resources == null
+      && compactJson?.data?.latestUsers == null
+      && compactJson?.data?.audits == null);
+
+  const watchRoute = await import('../src/app/api/admin/users/[id]/watch/route.ts');
+  const unwatchResponse = await watchRoute.DELETE(adminRequest(`http://localhost/api/admin/users/${boss.user.id}/watch`, {
+    method: 'DELETE',
+    headers: { 'x-anppt-action': '1' },
+  }), { params: Promise.resolve({ id: boss.user.id }) });
+  check('管理员可取消重点监控', unwatchResponse.status === 200 && dashboard.listWatchedUsers().every((user) => user.id !== boss.user.id));
+  const rewatchResponse = await watchRoute.PUT(adminRequest(`http://localhost/api/admin/users/${boss.user.id}/watch`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({ label: '老板 · 1000🌟 兑换用户' }),
+  }), { params: Promise.resolve({ id: boss.user.id }) });
+  check('管理员可恢复重点监控', rewatchResponse.status === 200 && dashboard.listWatchedUsers().some((user) => user.id === boss.user.id));
+
+  const clearResponse = await configRoute.PUT(adminRequest('http://localhost/api/admin/config', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({ clearKeys: ['ANPPT_V2_LLM_API_KEY', 'ANPPT_V2_LLM_MODEL', 'ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY'] }),
+  }));
+  check('清除运行时覆盖成功', clearResponse.status === 200);
+  const fallbackConfig = generationConfig.getGenerationConfig();
+  check('清除后安全回退环境变量',
+    fallbackConfig.llmApiKey === 'env-llm-secret' && fallbackConfig.llmModel === 'env-main-model');
 }
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败${failed ? ` — 失败项: ${failures.join('、')}` : ''}`);
