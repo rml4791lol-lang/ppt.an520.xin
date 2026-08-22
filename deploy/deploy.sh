@@ -34,7 +34,7 @@ if [[ ! "$generation_active" =~ ^[0-9]+$ || ! "$export_active" =~ ^[0-9]+$ ]]; t
   echo "无法确认在途任务数量，拒绝重启：$active_counts" >&2
   exit 1
 fi
-echo "生成队列=$generation_active，导出队列=$export_active"
+echo "生成队列=${generation_active}，导出队列=${export_active}"
 if (( generation_active > 0 || export_active > 0 )); then
   echo "检测到在途任务，已中止重启；等待任务完成后重新部署。" >&2
   exit 2
