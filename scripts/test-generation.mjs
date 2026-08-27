@@ -421,8 +421,8 @@ console.log('\n[2b] 页型归一 + 场景推断 + 原创风格 DNA + 逐页参�
   const p1 = stylePacks.buildSlideImagePrompt(slide, pack, {
     deckContext: { totalPages: 10, pageIndex: 2, chapter: '背景' },
   });
-  check('prompt 含页型信息任务与版式指令',
-    p1.includes('本页信息任务（页型：数据图表页）') && p1.includes('版式要求：'));
+  check('prompt 含页型协议（信息任务+构图版式分层规则）',
+    p1.includes('页型协议 · 数据图表页') && p1.includes('2. 信息任务：') && p1.includes('3. 构图与版式：'));
   check('prompt 含整套一致性段（总页数+页码+章节）', p1.includes('全套 10 页中的第 3 页') && p1.includes('「背景」章节'));
   check('prompt 保留易转可编辑条款', p1.includes(stylePacks.EDITABLE_FRIENDLY_CLAUSE));
   check('prompt 禁止通用 AI 图与虚构 Logo/奖项/数据',
@@ -716,8 +716,8 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   const genPrompts = fullFetcher.calls
     .filter((c) => c.url.includes('/images/generations'))
     .map((c) => JSON.parse(c.init.body).prompt);
-  check('链路 prompt 实含页型信息任务（封面页+数据图表页）',
-    genPrompts.some((p) => p.includes('本页信息任务（页型：封面页）')) && genPrompts.some((p) => p.includes('本页信息任务（页型：数据图表页）')));
+  check('链路 prompt 实含页型协议（封面页+数据图表页）',
+    genPrompts.some((p) => p.includes('页型协议 · 封面页')) && genPrompts.some((p) => p.includes('页型协议 · 数据图表页')));
   const genBodies = fullFetcher.calls
     .filter((c) => c.url.includes('/images/generations'))
     .map((c) => JSON.parse(c.init.body));
@@ -1483,6 +1483,146 @@ console.log('\n[6d] 外部 PDF/图片转可编辑 + 文件 Range 流式下载');
     && invalidRange.headers.get('content-range') === `bytes */${binary.length}`);
 }
 
+console.log('\n[6e] 轻量文字可编辑导出（VLM 覆盖层，mock 零真实调用）');
+{
+  const genDb = (await import('../src/lib/server/generation/db.ts')).getGenDb();
+  const textDeps = (fetchImpl) => ({ fetchImpl, config: llmConfig });
+  const textLedgerKeys = () =>
+    genDb.prepare('SELECT idempotency_key FROM credit_ledger WHERE user_id = ?').all(uid).map((r) => String(r.idempotency_key));
+
+  check('estimateCredits：export_editable_text 按页计价（3 页 = 15）',
+    credits.estimateCredits({ action: 'export_editable_text', pages: 3 }).credits === 15);
+
+  const VLM_BLOCKS = [
+    { text: '年度销售汇报', box: [0.1, 0.08, 0.6, 0.14], fontSize: 0.07, color: '1a2b3c', bold: true, align: 'center' },
+    { text: '销售额 1200 万元\n同比增长 20%', box: [0.08, 0.35, 0.4, 0.3], fontSize: 0.04, color: '#334455', bold: false, align: 'left' },
+  ];
+  const vlmOkPayload = {
+    choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(VLM_BLOCKS)}\n\`\`\`` } }],
+    usage: { prompt_tokens: 1200, completion_tokens: 200 },
+  };
+
+  // ---- 成功链：VLM 提取 → 底色采样 → 合成落盘 ----
+  {
+    const fetcher = makeMockFetcher([{ match: '/chat/completions', payload: vlmOkPayload }]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher), { force: true });
+    check('文字可编辑发起：processing + 10🌟（5×2页）',
+      started.status === 'processing' && started.credits === 10 && started.pageCount === 2);
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('文字可编辑转换成功落盘', exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/'), `实际 ${exp.status} ${exp.error || ''}`);
+    check('净扣 10🌟', before - credits.getBalance(uid) === 10, `before=${before} after=${credits.getBalance(uid)}`);
+    check('ledger 键 export-editable-text 前缀唯一',
+      textLedgerKeys().filter((k) => k === `export-editable-text:${deck.id}:${started.exportId}`).length === 1);
+    check('导出记录 kind=editable_text', exp.kind === 'editable_text');
+
+    const rel = exp.url.replace('/api/files/', '');
+    const pptxBuf = readFileSync(path.join(baseConfig.exportsDir, rel.split('/').slice(1).join('/')));
+    const { createRequire: createReq } = await import('node:module');
+    const reqJszip = createReq(path.join(process.cwd(), 'package.json'));
+    const JSZip = reqJszip('jszip');
+    const zip = await JSZip.loadAsync(pptxBuf);
+    const slide1 = await zip.file('ppt/slides/slide1.xml').async('string');
+    check('slide1 XML 含 VLM 提取的文字（可编辑文本框）', slide1.includes('年度销售汇报') && slide1.includes('销售额 1200 万元'));
+    check('slide1 XML 含覆盖底色块与提取色值', slide1.includes('solidFill') && slide1.includes('1A2B3C'));
+
+    const reused = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher));
+    check('同源成功结果默认复用：同 exportId、0 扣星',
+      reused.exportId === started.exportId && reused.reused && reused.credits === 0);
+    const listText = exportsLib.listExports(uid, { refType: 'deck', refId: deck.id, kind: 'editable_text' });
+    const listHeavy = exportsLib.listExports(uid, { refType: 'deck', refId: deck.id, kind: 'editable' });
+    check('导出中心按 kind 分流：文字档与 Codia 档互不串扰',
+      listText.items.length >= 1 && listText.items.every((i) => i.kind === 'editable_text')
+        && listHeavy.items.length >= 1 && listHeavy.items.every((i) => i.kind === 'editable'));
+  }
+
+  // ---- 部分页 VLM 失败（首页 3 候选全挂）：该页降级纯图片，整体仍成功 ----
+  {
+    let n = 0;
+    const fetcher = makeMockFetcher([{ match: '/chat/completions', payload: () => {
+      n += 1;
+      if (n <= 3) throw new Error('mock VLM 抖动');
+      return vlmOkPayload;
+    } }]);
+    const started = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher), { force: true });
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('单页 VLM 失败降级为纯图片页，整体仍成功', exp.status === 'succeeded', `实际 ${exp.status} ${exp.error || ''}`);
+  }
+
+  // ---- 全部页 VLM 失败：failed + 全额退星 ----
+  {
+    const fetcher = makeMockFetcher([]);
+    const before = credits.getBalance(uid);
+    const started = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher), { force: true });
+    await started.done;
+    const exp = await exportsLib.getExport(uid, started.exportId);
+    check('全部页 VLM 失败 → failed + 全额退星',
+      exp.status === 'failed' && exp.error.includes('已退回') && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
+    check('refund 键唯一（export-editable-text）',
+      textLedgerKeys().filter((k) => k === `export-editable-text:${deck.id}:${started.exportId}:refund`).length === 1);
+  }
+
+  // ---- 余额不足 402：先校验再建行，不产生 export 行 ----
+  {
+    const poorT = await auth.registerWithPassword(
+      { account: 'textpoor', password: 'password123', confirmPassword: 'password123' },
+      '127.0.0.1',
+    );
+    const okFetcher6e = makeMockFetcher([...engineHandlers, { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
+    const okDeps6e = { fetchImpl: okFetcher6e, config: engineConfig };
+    const pd = decks.createDeck(poorT.user.id, {
+      title: '穷人文字档', sourceFileName: '', sourceText: '内容',
+      durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+    });
+    await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'outline' }, okDeps6e);
+    await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'structure' }, okDeps6e);
+    await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'confirm-structure' }, okDeps6e);
+    await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps6e);
+    const g = await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'generate' }, okDeps6e);
+    await g.job.done;
+    check('穷人文字档 deck 生成全绿', decks.getDeckState(poorT.user.id, pd.id).deck.status === 'generated');
+    credits.debitCredits(poorT.user.id, 75, { reason: '测试花掉', idempotencyKey: 'test-drain-6e' });
+    // 100（注册） - 20（生成 2 页） - 75 = 5 < 10（文字可编辑需 5×2）
+    await expectThrows('余额 5 < 10 → 402 INSUFFICIENT_CREDITS', () =>
+      exportsLib.startDeckTextEditableExport(poorT.user.id, pd.id, textDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
+    const textRows = Number(
+      genDb.prepare("SELECT COUNT(*) AS c FROM export_jobs WHERE ref_id = ? AND kind = 'editable_text'").get(pd.id)?.c || 0,
+    );
+    check('402 后不产生 editable_text 行', textRows === 0, `实际 ${textRows}`);
+  }
+
+  // ---- 路由层开关门：普通用户 404（不暴露功能存在），测试用户过门后才走到 deck 校验 ----
+  {
+    const flagsLib = await import('../src/lib/server/feature-flags.ts');
+    check('editable_text_overlay 默认 beta 态', flagsLib.getFeatureFlagState('editable_text_overlay') === 'beta');
+    const textRoute = await import('../src/app/api/deck/[id]/export-editable-text/route.ts');
+    const gateUser = await auth.registerWithPassword(
+      { account: 'flaggate01', password: 'password123', confirmPassword: 'password123' },
+      '127.0.0.1',
+    );
+    const gateRequest = () => new Request('http://localhost/api/deck/deck_nope/export-editable-text', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-anppt-action': '1',
+        cookie: `anppt_v2_session=${auth.createSessionForUser(gateUser.user.id)}`,
+      },
+      body: '{}',
+    });
+    const denied = await textRoute.POST(gateRequest(), { params: Promise.resolve({ id: 'deck_nope' }) });
+    const deniedJson = await denied.json();
+    check('普通用户访问文字可编辑路由 → 404 NOT_FOUND（功能不可见）',
+      denied.status === 404 && deniedJson?.error?.code === 'NOT_FOUND', `实际 ${denied.status} ${deniedJson?.error?.code}`);
+    genDb.prepare("UPDATE users SET role = 'tester' WHERE id = ?").run(gateUser.user.id);
+    const passedGate = await textRoute.POST(gateRequest(), { params: Promise.resolve({ id: 'deck_nope' }) });
+    const passedJson = await passedGate.json();
+    check('测试用户过开关门 → 落到 DECK_NOT_FOUND（证明门已过）',
+      passedGate.status === 404 && passedJson?.error?.code === 'DECK_NOT_FOUND', `实际 ${passedGate.status} ${passedJson?.error?.code}`);
+  }
+}
+
 console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
 {
   const okFetcher = makeMockFetcher([{ match: '/images/generations', payload: (init) => {
@@ -1510,6 +1650,31 @@ console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
 
   const exp = await exportsLib.exportSinglePagesImagePptx(uid, { projectId: g1.page.projectId }, { config: baseConfig });
   check('单页项目导出图片版 pptx（仅成功页 1 页）', exp.pageCount === 1);
+
+  // requestId 重放：命中幂等键必须 409 拒绝，不重复扣费、不再调上游、失败分支也不误退首笔
+  const replayBefore = credits.getBalance(uid);
+  const r1 = await singlePages.generateSinglePage(uid, { pageId: 'page-003', content: '重放测试页', requestId: 'replay-001' }, okDeps);
+  check('带 requestId 首次生成成功', r1.status === 'succeeded' && r1.balance === replayBefore - 10);
+  await expectThrows('同 requestId 重复生成被拒', () =>
+    singlePages.generateSinglePage(uid, { pageId: 'page-003', content: '重放测试页', requestId: 'replay-001' }, okDeps), 'DUPLICATE_REQUEST');
+  const replayGenCalls = okFetcher.calls.filter((c) => c.url.includes('/images/generations') && String(c.init?.body || '').includes('重放测试页')).length;
+  check('重放未重复扣费且上游只调 1 次', credits.getBalance(uid) === replayBefore - 10 && replayGenCalls === 1,
+    `balance=${credits.getBalance(uid)} genCalls=${replayGenCalls}`);
+
+  const editsBeforeReplay = okFetcher.calls.filter((c) => c.url.includes('/images/edits')).length;
+  const r2 = await singlePages.refineSinglePage(uid, { pageId: 'page-003', editInstruction: '改成浅色背景', requestId: 'replay-002' }, okDeps);
+  check('带 requestId 首次改图成功', r2.status === 'succeeded');
+  await expectThrows('同 requestId 重复改图被拒', () =>
+    singlePages.refineSinglePage(uid, { pageId: 'page-003', editInstruction: '改成浅色背景', requestId: 'replay-002' }, okDeps), 'DUPLICATE_REQUEST');
+  const replayEditCalls = okFetcher.calls.filter((c) => c.url.includes('/images/edits')).length - editsBeforeReplay;
+  check('改图重放未重复扣费且上游只调 1 次', credits.getBalance(uid) === replayBefore - 20 && replayEditCalls === 1,
+    `balance=${credits.getBalance(uid)} editCalls=${replayEditCalls}`);
+
+  const rf1 = await singlePages.generateSinglePage(uid, { pageId: 'page-004', content: '会失败的内容', requestId: 'replay-003' }, okDeps);
+  check('带 requestId 首次失败已退款', rf1.status === 'failed' && credits.getBalance(uid) === replayBefore - 20);
+  await expectThrows('失败页同 requestId 重放也被拒（不再误退）', () =>
+    singlePages.generateSinglePage(uid, { pageId: 'page-004', content: '会失败的内容', requestId: 'replay-003' }, okDeps), 'DUPLICATE_REQUEST');
+  check('重放后余额不变（无误退）', credits.getBalance(uid) === replayBefore - 20, `实际 ${credits.getBalance(uid)}`);
 }
 
 console.log('\n[7b] 单页项目详情 / 版本选择 / i2i 原稿重设计');
@@ -1681,6 +1846,237 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   check('清理：账本永不删除', ledgerAfterPurge === ledgerBeforePurge);
   const recent = projects.listProjects(uid2, {});
   check('清理后列表正常返回', Array.isArray(recent.items));
+}
+
+console.log('\n[17] 金奖版式测试包（开关板门控真模板）');
+{
+  const templatesMod = await import('../src/lib/server/templates.ts');
+  const mapping = await import('../src/lib/server/generation/mapping.ts');
+  const dbModule = await import('../src/lib/server/db.ts');
+  const GOLD_PACK_ID = 'anppt-gold-tianxun-test-20260824';
+
+  const goldPack = templatesMod.getTemplate(GOLD_PACK_ID);
+  check('金奖测试包可按 id 解析且 kind=template 挂开关',
+    goldPack?.id === GOLD_PACK_ID && goldPack.kind === 'template' && goldPack.featureFlag === 'gold_layouts_beta');
+  const goldPages = templatesMod.getTemplatePages(goldPack);
+  check('金奖包 6 页模板载体逐页标注页型',
+    goldPages.length === 6
+      && goldPages.map((p) => p.pageType).join(',') === 'cover,pain-analysis,comparison,competitive-analysis,big-number,ending');
+  check('金奖包 6 页载体图文件均存在',
+    goldPages.every((p) => existsSync(path.join(process.cwd(), 'public', p.imageUrl.replace(/^\/+/, '')))));
+
+  const mappingRows = mapping.buildOutlinePageMapping([
+    { pageIndex: 0, pageType: '', role: 'cover', title: '封面' },
+    { pageIndex: 1, pageType: '痛点分析', role: 'content', title: '痛点' },
+    { pageIndex: 2, pageType: '竞品对比', role: 'content', title: '竞品' },
+    { pageIndex: 3, pageType: '竞争分析', role: 'content', title: '竞争' },
+    { pageIndex: 4, pageType: '大数字指标', role: 'content', title: '数据' },
+    { pageIndex: 5, pageType: '', role: 'ending', title: '封底' },
+    { pageIndex: 6, pageType: '工作流程', role: 'content', title: '流程' },
+  ], goldPages);
+  check('金奖映射：六页型精确命中各自载体页',
+    mappingRows.slice(0, 6).map((r) => r.templatePageIndex).join(',') === '0,1,2,3,4,5',
+    `实际 ${mappingRows.map((r) => r.templatePageIndex).join(',')}`);
+  check('金奖映射：未覆盖页型兜底到内容桶载体页', mappingRows[6].templatePageIndex === 1);
+  check('金奖映射参考图可取回',
+    mapping.resolveTemplateReferenceImage(goldPages, mappingRows, 0) === goldPages[0].imageUrl);
+
+  // 生成链路硬门：普通用户选包 404；测试用户可选
+  const goldDeck = decks.createDeck(uid, {
+    title: '门控测试', sourceFileName: '', sourceText: '测试门控', durationMinutes: 15,
+    targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
+  });
+  await expectThrows('普通用户选用金奖测试包按 404 拒绝', () =>
+    actions.dispatchDeckAction(uid, goldDeck.id, { action: 'style', stylePackId: GOLD_PACK_ID }, fullDeps), 'NOT_FOUND');
+
+  const goldTester = await auth.registerWithPassword(
+    { account: 'goldtester01', password: 'password123', confirmPassword: 'password123' }, '127.0.3.1');
+  dbModule.getDb().prepare("UPDATE users SET role = 'tester' WHERE id = ?").run(goldTester.user.id);
+  const goldTesterDeck = decks.createDeck(goldTester.user.id, {
+    title: '金奖实测', sourceFileName: '', sourceText: '测试金奖包', durationMinutes: 15,
+    targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
+  });
+  const goldStyle = await actions.dispatchDeckAction(goldTester.user.id, goldTesterDeck.id,
+    { action: 'style', stylePackId: GOLD_PACK_ID }, fullDeps);
+  check('测试用户选用金奖测试包成功', goldStyle.state.deck.stylePackId === GOLD_PACK_ID);
+}
+
+console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融合/设为参考图）');
+{
+  const flagsMod = await import('../src/lib/server/feature-flags.ts');
+  const imagesMod = await import('../src/lib/server/generation/images.ts');
+  const GOLD_PACK_ID = 'anppt-gold-tianxun-test-20260824';
+  const EDIT_FLAG_KEYS = ['magic_erase', 'image_text_edit', 'template_fusion', 'set_as_reference'];
+
+  const reg18 = await auth.registerWithPassword(
+    { account: 'edittools01', password: 'password123', confirmPassword: 'password123' }, '127.0.4.1');
+  const uid18 = reg18.user.id;
+  const editFetcher = makeMockFetcher([
+    ...engineHandlers,
+    { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    editsOkHandler,
+  ]);
+  const editDeps = { fetchImpl: editFetcher, config: engineConfig };
+
+  const d18 = decks.createDeck(uid18, {
+    title: '图片编辑工具', sourceFileName: '', sourceText: '测试图片级编辑', durationMinutes: 15,
+    targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+  });
+  await actions.dispatchDeckAction(uid18, d18.id, { action: 'outline' }, editDeps);
+  await actions.dispatchDeckAction(uid18, d18.id, { action: 'structure' }, editDeps);
+  await actions.dispatchDeckAction(uid18, d18.id, { action: 'confirm-structure' }, editDeps);
+  await actions.dispatchDeckAction(uid18, d18.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, editDeps);
+  const gen18 = await actions.dispatchDeckAction(uid18, d18.id, { action: 'generate' }, editDeps);
+  await gen18.job.done;
+  const s18 = decks.getDeckState(uid18, d18.id);
+  check('图片工具前置：两页生成成功', s18.slides.every((s) => s.genStatus === 'succeeded'));
+
+  // 开关 off：四个 action 一律 404（不暴露功能存在性），不产生扣费
+  const markDataUrl = `data:image/png;base64,${PNG_1X1_B64}`;
+  const balBeforeGated = credits.getBalance(uid18);
+  await expectThrows('开关 off：erase-slide 404', () =>
+    actions.dispatchDeckAction(uid18, d18.id, { action: 'erase-slide', slideId: s18.slides[0].slideId, markImageDataUrl: markDataUrl }, editDeps), 'NOT_FOUND');
+  await expectThrows('开关 off：text-edit-slide 404', () =>
+    actions.dispatchDeckAction(uid18, d18.id, { action: 'text-edit-slide', slideId: s18.slides[0].slideId, editInstruction: '改字' }, editDeps), 'NOT_FOUND');
+  await expectThrows('开关 off：fuse-slide 404', () =>
+    actions.dispatchDeckAction(uid18, d18.id, { action: 'fuse-slide', slideId: s18.slides[0].slideId, fusionPackId: STYLE_PACKS[0].id }, editDeps), 'NOT_FOUND');
+  await expectThrows('开关 off：set-reference 404', () =>
+    actions.dispatchDeckAction(uid18, d18.id, { action: 'set-reference', slideId: s18.slides[0].slideId }, editDeps), 'NOT_FOUND');
+  check('开关 off 时无任何扣费', credits.getBalance(uid18) === balBeforeGated);
+
+  for (const key of EDIT_FLAG_KEYS) flagsMod.setFeatureFlag(key, 'public', uid18);
+  const refineUnit = credits.estimateCredits({ action: 'deck_page_refine', pages: 1 }).unitPrice;
+  const lastEditsForm = () => {
+    const calls = editFetcher.calls.filter((c) => c.url.includes('/images/edits'));
+    return calls[calls.length - 1]?.init?.body;
+  };
+
+  // 高精清除：双图 edits（原图+标记图），固定提示词
+  const eraseBefore = credits.getBalance(uid18);
+  const eraseResult = await actions.dispatchDeckAction(uid18, d18.id,
+    { action: 'erase-slide', slideId: s18.slides[0].slideId, markImageDataUrl: markDataUrl }, editDeps);
+  await eraseResult.job.done;
+  const eraseForm = lastEditsForm();
+  const erasePrompt = eraseForm instanceof FormData ? String(eraseForm.get('prompt') || '') : '';
+  check('高精清除走 /images/edits 双图（原图+标记图）',
+    eraseForm instanceof FormData && eraseForm.getAll('image').length === 2);
+  check('高精清除提示词含涂抹区擦除与去红约束',
+    erasePrompt.includes('红色涂抹区') && erasePrompt.includes('不得出现红色标记'));
+  check(`高精清除按 deck_page_refine 扣 ${refineUnit}🌟`,
+    eraseBefore - credits.getBalance(uid18) === refineUnit, `实际余额 ${credits.getBalance(uid18)}`);
+
+  // 图上改字：单图 edits，提示词 = 用户指令 + 硬约束
+  const textResult = await actions.dispatchDeckAction(uid18, d18.id,
+    { action: 'text-edit-slide', slideId: s18.slides[0].slideId, editInstruction: '把标题改成「年度报告」' }, editDeps);
+  await textResult.job.done;
+  const textForm = lastEditsForm();
+  const textPrompt = textForm instanceof FormData ? String(textForm.get('prompt') || '') : '';
+  check('图上改字提示词含用户指令与「只改指定文字…保持不变」硬约束',
+    textPrompt.includes('把标题改成「年度报告」') && textPrompt.includes('只改指定文字') && textPrompt.includes('保持不变'));
+  check('图上改字为单图 edits（无锚点时不附第二图）',
+    textForm instanceof FormData && textForm.getAll('image').length === 1);
+
+  // 模板融合：同页型样张作第二图；非法包 400；门控包对普通用户 404
+  await expectThrows('融合包不存在按 400 拒绝', () =>
+    actions.dispatchDeckAction(uid18, d18.id, { action: 'fuse-slide', slideId: s18.slides[0].slideId, fusionPackId: 'nope-pack' }, editDeps), 'VALIDATION_ERROR');
+  await expectThrows('普通用户融合门控金奖包按 404 拒绝', () =>
+    actions.dispatchDeckAction(uid18, d18.id, { action: 'fuse-slide', slideId: s18.slides[0].slideId, fusionPackId: GOLD_PACK_ID }, editDeps), 'NOT_FOUND');
+  const fuseResult = await actions.dispatchDeckAction(uid18, d18.id,
+    { action: 'fuse-slide', slideId: s18.slides[1].slideId, fusionPackId: STYLE_PACKS[0].id }, editDeps);
+  await fuseResult.job.done;
+  const fuseForm = lastEditsForm();
+  const fusePrompt = fuseForm instanceof FormData ? String(fuseForm.get('prompt') || '') : '';
+  check('模板融合走双图 edits（原图+同页型样张）',
+    fuseForm instanceof FormData && fuseForm.getAll('image').length === 2);
+  check('融合提示词含版式骨架保留/风格融合/文字不变约束',
+    fusePrompt.includes('版式骨架保留') && fusePrompt.includes('靠拢融合') && fusePrompt.includes('文字内容保持不变'));
+
+  // 设为参考图：0 扣费写库；锚点优先作为生成参考图；微调附带锚点第二图
+  const refBefore = credits.getBalance(uid18);
+  const refResult = await actions.dispatchDeckAction(uid18, d18.id,
+    { action: 'set-reference', slideId: s18.slides[0].slideId }, editDeps);
+  check('设为参考图写库（state 透出锚点页）', refResult.state.deck.anchorSlideId === s18.slides[0].slideId);
+  check('设为参考图 0 扣费', credits.getBalance(uid18) === refBefore);
+
+  const regen18 = await actions.dispatchDeckAction(uid18, d18.id,
+    { action: 'generate-slide', slideId: s18.slides[1].slideId }, editDeps);
+  await regen18.job.done;
+  const regenCalls = editFetcher.calls.filter((c) => c.url.includes('/images/generations'));
+  const regenBody = JSON.parse(regenCalls[regenCalls.length - 1].init.body);
+  check('锚点优先作为生成参考图（PNG 锚点图而非 webp 风格样张）',
+    String(regenBody.reference_images?.[0]?.url || '').startsWith('data:image/png;base64,'),
+    `实际 ${String(regenBody.reference_images?.[0]?.url || '').slice(0, 30)}`);
+
+  const refine18 = await actions.dispatchDeckAction(uid18, d18.id,
+    { action: 'refine-slide', slideId: s18.slides[1].slideId, editInstruction: '标题放大一点' }, editDeps);
+  await refine18.job.done;
+  const refineForm = lastEditsForm();
+  check('指令微调附带锚点作第二参考图并带锚点提示',
+    refineForm instanceof FormData && refineForm.getAll('image').length === 2
+      && String(refineForm.get('prompt') || '').includes('风格锚点'));
+
+  const clearResult = await actions.dispatchDeckAction(uid18, d18.id, { action: 'set-reference', slideId: null }, editDeps);
+  check('取消参考图后锚点清空', clearResult.state.deck.anchorSlideId === '');
+
+  // atlascloud 灾备：多图编辑降级为单图 + 意图文字描述
+  const atlasFetcher = makeMockFetcher([
+    { match: '/images/edits', payload: jsonResponse({ error: { message: 'mock primary 500' } }, 500) },
+    { match: '/model/generateImage', payload: { code: 200, data: { id: 'pred-18' } } },
+    { match: '/model/prediction/', payload: { code: 200, data: { status: 'completed', outputs: ['http://mock-image/atlas-result-18.png'] } } },
+    { match: 'atlas-result-18.png', payload: { ok: true } },
+  ]);
+  const atlasConfig = {
+    ...imageConfig,
+    imageBackupBaseUrl: 'http://mock-atlascloud',
+    imageBackupApiKey: 'sk-backup',
+    imageBackupModel: 'openai/gpt-image-2/edit',
+  };
+  const degraded = await imagesMod.editImage({
+    image: Buffer.from(PNG_1X1_B64, 'base64'),
+    instruction: '原改图指令',
+    extraImages: [Buffer.from(PNG_1X1_B64, 'base64')],
+    extraImageNote: '第二图意图文字说明',
+  }, { fetchImpl: atlasFetcher, config: atlasConfig });
+  const atlasBody = JSON.parse(atlasFetcher.calls.find((c) => c.url.includes('/model/generateImage')).init.body);
+  check('灾备降级：丢弃第二图，意图以文字拼进 prompt',
+    degraded.length > 0
+      && typeof atlasBody.image === 'string'
+      && atlasBody.prompt.includes('原改图指令')
+      && atlasBody.prompt.includes('第二图意图文字说明'));
+
+  for (const key of EDIT_FLAG_KEYS) flagsMod.setFeatureFlag(key, 'off', uid18);
+}
+
+console.log('\n[19] 免费 LLM 动作频控（30 次/10 分钟/用户，共享桶）+ 限流器单元');
+{
+  const rlUser = await auth.registerWithPassword(
+    { account: 'rluser01', password: 'password123', confirmPassword: 'password123' },
+    '127.0.0.1',
+  );
+  const rlUid = rlUser.user.id;
+  const rlDeck = decks.createDeck(rlUid, {
+    title: '频控', sourceFileName: '', sourceText: '频控测试文本', durationMinutes: 10,
+    targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+  });
+  // 首次 outline（无 force）+ 29 次 force 重生成 = 30 次全部放行
+  await actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline' }, fullDeps);
+  for (let i = 0; i < 29; i += 1) {
+    await actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline', force: true }, fullDeps);
+  }
+  await expectThrows('第 31 次免费 LLM 动作被 429 拒', () =>
+    actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline', force: true }, fullDeps), 'LLM_RATE_LIMITED');
+  await expectThrows('同桶：structure 也被拒', () =>
+    actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'structure', force: true }, fullDeps), 'LLM_RATE_LIMITED');
+  const reusedAfterLimit = await actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline' }, fullDeps);
+  check('限流后无 force 的 outline 复用不受影响', reusedAfterLimit.extra.reused === true);
+
+  const rateLimitMod = await import('../src/lib/server/rate-limit.ts');
+  const probe = 'unit-probe-key';
+  check('限流器：前 2 次放行、第 3 次拒且带 retryAfter',
+    rateLimitMod.hitRateLimit(probe, { windowMs: 60000, max: 2 }).allowed
+      && rateLimitMod.hitRateLimit(probe, { windowMs: 60000, max: 2 }).allowed
+      && !rateLimitMod.hitRateLimit(probe, { windowMs: 60000, max: 2 }).allowed
+      && rateLimitMod.hitRateLimit(probe, { windowMs: 60000, max: 2 }).retryAfterSeconds >= 1);
 }
 
 console.log(`\n结果：${passed} 通过 / ${failed} 失败`);

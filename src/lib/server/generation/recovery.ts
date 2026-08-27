@@ -78,6 +78,17 @@ export function reconcileDeckGeneration(deck: DeckRow): boolean {
     .all(deck.id) as Array<{ slideId: string; pageIndex: number }>;
   if (stuck.length === 0 && deck.status !== 'generating') return false;
 
+  // 整批在途守卫：job 活跃时 queued/running 页全部归属该 job——其 slide_versions 行要等
+  // 蓝图/生图调度后才逐页落库，此时收敛会把在途页误置 failed，并按旧版本误退原始扣费。
+  if (deck.status === 'generating') {
+    const live = db
+      .prepare("SELECT id, updated_at FROM generation_jobs WHERE deck_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1")
+      .get(deck.id) as { id: string; updated_at: number } | undefined;
+    if (live && (activeJobs.has(String(live.id)) || Number(live.updated_at) >= nowMs() - getGenerationConfig().jobStaleMs)) {
+      return false;
+    }
+  }
+
   let healed = false;
   for (const slide of stuck) {
     const version = db
@@ -110,25 +121,20 @@ export function reconcileDeckGeneration(deck: DeckRow): boolean {
   }
 
   if (deck.status === 'generating') {
-    const live = db
-      .prepare("SELECT id, updated_at FROM generation_jobs WHERE deck_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1")
-      .get(deck.id) as { id: string; updated_at: number } | undefined;
-    const stillLive = live && (activeJobs.has(String(live.id)) || Number(live.updated_at) >= nowMs() - getGenerationConfig().jobStaleMs);
-    if (!stillLive) {
-      db.prepare(
-        "UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = ? WHERE deck_id = ? AND status IN ('queued','running')",
-      ).run('生成中断（服务重启），已自动恢复为可重试', nowMs(), deck.id);
-      const anySucceeded = db
-        .prepare("SELECT 1 FROM deck_slides WHERE deck_id = ? AND gen_status IN ('succeeded','stale') LIMIT 1")
-        .get(deck.id);
-      db.prepare('UPDATE decks SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
-        anySucceeded ? 'partial' : 'confirmed',
-        '',
-        nowMs(),
-        deck.id,
-      );
-      healed = true;
-    }
+    // 活跃 job 已在上方守卫返回；走到这里必是死 job
+    db.prepare(
+      "UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = ? WHERE deck_id = ? AND status IN ('queued','running')",
+    ).run('生成中断（服务重启），已自动恢复为可重试', nowMs(), deck.id);
+    const anySucceeded = db
+      .prepare("SELECT 1 FROM deck_slides WHERE deck_id = ? AND gen_status IN ('succeeded','stale') LIMIT 1")
+      .get(deck.id);
+    db.prepare('UPDATE decks SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
+      anySucceeded ? 'partial' : 'confirmed',
+      '',
+      nowMs(),
+      deck.id,
+    );
+    healed = true;
   }
   if (healed) console.warn(`[anppt-v2][recovery] deck ${deck.id} 收敛了中断的生成状态`);
   return healed;

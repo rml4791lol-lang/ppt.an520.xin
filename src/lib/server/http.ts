@@ -55,12 +55,15 @@ export async function readJsonBody(request: Request): Promise<Record<string, unk
 }
 
 export function getClientIp(request: Request): string {
+  // Caddy 只保证 X-Real-IP={remote_host}；XFF 是追加链，首值客户端可伪造，只能作兜底
+  const realIp = request.headers.get('x-real-ip')?.trim();
+  if (realIp) return realIp;
   const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) {
     const first = forwarded.split(',')[0]?.trim();
     if (first) return first;
   }
-  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+  return 'unknown';
 }
 
 // CSRF guard for mutations: custom header + same-origin Origin when present.

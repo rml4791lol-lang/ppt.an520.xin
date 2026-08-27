@@ -16,7 +16,8 @@ export const GET = defineApiRoute(async (request, ctx) => {
 
 /** action RPC：{action: outline | add-slide | delete-slide | reorder-slides | split-slide |
  * structure | structure-slide | confirm-structure | unlock-structure | style |
- * generate | generate-slide | refine-slide | retry-failed, ...} */
+ * generate | generate-slide | refine-slide | retry-failed |
+ * erase-slide | text-edit-slide | fuse-slide | set-reference（后四个挂开关板）, ...} */
 export const POST = defineApiRoute(async (request, ctx) => {
   const { user } = requireUser(request);
   const id = await paramOf(ctx, 'id');

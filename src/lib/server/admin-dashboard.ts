@@ -1,15 +1,12 @@
 import { statfsSync, statSync } from 'node:fs';
-import { findUserById } from './auth';
 import { isAdminConfigStorageReady } from './admin-config';
-import { redactAdminText, recordAdminAudit } from './admin';
+import { redactAdminText } from './admin';
 import { getDb } from './db';
 import { getEnv } from './env';
 import { getGenerationConfig } from './generation/config';
 import { getGenDb } from './generation/db';
-import { ApiError, validationError } from './http';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_WATCHED_USERS = 20;
 
 type Row = Record<string, string | number | null>;
 
@@ -40,8 +37,6 @@ export interface AdminUserSnapshot {
   lastActivityAt: number | null;
   lastActivityLabel: string;
   lastTask: AdminTaskSnapshot | null;
-  watched: boolean;
-  watchLabel: string;
   accountHealthy: boolean;
 }
 
@@ -66,7 +61,6 @@ export interface AdminOverview {
     failures24h: number;
     totalProjects: number;
   };
-  watchedUsers: AdminUserSnapshot[];
   latestUsers?: AdminUserSnapshot[];
   resources?: {
     uptimeSeconds: number;
@@ -136,7 +130,7 @@ function latestTaskForUser(userId: string): AdminTaskSnapshot | null {
   };
 }
 
-function userSnapshot(userId: string, watched: boolean, watchLabel = ''): AdminUserSnapshot | null {
+function userSnapshot(userId: string): AdminUserSnapshot | null {
   const db = getGenDb();
   const user = db.prepare(
     `SELECT u.id, u.username, u.email, u.display_name, u.role, u.plan, u.created_at, u.last_login_at,
@@ -187,70 +181,18 @@ function userSnapshot(userId: string, watched: boolean, watchLabel = ''): AdminU
     lastActivityAt: activity ? numberOf(activity, 'created_at') : null,
     lastActivityLabel: activity ? redactAdminText(activity.reason || activity.event_type, 100) : '暂无积分动态',
     lastTask: latestTaskForUser(userId),
-    watched,
-    watchLabel: redactAdminText(watchLabel, 80),
     accountHealthy: numberOf(user, 'balance') >= 0,
   };
-}
-
-export function listWatchedUsers(): AdminUserSnapshot[] {
-  const rows = getGenDb().prepare(
-    `SELECT aw.user_id, aw.label FROM admin_user_watches aw
-     JOIN users u ON u.id = aw.user_id
-     ORDER BY aw.created_at DESC LIMIT ?`,
-  ).all(MAX_WATCHED_USERS) as Row[];
-  return rows
-    .map((row) => userSnapshot(String(row.user_id), true, String(row.label || '')))
-    .filter((item): item is AdminUserSnapshot => Boolean(item));
 }
 
 export function listLatestUsers(limit = 12): AdminUserSnapshot[] {
   const boundedLimit = Math.min(30, Math.max(1, Math.floor(limit)));
   const rows = getGenDb().prepare(
-    `SELECT u.id, aw.label AS watch_label FROM users u
-     LEFT JOIN admin_user_watches aw ON aw.user_id = u.id
-     ORDER BY u.created_at DESC LIMIT ?`,
+    `SELECT u.id FROM users u ORDER BY u.created_at DESC LIMIT ?`,
   ).all(boundedLimit) as Row[];
   return rows
-    .map((row) => userSnapshot(String(row.id), row.watch_label != null, String(row.watch_label || '')))
+    .map((row) => userSnapshot(String(row.id)))
     .filter((item): item is AdminUserSnapshot => Boolean(item));
-}
-
-export function watchAdminUser(input: {
-  adminUserId: string;
-  targetUserId: string;
-  label?: string;
-}): AdminUserSnapshot {
-  const targetUserId = String(input.targetUserId || '').trim();
-  if (!targetUserId || !findUserById(targetUserId)) throw new ApiError('USER_NOT_FOUND', '用户不存在', 404, false);
-  const label = redactAdminText(input.label, 80);
-  getDb().prepare(
-    `INSERT INTO admin_user_watches (user_id, label, created_by, created_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET label=excluded.label, created_by=excluded.created_by`,
-  ).run(targetUserId, label, input.adminUserId, Date.now());
-  recordAdminAudit({
-    adminUserId: input.adminUserId,
-    action: 'user.watch',
-    targetType: 'user',
-    targetId: targetUserId,
-    detail: { label },
-  });
-  const snapshot = userSnapshot(targetUserId, true, label);
-  if (!snapshot) throw new ApiError('USER_NOT_FOUND', '用户不存在', 404, false);
-  return snapshot;
-}
-
-export function unwatchAdminUser(input: { adminUserId: string; targetUserId: string }): void {
-  const targetUserId = String(input.targetUserId || '').trim();
-  if (!targetUserId) throw validationError('缺少用户 ID');
-  getDb().prepare('DELETE FROM admin_user_watches WHERE user_id = ?').run(targetUserId);
-  recordAdminAudit({
-    adminUserId: input.adminUserId,
-    action: 'user.unwatch',
-    targetType: 'user',
-    targetId: targetUserId,
-  });
 }
 
 function listAudits(limit = 30): AdminAuditView[] {
@@ -317,7 +259,6 @@ export function getAdminOverview(compact = false): AdminOverview {
       failures24h: numberOf(metrics, 'failures'),
       totalProjects: numberOf(metrics, 'projects'),
     },
-    watchedUsers: listWatchedUsers(),
   };
   if (compact) return overview;
 

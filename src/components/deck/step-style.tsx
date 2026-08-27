@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import { CheckIcon } from "@/components/icons";
 import { STYLE_PACK_CATEGORIES, STYLE_PACKS } from "@/data/style-packs";
+import { useGatedStylePacks } from "@/components/use-gated-style-packs";
 import type { DeckCtx } from "@/components/deck/deck-workbench";
 
 export function StepStyle({
@@ -18,9 +19,14 @@ export function StepStyle({
   const { state, run, toast } = ctx;
   const [category, setCategory] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const gatedPacks = useGatedStylePacks();
+  const allPacks = useMemo(
+    () => (gatedPacks.length > 0 ? [...STYLE_PACKS, ...gatedPacks] : STYLE_PACKS),
+    [gatedPacks],
+  );
 
   const selectedId = state.deck.stylePackId || null;
-  const selectedPack = STYLE_PACKS.find((p) => p.id === selectedId) ?? null;
+  const selectedPack = allPacks.find((p) => p.id === selectedId) ?? null;
   const hasGenerated = state.deck.status === "generated" || state.deck.status === "partial";
   const generating = state.deck.status === "generating"
     || state.slides.some((s) => s.genStatus === "queued" || s.genStatus === "running");
@@ -29,10 +35,10 @@ export function StepStyle({
 
   const filtered = useMemo(
     () =>
-      [...STYLE_PACKS]
+      [...allPacks]
         .sort((a, b) => b.recommendationWeight - a.recommendationWeight)
         .filter((p) => !category || p.category === category),
-    [category],
+    [category, allPacks],
   );
 
   const select = async (stylePackId: string | null) => {

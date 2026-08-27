@@ -67,10 +67,15 @@ const DEFAULT_RECHARGE_PLANS: RechargePlan[] = [
 
 const DEFAULT_ACTION_PRICES: Record<string, number> = {
   deck_page_generate: 10,
+  // 单页改图/微调（图生图，成本低于整页重生成；中转站通道下用户拍板 5🌟/页，
+  // 若未来切 atlascloud 等高价图生图上游须同步调价——通过 CREDIT_ACTION_PRICES 覆盖）
+  deck_page_refine: 5,
   outline: 0,
   export_image: 0,
   // 可编辑导出（即将上线，Codia 链）：用户拍板 20🌟/页
   export_editable: 20,
+  // 轻量文字可编辑导出（VLM 提取文字层 + 文本框覆盖，无上游转换成本）：5🌟/页
+  export_editable_text: 5,
 };
 
 function trim(value: unknown): string {
@@ -132,11 +137,16 @@ function parsePricesJson(raw: string): Record<string, number> | null {
   }
 }
 
-function loadWechatConfig(publicBaseUrl: string): WechatPayConfig {
+function loadWechatConfig(publicBaseUrl: string, isProduction: boolean): WechatPayConfig {
   const e = process.env;
+  const mock = trim(e.WECHAT_PAY_MOCK) === 'true';
+  // 生产硬拒 mock：免验签回调只许存在于非生产；误开时降级为强制走真实验签（失败闭）并大字告警
+  if (mock && isProduction) {
+    console.error('[anppt-v2][payments] 生产环境检测到 WECHAT_PAY_MOCK=true，已强制关闭 mock（回调将全部走验签）');
+  }
   return {
     enabled: trim(e.WECHAT_PAY_ENABLED) === 'true',
-    mock: trim(e.WECHAT_PAY_MOCK) === 'true',
+    mock: mock && !isProduction,
     appId: trim(e.WECHAT_PAY_APP_ID || e.WECHAT_APP_ID),
     mchId: trim(e.WECHAT_PAY_MCH_ID),
     apiV3Key: trim(e.WECHAT_PAY_API_V3_KEY),
@@ -149,15 +159,19 @@ function loadWechatConfig(publicBaseUrl: string): WechatPayConfig {
   };
 }
 
-function loadEpayConfig(publicBaseUrl: string): EpayConfig {
+function loadEpayConfig(publicBaseUrl: string, isProduction: boolean): EpayConfig {
   const e = process.env;
   const allowedTypes = trim(e.EPAY_PAY_TYPES || 'alipay')
     .split(/[,;]/)
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
+  const mock = trim(e.EPAY_MOCK) === 'true';
+  if (mock && isProduction) {
+    console.error('[anppt-v2][payments] 生产环境检测到 EPAY_MOCK=true，已强制关闭 mock（回调将全部走验签）');
+  }
   return {
     enabled: trim(e.EPAY_ENABLED) === 'true',
-    mock: trim(e.EPAY_MOCK) === 'true',
+    mock: mock && !isProduction,
     gateway: trim(e.EPAY_GATEWAY || e.EPAY_API_URL).replace(/\/+$/, ''),
     pid: trim(e.EPAY_PID || e.EPAY_MERCHANT_ID),
     key: trim(e.EPAY_KEY || e.EPAY_MERCHANT_KEY),
@@ -206,8 +220,8 @@ function loadEnv(): ServerEnv {
       aliyunSms.accessKeyId && aliyunSms.accessKeySecret && aliyunSms.signName && aliyunSms.templateCode,
     ),
     publicBaseUrl,
-    wechat: loadWechatConfig(publicBaseUrl),
-    epay: loadEpayConfig(publicBaseUrl),
+    wechat: loadWechatConfig(publicBaseUrl, isProduction),
+    epay: loadEpayConfig(publicBaseUrl, isProduction),
     rechargePlans: parsePlansJson(trim(e.RECHARGE_PLANS)) || DEFAULT_RECHARGE_PLANS,
     creditActionPrices: parsePricesJson(trim(e.CREDIT_ACTION_PRICES)) || DEFAULT_ACTION_PRICES,
     rechargeOrderTtlMs: intFromEnv(e.RECHARGE_ORDER_TTL_MS, 2 * 60 * 60 * 1000),

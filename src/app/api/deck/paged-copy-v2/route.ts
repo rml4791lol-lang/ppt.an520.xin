@@ -5,6 +5,7 @@ import { jsonOk, ApiError, readJsonBody } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { createDeck, replaceSlides, touchDeck } from '@/lib/server/generation/decks';
+import { assertStylePackUsable } from '@/lib/server/templates';
 import { cleanString, type OutlineSlide } from '@/lib/server/generation/types';
 
 export const runtime = 'nodejs';
@@ -37,6 +38,7 @@ export const POST = defineApiRoute(async (request) => {
 
   const qualityTier = cleanString(body.qualityTier, 20) || 'standard';
   const stylePackId = cleanString(body.stylePackId, 80);
+  assertStylePackUsable(stylePackId, user);
   const sourceText = pages.map((page, i) => `第 ${i + 1} 页\n${page.rawText}`).join('\n\n');
 
   const deck = createDeck(user.id, {

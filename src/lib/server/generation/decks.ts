@@ -32,6 +32,9 @@ export interface DeckRow {
   stylePackId: string;
   status: DeckStatus;
   error: string;
+  /** 风格锚点（设为参考图工具）：空串 = 未设置 */
+  anchorSlideId: string;
+  anchorImagePath: string;
   confirmedAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -104,6 +107,8 @@ function toDeckRow(row: Row): DeckRow {
     stylePackId: String(row.style_pack_id || ''),
     status: String(row.status || 'parsed') as DeckStatus,
     error: String(row.error || ''),
+    anchorSlideId: String(row.anchor_slide_id || ''),
+    anchorImagePath: String(row.anchor_image_path || ''),
     confirmedAt: row.confirmed_at == null ? null : Number(row.confirmed_at),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -526,6 +531,13 @@ export function markSlidesGenStale(deckId: string): number {
   return Number(result.changes || 0);
 }
 
+/** 设置/取消全套风格锚点（设为参考图工具）；anchor 为空串即取消。 */
+export function setDeckAnchor(deckId: string, anchorSlideId: string, anchorImagePath: string): void {
+  getGenDb()
+    .prepare('UPDATE decks SET anchor_slide_id = ?, anchor_image_path = ?, updated_at = ? WHERE id = ?')
+    .run(cleanString(anchorSlideId, 80), cleanString(anchorImagePath, 300), nowMs(), deckId);
+}
+
 // ---------- job / version 写入（generate.ts 也用） ----------
 
 export function createJob(userId: string, deckId: string, kind: string, total: number): GenerationJobRow {
@@ -703,6 +715,7 @@ export function getDeckState(userId: string, deckId: string) {
       targetPageCount: deck.targetPageCount,
       sourceFileName: deck.sourceFileName,
       error: deck.error,
+      anchorSlideId: deck.anchorSlideId,
       confirmedAt: deck.confirmedAt,
       createdAt: deck.createdAt,
       updatedAt: deck.updatedAt,

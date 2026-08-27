@@ -4,6 +4,7 @@ import { defineApiRoute } from '@/lib/server/generation/route';
 import { parseDocument, truncateSourceText } from '@/lib/server/documents';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { createDeck } from '@/lib/server/generation/decks';
+import { assertStylePackUsable } from '@/lib/server/templates';
 import { extForFile, saveFile } from '@/lib/server/generation/storage';
 
 export const runtime = 'nodejs';
@@ -34,9 +35,10 @@ export const POST = defineApiRoute(async (request) => {
   if (!text) throw new ApiError('EMPTY_DOCUMENT', '文档没有可解析的文字内容', 422, false);
 
   const duration = intField(form.get('duration'), 15, 1, 240);
-  const targetPageCount = intField(form.get('targetPageCount') ?? form.get('target_page_count'), 10, 1, 100);
+  const targetPageCount = intField(form.get('targetPageCount') ?? form.get('target_page_count'), 10, 1, 40);
   const qualityTier = String(form.get('qualityTier') || 'standard').trim().slice(0, 20) || 'standard';
   const stylePackId = String(form.get('stylePackId') || '').trim().slice(0, 80);
+  assertStylePackUsable(stylePackId, user);
   const title = (file.name || '未命名项目').replace(/\.[a-z0-9]{1,8}$/i, '').slice(0, 120) || '未命名项目';
 
   const deck = createDeck(user.id, {

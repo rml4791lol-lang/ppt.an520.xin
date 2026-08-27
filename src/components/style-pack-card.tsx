@@ -1,5 +1,9 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
 import type { StylePack } from "@/data/style-packs";
+import { PackPreviewModal } from "@/components/style-packs/pack-preview-modal";
 
 const BADGE_TONE: Record<string, string> = {
   推荐: "bg-brand text-white",
@@ -15,10 +19,18 @@ export function StylePackCard({
   pack: StylePack;
   onUse?: (pack: StylePack) => void;
 }) {
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const pages = pack.previewImageUrls.length > 0 ? pack.previewImageUrls : [pack.previewUrl];
+
   return (
     <div className="flex flex-col rounded-2xl border border-line bg-card p-3 shadow-card transition hover:shadow-pop">
       <div className="relative overflow-hidden rounded-xl">
-        <div className="relative aspect-[16/9] w-full bg-page">
+        <button
+          type="button"
+          onClick={() => setPreviewIndex(0)}
+          className="relative block aspect-[16/9] w-full bg-page"
+          aria-label={`预览 ${pack.name}`}
+        >
           <Image
             src={pack.previewUrl}
             alt={`${pack.name} 预览图`}
@@ -26,7 +38,7 @@ export function StylePackCard({
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 280px"
             className="object-cover"
           />
-        </div>
+        </button>
         {pack.badgeText && (
           <span
             className={`absolute left-2 top-2 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none ${
@@ -57,21 +69,40 @@ export function StylePackCard({
         </p>
       )}
 
-      {onUse ? (
+      <div className="mt-3 flex gap-2">
         <button
           type="button"
-          onClick={() => onUse(pack)}
-          className="mt-3 w-full rounded-full border border-line-strong py-2 text-sm font-medium text-ink transition hover:border-brand hover:text-brand"
+          onClick={() => setPreviewIndex(0)}
+          className="flex-1 rounded-full border border-line-strong py-2 text-sm font-medium text-ink transition hover:border-brand hover:text-brand"
         >
-          使用此风格
+          预览
         </button>
-      ) : (
-        <a
-          href={`/?style=${encodeURIComponent(pack.slug)}`}
-          className="mt-3 block w-full rounded-full border border-line-strong py-2 text-center text-sm font-medium text-ink transition hover:border-brand hover:text-brand"
-        >
-          使用此风格
-        </a>
+        {onUse ? (
+          <button
+            type="button"
+            onClick={() => onUse(pack)}
+            className="flex-1 rounded-full border border-line-strong py-2 text-sm font-medium text-ink transition hover:border-brand hover:text-brand"
+          >
+            使用此风格
+          </button>
+        ) : (
+          <a
+            href={`/?style=${encodeURIComponent(pack.slug)}`}
+            className="flex-1 rounded-full border border-line-strong py-2 text-center text-sm font-medium text-ink transition hover:border-brand hover:text-brand"
+          >
+            使用此风格
+          </a>
+        )}
+      </div>
+
+      {previewIndex !== null && (
+        <PackPreviewModal
+          name={pack.name}
+          pages={pages}
+          index={previewIndex}
+          onIndexChange={setPreviewIndex}
+          onClose={() => setPreviewIndex(null)}
+        />
       )}
     </div>
   );

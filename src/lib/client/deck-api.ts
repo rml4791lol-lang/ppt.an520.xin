@@ -59,6 +59,8 @@ export interface DeckInfo {
   targetPageCount: number;
   sourceFileName: string;
   error: string;
+  /** 全套风格锚点页（设为参考图工具）；空串 = 未设置 */
+  anchorSlideId: string;
   confirmedAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -113,6 +115,10 @@ export type DeckAction =
   | "generate"
   | "generate-slide"
   | "refine-slide"
+  | "erase-slide"
+  | "text-edit-slide"
+  | "fuse-slide"
+  | "set-reference"
   | "retry-failed"
   | "select-slide-version";
 
@@ -177,6 +183,18 @@ export function startEditableExport(deckId: string, force = false): Promise<Edit
   });
 }
 
+/** 轻量文字可编辑 PPTX 导出（5🌟/页，VLM 覆盖层链，beta 开关功能） */
+export function startTextEditableExport(deckId: string, force = false): Promise<EditableExportStart> {
+  return apiFetch<EditableExportStart>(`/api/deck/${encodeURIComponent(deckId)}/export-editable-text`, {
+    body: { force },
+  });
+}
+
+/** 当前用户功能可见性地图（开关板驱动，未开放功能前端据此隐藏入口） */
+export function getFeatureFlags(): Promise<{ flags: Record<string, boolean> }> {
+  return apiFetch<{ flags: Record<string, boolean> }>("/api/features");
+}
+
 export interface ExportRecord {
   exportId: string;
   refType: string;
@@ -208,7 +226,7 @@ export function getExportRecord(exportId: string): Promise<ExportRecord> {
 export function listExportRecords(
   page = 1,
   pageSize = 50,
-  filters: { refType?: "deck" | "single-page" | "upload"; refId?: string; kind?: "image" | "editable"; latest?: boolean } = {},
+  filters: { refType?: "deck" | "single-page" | "upload"; refId?: string; kind?: "image" | "editable" | "editable_text"; latest?: boolean } = {},
 ): Promise<{ items: ExportRecord[]; total: number; page: number; pageSize: number }> {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (filters.refType) params.set("refType", filters.refType);
@@ -218,12 +236,13 @@ export function listExportRecords(
   return apiFetch(`/api/pptx-exports?${params.toString()}`);
 }
 
-/** 当前项目最近一次可编辑导出；用于刷新后恢复任务状态。 */
+/** 当前项目最近一次可编辑导出（kind 区分 Codia 重管线 / 轻量文字档）；用于刷新后恢复任务状态。 */
 export async function getLatestEditableExport(
   refType: "deck" | "single-page",
   refId: string,
+  kind: "editable" | "editable_text" = "editable",
 ): Promise<ExportRecord | null> {
-  const result = await listExportRecords(1, 1, { refType, refId, kind: "editable", latest: true });
+  const result = await listExportRecords(1, 1, { refType, refId, kind, latest: true });
   return result.items[0] ?? null;
 }
 

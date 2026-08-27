@@ -23,10 +23,23 @@ export interface GenerationConfig {
   llmModel: string;
   /** 主模型失败（超时/HTTP 错误/空响应）时的回退模型链，按序尝试 */
   llmFallbackModels: string[];
+  /** LLM 跨站备份：主站全部模型失败后才尝试（如官方 API）。三项同时配置才生效。 */
+  llmBackupBaseUrl: string;
+  llmBackupApiKey: string;
+  llmBackupModel: string;
   /** gpt-image-2 生图上游（OpenAI 兼容 /images/generations + /images/edits） */
   imageBaseUrl: string;
   imageApiKey: string;
   imageModel: string;
+  /** 改图（/images/edits）专用模型；不配置则与 imageModel 同——seedream 这类文生图/编辑
+   *  分模型名的渠道必须分开配置（如 text-to-image / edit 一对） */
+  imageEditModel: string;
+  /** 生图跨站灾备（贵渠道，如 gpt-image-2）：主站失败（402/5xx/超时等）后自动切换。
+   *  base/key/model 三项齐备才挂上；editModel 不配则与 backupModel 同。 */
+  imageBackupBaseUrl: string;
+  imageBackupApiKey: string;
+  imageBackupModel: string;
+  imageBackupEditModel: string;
   imageSize: string;
   imageTimeoutMs: number;
   /** 单套 PPT 内逐页生图并发上限 */
@@ -47,6 +60,14 @@ export interface GenerationConfig {
   /** 单页生成器单价（🌟/张）。env.ts 的 CREDIT_ACTION_PRICES 尚无 single 动作，
    *  这里自带默认值；deck 页价走 credits.estimateCredits('deck_page_generate')。 */
   singlePageCredits: number;
+  /** 上游成本估算单价（单位：分）。0 = 未配置，计量只记真实单位（tokens/次数）不估钱。 */
+  costLlmInputFenPerMtok: number;
+  costLlmOutputFenPerMtok: number;
+  costLlmBackupInputFenPerMtok: number;
+  costLlmBackupOutputFenPerMtok: number;
+  costImageFenPerCall: number;
+  costImageBackupFenPerCall: number;
+  costCodiaFenPerCall: number;
   /** 项目保留天数（仅作为元信息透出给前端文案用，删除动作一律软删） */
   projectRetentionDays: number;
 }
@@ -74,6 +95,7 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
   const effectiveEnv = env === process.env ? getEffectiveGenerationEnv(env) : env;
   const dataDir = trim(effectiveEnv.ANPPT_V2_DATA_DIR) || path.resolve(process.cwd(), 'data');
   const imageTimeoutMs = intFrom(effectiveEnv.ANPPT_V2_IMAGE_TIMEOUT_MS, 480_000);
+  const imageModel = trim(effectiveEnv.ANPPT_V2_IMAGE_MODEL) || 'gpt-image-2';
   return {
     dataDir,
     uploadsDir: trim(effectiveEnv.ANPPT_V2_UPLOADS_DIR) || path.join(dataDir, 'uploads'),
@@ -91,9 +113,18 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
       .map((m) => m.trim())
       .filter(Boolean)
       .slice(0, 3),
+    llmBackupBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_LLM_BACKUP_BASE_URL)),
+    llmBackupApiKey: trim(effectiveEnv.ANPPT_V2_LLM_BACKUP_API_KEY),
+    llmBackupModel: trim(effectiveEnv.ANPPT_V2_LLM_BACKUP_MODEL),
     imageBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_IMAGE_BASE_URL)),
     imageApiKey: trim(effectiveEnv.ANPPT_V2_IMAGE_API_KEY),
-    imageModel: trim(effectiveEnv.ANPPT_V2_IMAGE_MODEL) || 'gpt-image-2',
+    imageModel,
+    imageEditModel: trim(effectiveEnv.ANPPT_V2_IMAGE_EDIT_MODEL) || imageModel,
+    imageBackupBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_BASE_URL)),
+    imageBackupApiKey: trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_API_KEY),
+    imageBackupModel: trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_MODEL),
+    imageBackupEditModel:
+      trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_EDIT_MODEL) || trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_MODEL),
     imageSize: trim(effectiveEnv.ANPPT_V2_IMAGE_SIZE) || '1536x864',
     imageTimeoutMs,
     generateConcurrency: Math.min(12, intFrom(effectiveEnv.ANPPT_V2_GENERATE_CONCURRENCY, 6)),
@@ -105,6 +136,13 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     codiaApiKey: trim(effectiveEnv.ANPPT_V2_CODIA_API_KEY),
     codiaBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_CODIA_BASE_URL) || 'https://openapi.codia.ai'),
     singlePageCredits: intFrom(effectiveEnv.ANPPT_V2_SINGLE_PAGE_CREDITS, 10),
+    costLlmInputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_INPUT_FEN_PER_MTOK, 0),
+    costLlmOutputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_OUTPUT_FEN_PER_MTOK, 0),
+    costLlmBackupInputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_BACKUP_INPUT_FEN_PER_MTOK, 0),
+    costLlmBackupOutputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_BACKUP_OUTPUT_FEN_PER_MTOK, 0),
+    costImageFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE_FEN_PER_CALL, 0),
+    costImageBackupFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL, 0),
+    costCodiaFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_CODIA_FEN_PER_CALL, 0),
     projectRetentionDays: intFrom(effectiveEnv.ANPPT_V2_PROJECT_RETENTION_DAYS, 7),
   };
 }

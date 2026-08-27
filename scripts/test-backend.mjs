@@ -5,6 +5,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { registerTsHooks } from './ts-hooks.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-test-'));
@@ -51,6 +52,7 @@ const credits = await import('../src/lib/server/credits.ts');
 const redemption = await import('../src/lib/server/redemption.ts');
 const recharge = await import('../src/lib/server/recharge.ts');
 const onlyoffice = await import('../src/lib/server/onlyoffice.ts');
+const httpLib = await import('../src/lib/server/http.ts');
 
 console.log('\n[1] 注册 + 注册赠送');
 const reg = await auth.registerWithPassword(
@@ -323,7 +325,6 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   const { getDb } = await import('../src/lib/server/db.ts');
   const admin = await import('../src/lib/server/admin.ts');
   const adminConfig = await import('../src/lib/server/admin-config.ts');
-  const dashboard = await import('../src/lib/server/admin-dashboard.ts');
   const adminIntegrations = await import('../src/lib/server/admin-integrations.ts');
   const generationConfig = await import('../src/lib/server/generation/config.ts');
   const decks = await import('../src/lib/server/generation/decks.ts');
@@ -467,11 +468,6 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   const fakeSlide = decks.listSlides(fakeDeck.id)[0];
   decks.createSlideVersion(fakeSlide, { kind: 'generate', prompt: 'PRIVATE_PROMPT_MUST_NOT_LEAK', jobId: '' });
 
-  dashboard.watchAdminUser({
-    adminUserId: adminAccount.user.id,
-    targetUserId: boss.user.id,
-    label: '老板 · 1000🌟 兑换用户',
-  });
   admin.recordAdminAudit({
     adminUserId: adminAccount.user.id,
     action: 'test.secret.redaction',
@@ -480,9 +476,9 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   const overviewResponse = await overviewRoute.GET(adminRequest('http://localhost/api/admin/overview'));
   const overviewJson = await overviewResponse.json();
   const overviewText = JSON.stringify(overviewJson);
-  const watchedBoss = overviewJson?.data?.watchedUsers?.find((user) => user.id === boss.user.id);
-  check('重点 1000 星用户余额与健康状态可视化正确',
-    watchedBoss?.balance === 1100 && watchedBoss?.accountHealthy === true && watchedBoss?.watchLabel.includes('1000'));
+  const latestBoss = overviewJson?.data?.latestUsers?.find((user) => user.id === boss.user.id);
+  check('高余额用户在最新用户列表可见且余额与健康状态正确',
+    latestBoss?.balance === 1100 && latestBoss?.accountHealthy === true);
   check('管理员 overview 不返回文档正文、页面原文、prompt 或密钥',
     !overviewText.includes('PRIVATE_SOURCE_TEXT_MUST_NOT_LEAK')
       && !overviewText.includes('PRIVATE_SLIDE_TEXT_MUST_NOT_LEAK')
@@ -500,19 +496,6 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
       && compactJson?.data?.latestUsers == null
       && compactJson?.data?.audits == null);
 
-  const watchRoute = await import('../src/app/api/admin/users/[id]/watch/route.ts');
-  const unwatchResponse = await watchRoute.DELETE(adminRequest(`http://localhost/api/admin/users/${boss.user.id}/watch`, {
-    method: 'DELETE',
-    headers: { 'x-anppt-action': '1' },
-  }), { params: Promise.resolve({ id: boss.user.id }) });
-  check('管理员可取消重点监控', unwatchResponse.status === 200 && dashboard.listWatchedUsers().every((user) => user.id !== boss.user.id));
-  const rewatchResponse = await watchRoute.PUT(adminRequest(`http://localhost/api/admin/users/${boss.user.id}/watch`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
-    body: JSON.stringify({ label: '老板 · 1000🌟 兑换用户' }),
-  }), { params: Promise.resolve({ id: boss.user.id }) });
-  check('管理员可恢复重点监控', rewatchResponse.status === 200 && dashboard.listWatchedUsers().some((user) => user.id === boss.user.id));
-
   const clearResponse = await configRoute.PUT(adminRequest('http://localhost/api/admin/config', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
@@ -522,6 +505,226 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   const fallbackConfig = generationConfig.getGenerationConfig();
   check('清除后安全回退环境变量',
     fallbackConfig.llmApiKey === 'env-llm-secret' && fallbackConfig.llmModel === 'env-main-model');
+}
+
+console.log('\n[11] 功能开关板 + 测试用户角色');
+{
+  const { getDb } = await import('../src/lib/server/db.ts');
+  const flags = await import('../src/lib/server/feature-flags.ts');
+  const flagsRoute = await import('../src/app/api/admin/feature-flags/route.ts');
+  const featuresRoute = await import('../src/app/api/features/route.ts');
+  const roleRoute = await import('../src/app/api/admin/users/[id]/role/route.ts');
+
+  check('开关默认状态：editable_text_overlay=beta、4 个图片编辑工具=off、gold_layouts_beta=beta',
+    flags.getFeatureFlagState('editable_text_overlay') === 'beta'
+      && flags.getFeatureFlagState('magic_erase') === 'off'
+      && flags.getFeatureFlagState('image_text_edit') === 'off'
+      && flags.getFeatureFlagState('template_fusion') === 'off'
+      && flags.getFeatureFlagState('set_as_reference') === 'off'
+      && flags.getFeatureFlagState('gold_layouts_beta') === 'beta');
+  check('listFeatureFlags 返回 6 个登记项且带默认状态',
+    flags.listFeatureFlags().length === 6
+      && flags.listFeatureFlags().every((flag) => flag.state === flag.defaultState));
+
+  const betaTester = await auth.registerWithPassword(
+    { account: 'betatester01', password: 'password123', confirmPassword: 'password123' },
+    '127.0.2.1',
+  );
+  check('新注册用户默认不是测试用户', flags.isTesterUser(betaTester.user) === false);
+  getDb().prepare("UPDATE users SET role = 'tester' WHERE id = ?").run(betaTester.user.id);
+  const testerUser = auth.findUserById(betaTester.user.id);
+  check('SQL 提升后 isTesterUser 生效', flags.isTesterUser(testerUser) === true);
+
+  const ownerLogin = await auth.loginWithPassword({ identifier: 'siteowner01', password: 'password123' }, '127.0.1.10');
+  const flagCookie = (token) => `anppt_v2_session=${encodeURIComponent(token)}`;
+  const flagAdminRequest = (url, init = {}) => new Request(url, {
+    ...init,
+    headers: { ...(init.headers || {}), cookie: flagCookie(ownerLogin.sessionToken) },
+  });
+
+  check('beta 功能可见性矩阵：匿名/普通不可见，测试用户/管理员可见',
+    flags.isFeatureVisible('editable_text_overlay', null) === false
+      && flags.isFeatureVisible('editable_text_overlay', reg.user) === false
+      && flags.isFeatureVisible('editable_text_overlay', testerUser) === true
+      && flags.isFeatureVisible('editable_text_overlay', { ...reg.user, role: 'admin' }) === true);
+  check('off 功能（4 个图片编辑工具）普通/测试用户不可见、仅管理员可见',
+    ['magic_erase', 'image_text_edit', 'template_fusion', 'set_as_reference'].every((key) =>
+      flags.isFeatureVisible(key, null) === false
+        && flags.isFeatureVisible(key, reg.user) === false
+        && flags.isFeatureVisible(key, testerUser) === false
+        && flags.isFeatureVisible(key, { ...reg.user, role: 'admin' }) === true));
+  await expectThrows('普通用户访问 beta 功能按 404 处理（不暴露功能存在）', async () => {
+    flags.assertFeatureVisible('editable_text_overlay', reg.user);
+  }, 'NOT_FOUND');
+
+  flags.setFeatureFlag('magic_erase', 'public', ownerLogin.user.id);
+  check('off→public 后匿名即可见', flags.isFeatureVisible('magic_erase', null) === true);
+  flags.setFeatureFlag('magic_erase', 'off', ownerLogin.user.id);
+  check('public→off 收回后匿名不可见', flags.isFeatureVisible('magic_erase', null) === false);
+  await expectThrows('未知开关 key 被拒', async () => {
+    flags.setFeatureFlag('nope_feature', 'beta', ownerLogin.user.id);
+  }, 'VALIDATION_ERROR');
+  await expectThrows('非法开关状态被拒', async () => {
+    flags.setFeatureFlag('magic_erase', 'on', ownerLogin.user.id);
+  }, 'VALIDATION_ERROR');
+
+  const normalPut = await flagsRoute.PUT(new Request('http://localhost/api/admin/feature-flags', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1', cookie: flagCookie(reg.sessionToken) },
+    body: JSON.stringify({ key: 'magic_erase', state: 'public' }),
+  }), { params: Promise.resolve({}) });
+  check('普通用户 PUT 开关 403', normalPut.status === 403, `实际 ${normalPut.status}`);
+  const adminPut = await flagsRoute.PUT(flagAdminRequest('http://localhost/api/admin/feature-flags', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({ key: 'magic_erase', state: 'public' }),
+  }), { params: Promise.resolve({}) });
+  check('管理员 PUT 开关成功并持久化', adminPut.status === 200 && flags.getFeatureFlagState('magic_erase') === 'public');
+
+  const anonFeatures = await (await featuresRoute.GET(new Request('http://localhost/api/features'))).json();
+  check('匿名 /api/features：public 可见 beta 不可见',
+    anonFeatures?.data?.flags?.magic_erase === true && anonFeatures?.data?.flags?.editable_text_overlay === false);
+  const testerFeatures = await (await featuresRoute.GET(new Request('http://localhost/api/features', {
+    headers: { cookie: flagCookie(betaTester.sessionToken) },
+  }))).json();
+  check('测试用户 /api/features：beta+public 可见、off 不可见',
+    testerFeatures?.data?.flags?.editable_text_overlay === true
+      && testerFeatures?.data?.flags?.magic_erase === true
+      && testerFeatures?.data?.flags?.image_text_edit === false);
+
+  const roleTarget = await auth.registerWithPassword(
+    { account: 'roleuser01', password: 'password123', confirmPassword: 'password123' },
+    '127.0.2.2',
+  );
+  const setRoleResponse = await roleRoute.POST(flagAdminRequest(`http://localhost/api/admin/users/${roleTarget.user.id}/role`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({ role: 'tester' }),
+  }), { params: Promise.resolve({ id: roleTarget.user.id }) });
+  check('管理员可设测试用户并实时生效',
+    setRoleResponse.status === 200 && auth.findUserById(roleTarget.user.id)?.role === 'tester');
+  const adminRoleResponse = await roleRoute.POST(flagAdminRequest(`http://localhost/api/admin/users/${ownerLogin.user.id}/role`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({ role: 'tester' }),
+  }), { params: Promise.resolve({ id: ownerLogin.user.id }) });
+  check('管理员账号拒绝走测试开关', adminRoleResponse.status === 400, `实际 ${adminRoleResponse.status}`);
+  const badRoleResponse = await roleRoute.POST(flagAdminRequest(`http://localhost/api/admin/users/${roleTarget.user.id}/role`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({ role: 'admin' }),
+  }), { params: Promise.resolve({ id: roleTarget.user.id }) });
+  check('role 只允许 tester/user', badRoleResponse.status === 400, `实际 ${badRoleResponse.status}`);
+
+  const flagAudits = getDb().prepare("SELECT action FROM admin_audit_logs WHERE action IN ('feature-flag:set','user:set-role')").all();
+  check('开关变更与角色变更均留审计',
+    flagAudits.some((row) => row.action === 'feature-flag:set') && flagAudits.some((row) => row.action === 'user:set-role'));
+
+  flags.setFeatureFlag('magic_erase', 'off', ownerLogin.user.id);
+
+  // --- 金奖版式测试包：门控资产的可见性矩阵 + 列表/详情/硬门 ---
+  const templatesMod = await import('../src/lib/server/templates.ts');
+  const stylePacksData = await import('../src/data/style-packs.ts');
+  const stylePacksRoute = await import('../src/app/api/style-packs/route.ts');
+  const templatesRoute = await import('../src/app/api/templates/route.ts');
+  const templateDetailRoute = await import('../src/app/api/templates/[id]/route.ts');
+  const GOLD_PACK_ID = 'anppt-gold-tianxun-test-20260824';
+
+  check('公开 STYLE_PACKS 不含门控测试包',
+    !stylePacksData.STYLE_PACKS.some((p) => p.id === GOLD_PACK_ID)
+      && stylePacksData.GATED_STYLE_PACKS.some((p) => p.id === GOLD_PACK_ID));
+  check('visibleStylePacks：匿名/普通不见金奖包，测试用户/管理员可见',
+    !templatesMod.visibleStylePacks(null).some((p) => p.id === GOLD_PACK_ID)
+      && !templatesMod.visibleStylePacks(reg.user).some((p) => p.id === GOLD_PACK_ID)
+      && templatesMod.visibleStylePacks(testerUser).some((p) => p.id === GOLD_PACK_ID)
+      && templatesMod.visibleStylePacks({ ...reg.user, role: 'admin' }).some((p) => p.id === GOLD_PACK_ID));
+
+  const anonPacks = await (await stylePacksRoute.GET(new Request('http://localhost/api/style-packs'))).json();
+  const testerPacks = await (await stylePacksRoute.GET(new Request('http://localhost/api/style-packs', {
+    headers: { cookie: flagCookie(betaTester.sessionToken) },
+  }))).json();
+  check('/api/style-packs 按开关注入：匿名无金奖包、测试用户有',
+    !anonPacks?.data?.stylePacks?.some((p) => p.id === GOLD_PACK_ID)
+      && testerPacks?.data?.stylePacks?.some((p) => p.id === GOLD_PACK_ID));
+
+  const anonTemplates = await (await templatesRoute.GET(new Request('http://localhost/api/templates?kind=template'))).json();
+  const testerTemplates = await (await templatesRoute.GET(new Request('http://localhost/api/templates?kind=template', {
+    headers: { cookie: flagCookie(betaTester.sessionToken) },
+  }))).json();
+  check('/api/templates 按开关注入：匿名无金奖包、测试用户有',
+    !anonTemplates?.data?.templates?.some((p) => p.id === GOLD_PACK_ID)
+      && testerTemplates?.data?.templates?.some((p) => p.id === GOLD_PACK_ID));
+
+  const anonDetail = await templateDetailRoute.GET(new Request('http://localhost/api/templates/x'), {
+    params: Promise.resolve({ id: GOLD_PACK_ID }),
+  });
+  const testerDetail = await templateDetailRoute.GET(new Request('http://localhost/api/templates/x', {
+    headers: { cookie: flagCookie(betaTester.sessionToken) },
+  }), { params: Promise.resolve({ id: GOLD_PACK_ID }) });
+  const testerDetailJson = await testerDetail.json();
+  check('门控包详情：匿名 404、测试用户 200 且带 6 页模板载体',
+    anonDetail.status === 404
+      && testerDetail.status === 200
+      && testerDetailJson?.data?.template?.templatePages?.length === 6);
+
+  await expectThrows('普通用户生成链路使用门控包按 404 拒绝', async () => {
+    templatesMod.assertStylePackUsable(GOLD_PACK_ID, reg.user);
+  }, 'NOT_FOUND');
+  templatesMod.assertStylePackUsable(GOLD_PACK_ID, testerUser);
+  check('测试用户通过门控包硬门校验', true);
+}
+
+console.log('\n[12] getClientIp：X-Real-IP 优先于 XFF（Caddy 只保证前者，XFF 首值可伪造）');
+{
+  const spoofed = new Request('http://localhost/api/x', {
+    headers: { 'x-forwarded-for': '1.2.3.4, 10.0.0.1', 'x-real-ip': '6.7.8.9' },
+  });
+  check('X-Real-IP 优先于 XFF 首值', httpLib.getClientIp(spoofed) === '6.7.8.9');
+  const xffOnly = new Request('http://localhost/api/x', { headers: { 'x-forwarded-for': ' 1.2.3.4 , 10.0.0.1' } });
+  check('无 X-Real-IP 时回退 XFF 首值', httpLib.getClientIp(xffOnly) === '1.2.3.4');
+  check('两头皆无 → unknown', httpLib.getClientIp(new Request('http://localhost/api/x')) === 'unknown');
+}
+
+console.log('\n[12b] 支付 mock 生产硬拒（子进程 NODE_ENV=production + MOCK=true）');
+{
+  const probe = execFileSync(process.execPath, ['--input-type=module', '-e', `
+    import { registerTsHooks } from './scripts/ts-hooks.mjs';
+    registerTsHooks();
+    const envMod = await import('./src/lib/server/env.ts');
+    const env = envMod.getEnv();
+    console.log(JSON.stringify({ epay: env.epay.mock, wechat: env.wechat.mock }));
+  `], {
+    cwd: path.resolve(import.meta.dirname, '..'),
+    env: { ...process.env, NODE_ENV: 'production', EPAY_MOCK: 'true', WECHAT_PAY_MOCK: 'true', ANPPT_V2_DB_PATH: path.join(tmpDir, 'probe.db') },
+    encoding: 'utf8',
+  });
+  const flags = JSON.parse(probe.trim().split('\n').pop());
+  check('生产环境 EPAY_MOCK/WECHAT_PAY_MOCK 被强制关闭', flags.epay === false && flags.wechat === false);
+}
+
+console.log('\n[12c] 导入文档页数上限 40（自定义页数；超出回退默认 10）');
+{
+  const parseRoute = await import('../src/app/api/deck/parse/route.ts');
+  const parseRequest = (pages) => {
+    const form = new FormData();
+    form.append('file', new File(['第一章 项目背景\n本项目致力于打造校园赛事服务平台。\n\n第二章 市场分析\n目标用户为高校学生与指导老师。'], 'notes.txt', { type: 'text/plain' }));
+    form.append('duration', '15');
+    form.append('targetPageCount', String(pages));
+    return new Request('http://localhost/api/deck/parse', {
+      method: 'POST',
+      headers: { cookie: `anppt_v2_session=${encodeURIComponent(reg.sessionToken)}`, 'x-anppt-action': '1' },
+      body: form,
+    });
+  };
+  const { getDb } = await import('../src/lib/server/db.ts');
+  const pageCountOf = (deckId) => Number(getDb().prepare('SELECT target_page_count FROM decks WHERE id = ?').get(deckId)?.target_page_count);
+
+  const okRes = await parseRoute.POST(parseRequest(40));
+  const okJson = await okRes.json();
+  check('40 页（上限）正常创建', okRes.status === 201 && pageCountOf(okJson?.data?.deckId) === 40, `实际 ${okRes.status}`);
+  const overRes = await parseRoute.POST(parseRequest(99));
+  const overJson = await overRes.json();
+  check('99 页超出上限回退默认 10 页', overRes.status === 201 && pageCountOf(overJson?.data?.deckId) === 10, `实际 ${overRes.status}`);
 }
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败${failed ? ` — 失败项: ${failures.join('、')}` : ''}`);

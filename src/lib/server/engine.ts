@@ -9,6 +9,7 @@ import { ApiError } from './http';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
 import { DSL_TAG_SET_TEXT, validateTaggedDsl } from './generation/dsl';
 import { cleanString, normalizeOutlineSlide, type OutlineSlide } from './generation/types';
+import { recordUpstreamUsage } from './usage-meter';
 
 export interface EngineDeps {
   fetchImpl?: typeof fetch;
@@ -32,7 +33,10 @@ function engineConfigured(config: GenerationConfig): boolean {
 }
 
 function llmConfigured(config: GenerationConfig): boolean {
-  return Boolean(config.llmBaseUrl && config.llmApiKey);
+  return Boolean(
+    (config.llmBaseUrl && config.llmApiKey) ||
+    (config.llmBackupBaseUrl && config.llmBackupApiKey && config.llmBackupModel)
+  );
 }
 
 async function postJson(
@@ -158,28 +162,56 @@ function extractJson(text: string): unknown {
   throw new EngineUnavailableError('LLM 兜底返回内容不是有效 JSON');
 }
 
-/** 故障切换预算：第 1 个模型（快模型）45s、中间兜底 90s，末位模型拿满 LLM_TIMEOUT_MS */
+/** 故障切换预算：第 1 个候选（快模型）45s、中间候选 90s，末位候选拿满 LLM_TIMEOUT_MS */
 const FAILOVER_TIMEOUT_MS = [45_000, 90_000];
 
-async function chatCompletion(
-  messages: { role: string; content: string }[],
+interface LlmCandidate {
+  site: 'primary' | 'backup';
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+/** 候选 = 主站（主模型 + 回退模型链）→ 跨站备份（BACKUP_* 三项齐备才挂上） */
+function llmCandidates(config: GenerationConfig): LlmCandidate[] {
+  const candidates: LlmCandidate[] = [];
+  if (config.llmBaseUrl && config.llmApiKey) {
+    const models = [...new Set([config.llmModel, ...config.llmFallbackModels])];
+    for (const model of models) {
+      candidates.push({ site: 'primary', baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model });
+    }
+  }
+  if (config.llmBackupBaseUrl && config.llmBackupApiKey && config.llmBackupModel) {
+    candidates.push({ site: 'backup', baseUrl: config.llmBackupBaseUrl, apiKey: config.llmBackupApiKey, model: config.llmBackupModel });
+  }
+  return candidates;
+}
+
+// OpenAI 兼容消息内容：纯文本或 vision 分段（[{type:'text'...},{type:'image_url'...}]）。
+export type ChatMessageContent = string | Array<Record<string, unknown>>;
+
+export async function chatCompletion(
+  messages: { role: string; content: ChatMessageContent }[],
   deps: EngineDeps,
 ): Promise<string> {
   const config = deps.config ?? getGenerationConfig();
-  if (!llmConfigured(config)) {
+  const candidates = llmCandidates(config);
+  if (candidates.length === 0) {
     throw new EngineUnavailableError('引擎未配置且 LLM 兜底未配置（ANPPT_V2_LLM_BASE_URL/API_KEY）');
   }
-  const models = [...new Set([config.llmModel, ...config.llmFallbackModels])];
   const fetchImpl = deps.fetchImpl ?? fetch;
   let lastError: unknown;
-  for (let i = 0; i < models.length; i += 1) {
-    const isLast = i === models.length - 1;
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const isLast = i === candidates.length - 1;
     const timeoutMs = isLast ? LLM_TIMEOUT_MS : (FAILOVER_TIMEOUT_MS[i] ?? 90_000);
+    const provider = candidate.site === 'backup' ? 'llm-backup' : 'llm-primary';
+    const startedAt = Date.now();
     try {
       const payload = await postJson(
-        `${config.llmBaseUrl}/chat/completions`,
-        { model: models[i], messages, stream: false, temperature: 0.3 },
-        { Authorization: `Bearer ${config.llmApiKey}` },
+        `${candidate.baseUrl}/chat/completions`,
+        { model: candidate.model, messages, stream: false, temperature: 0.3 },
+        { Authorization: `Bearer ${candidate.apiKey}` },
         timeoutMs,
         fetchImpl,
       );
@@ -187,19 +219,38 @@ async function chatCompletion(
       const content = choices?.[0]?.message?.content;
       const text = typeof content === 'string' ? content : '';
       if (!text.trim()) throw new EngineUnavailableError('LLM 兜底返回空内容');
+      const usage = payload.usage as { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined;
+      recordUpstreamUsage({
+        provider,
+        kind: 'chat',
+        model: candidate.model,
+        status: 'ok',
+        promptTokens: Number(usage?.prompt_tokens) || 0,
+        completionTokens: Number(usage?.completion_tokens) || 0,
+        durationMs: Date.now() - startedAt,
+      });
       return text;
     } catch (error) {
       lastError = error;
+      recordUpstreamUsage({
+        provider,
+        kind: 'chat',
+        model: candidate.model,
+        status: 'error',
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
       if (!isLast) {
+        const next = candidates[i + 1];
         console.warn(
-          `[anppt-v2][engine] LLM 模型 ${models[i]} 失败，切换 ${models[i + 1]}：${
+          `[anppt-v2][engine] LLM ${candidate.site}/${candidate.model} 失败，切换 ${next.site}/${next.model}：${
             error instanceof Error ? error.message : String(error)
           }`,
         );
       }
     }
   }
-  throw lastError instanceof Error ? lastError : new EngineUnavailableError('LLM 兜底全部模型失败');
+  throw lastError instanceof Error ? lastError : new EngineUnavailableError('LLM 兜底全部候选失败');
 }
 
 // ---------- 对外能力 ----------

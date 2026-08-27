@@ -1,5 +1,6 @@
 import { jsonOk, ApiError } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
+import { hitRateLimit } from '@/lib/server/rate-limit';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { extForFile, saveFile } from '@/lib/server/generation/storage';
@@ -9,6 +10,9 @@ export const dynamic = 'force-dynamic';
 
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
+  // 上传免费但占磁盘/带宽：按用户限 60 次/小时
+  const rate = hitRateLimit(`upload:${user.id}`, { windowMs: 60 * 60 * 1000, max: 60 });
+  if (!rate.allowed) throw new ApiError('UPLOAD_RATE_LIMITED', '上传过于频繁，请稍后再试', 429, true);
   const config = getGenerationConfig();
   let form: FormData;
   try {

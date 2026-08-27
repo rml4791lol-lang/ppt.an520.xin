@@ -1,5 +1,16 @@
 import { getStyleDesignDna } from "./style-design-dna"
 
+/** 赛事垂直域：wvcsc=世校赛（第一阶段唯一激活值），cicsic=双创赛（占位），general=通用（缺省）。 */
+export type StylePackDomain = 'wvcsc' | 'cicsic' | 'general'
+/** 双路线形态：style=风格包（默认，只借风格），template=真模板（版式高保真、灌内容）。 */
+export type StylePackKind = 'style' | 'template'
+
+export interface StylePackTemplatePage {
+  /** 逻辑页型 key（与 page-types.ts 对齐）；由设计 DNA 推导时用参考桶名（cover/toc/section/data/process/content）。 */
+  pageType: string
+  imageUrl: string
+}
+
 export interface StylePack {
   id: string
   name: string
@@ -17,6 +28,20 @@ export interface StylePack {
   recommendationWeight: number
   /** 逐包看预览图提炼的视觉语言关键词（配色/版式/装饰母题/图形元素/质感氛围），注入生图 prompt */
   visualKeywords: string[]
+  /** 赛事垂直域，缺省按 general 处理。 */
+  domain?: StylePackDomain
+  /** 赛事赛道（domain 为赛事域时填，如「信息技术」「装备制造」）。 */
+  track?: string
+  /** 双路线形态，缺省按 style 处理。 */
+  kind?: StylePackKind
+  /** 颜色标签（红/橙/黄/绿/蓝/紫），模板库三维筛选用。 */
+  colorTags?: string[]
+  /** 题材标签（智慧农业/医疗健康/文旅非遗/信息AI 等），模板库三维筛选用。 */
+  themeTags?: string[]
+  /** 真模板逐页载体（kind=template 时填）；缺省时由服务端按设计 DNA 参考页索引推导。 */
+  templatePages?: StylePackTemplatePage[]
+  /** 挂功能开关板的测试资产：值为 feature-flags.ts 登记的开关 key；不入公开列表，仅服务端按开关注入。 */
+  featureFlag?: string
 }
 
 const RAW_STYLE_PACKS: StylePack[] = [
@@ -85,6 +110,42 @@ const RAW_STYLE_PACKS: StylePack[] = [
     suitableScenarios: ["职业规划大赛", "成长答辩", "个人发展汇报"],
     recommendationWeight: 103,
     visualKeywords: ["象牙白编辑底", "深墨蓝正文", "暖橙红重点", "细金坐标路径", "真实学习实践摄影", "杂志式留白", "成长证据节点", "行动路线图"],
+  },
+  {
+    id: "anppt-template-wvcsc-aiot-20260822",
+    name: "深蓝AIoT世校赛实测模板",
+    slug: "深蓝AIoT世校赛实测模板",
+    category: "赛事/竞赛",
+    description: "由真实生成链路产出的世校赛九页高保真模板：深蓝科技视觉、顶部页码导航与玻璃拟态卡片贯穿全套，封面/目录/痛点/流程/技能/创新/成果/价值/结尾逐页对齐，灌内容不换版式。",
+    previewUrl: "/assets/style-packs/wvcsc-aiot-skeleton/00-封面.png",
+    previewImageUrls: [
+      "/assets/style-packs/wvcsc-aiot-skeleton/00-封面.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/01-目录.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/02-痛点分析.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/03-流程步骤.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/04-作品与技能展示.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/05-创新优势.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/06-案例与成果.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/07-社会价值.png",
+      "/assets/style-packs/wvcsc-aiot-skeleton/08-结尾.png",
+    ],
+    badgeText: "实测模板",
+    tags: ["世校赛", "技能竞赛", "智慧农业"],
+    suitablePageTypes: ["职业院校技能大赛", "创新创业路演", "实训成果汇报"],
+    suitableScenarios: ["世校赛答辩", "技能竞赛汇报", "项目路演"],
+    recommendationWeight: 106,
+    visualKeywords: ["深海军蓝底", "冷青蓝精密光线", "琥珀橙当前页高亮", "顶部页码导航系统", "玻璃拟态卡片", "真实农业物联网摄影", "大数字指标卡", "流程箭头串联"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/00-封面.png" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/01-目录.png" },
+      { pageType: "pain-analysis", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/02-痛点分析.png" },
+      { pageType: "process", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/03-流程步骤.png" },
+      { pageType: "skills-showcase", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/04-作品与技能展示.png" },
+      { pageType: "innovation", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/05-创新优势.png" },
+      { pageType: "outcomes", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/06-案例与成果.png" },
+      { pageType: "social-impact", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/07-社会价值.png" },
+      { pageType: "ending", imageUrl: "/assets/style-packs/wvcsc-aiot-skeleton/08-结尾.png" },
+    ],
   },
   {
     id: "cmrudmox70089a55901y20v3o",
@@ -491,6 +552,247 @@ const RAW_STYLE_PACKS: StylePack[] = [
     recommendationWeight: 3,
     visualKeywords: ["翡翠绿到钴蓝横向渐变", "纯白内容底", "绿色大数字指标", "绿色线性医疗图标", "圆角白卡柔和投影", "通栏渐变结论横幅", "网状连接线底纹", "通透科技感"],
   },
+  // ---- 世校赛八赛道真模板（2026-08-22 量产验收，风格规范见 scripts/hj-style-specs.mjs）----
+  {
+    id: "anppt-hj-jianyue-shangwu-20260822",
+    name: "简净商务杂志风",
+    slug: "简净商务杂志风",
+    category: "商务/汇报",
+    description: "象牙白底配藏蓝主色的商业杂志式版式，克制留白与严格栅格，适合财经商贸赛道的经营方案与路演汇报。",
+    previewUrl: "/assets/style-packs/hj-jianyue-shangwu/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-jianyue-shangwu/cover.webp",
+      "/assets/style-packs/hj-jianyue-shangwu/toc.webp",
+      "/assets/style-packs/hj-jianyue-shangwu/section.webp",
+      "/assets/style-packs/hj-jianyue-shangwu/content.webp",
+      "/assets/style-packs/hj-jianyue-shangwu/data.webp",
+      "/assets/style-packs/hj-jianyue-shangwu/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "财经商贸"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["象牙白底", "藏蓝主色", "石墨灰正文", "单一金属色点缀", "商业杂志版式", "严格栅格对齐", "充分留白", "真实商务摄影"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-jianyue-shangwu/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-jianyue-shangwu/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-jianyue-shangwu/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-jianyue-shangwu/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-jianyue-shangwu/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-jianyue-shangwu/process.webp" },
+    ],
+  },
+  {
+    id: "anppt-hj-keji-weilai-20260822",
+    name: "深青未来科技风",
+    slug: "深青未来科技风",
+    category: "赛事/竞赛",
+    description: "深海军蓝与电光青的深邃科技现场，发光指标卡与真实机房影像，适合信息技术赛道的平台架构与运维成果展示。",
+    previewUrl: "/assets/style-packs/hj-keji-weilai/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-keji-weilai/cover.webp",
+      "/assets/style-packs/hj-keji-weilai/toc.webp",
+      "/assets/style-packs/hj-keji-weilai/section.webp",
+      "/assets/style-packs/hj-keji-weilai/content.webp",
+      "/assets/style-packs/hj-keji-weilai/data.webp",
+      "/assets/style-packs/hj-keji-weilai/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "信息技术"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["深海军蓝底", "青色电光高亮", "细腻发光线条", "网格与全息质感", "左对齐大标题", "发光指标卡", "真实科技场景", "锐利文字边缘"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-keji-weilai/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-keji-weilai/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-keji-weilai/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-keji-weilai/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-keji-weilai/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-keji-weilai/process.webp" },
+    ],
+  },
+  {
+    id: "anppt-hj-xueshu-yanjin-20260822",
+    name: "学术期刊严谨风",
+    slug: "学术期刊严谨风",
+    category: "学术答辩",
+    description: "纸白墨黑的期刊式秩序，靛蓝深红单一强调色与扁平坐标图表，适合医疗健康赛道的研究成果与临床项目评审。",
+    previewUrl: "/assets/style-packs/hj-xueshu-yanjin/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-xueshu-yanjin/cover.webp",
+      "/assets/style-packs/hj-xueshu-yanjin/toc.webp",
+      "/assets/style-packs/hj-xueshu-yanjin/section.webp",
+      "/assets/style-packs/hj-xueshu-yanjin/content.webp",
+      "/assets/style-packs/hj-xueshu-yanjin/data.webp",
+      "/assets/style-packs/hj-xueshu-yanjin/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "医疗健康"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["纸白底", "墨黑正文", "单一学术强调色", "三级标题层级", "模块化栅格", "扁平图表坐标清晰", "线框示意图", "零装饰冗余"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-xueshu-yanjin/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-xueshu-yanjin/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-xueshu-yanjin/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-xueshu-yanjin/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-xueshu-yanjin/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-xueshu-yanjin/process.webp" },
+    ],
+  },
+  {
+    id: "anppt-hj-huichang-luyan-20260822",
+    name: "发布会聚焦路演风",
+    slug: "发布会聚焦路演风",
+    category: "商务/汇报",
+    description: "曜石黑舞台聚焦版式，高对比大标题与超大数字独立成行，适合能源电力赛道的成果发布与路演答辩。",
+    previewUrl: "/assets/style-packs/hj-huichang-luyan/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-huichang-luyan/cover.webp",
+      "/assets/style-packs/hj-huichang-luyan/toc.webp",
+      "/assets/style-packs/hj-huichang-luyan/section.webp",
+      "/assets/style-packs/hj-huichang-luyan/content.webp",
+      "/assets/style-packs/hj-huichang-luyan/data.webp",
+      "/assets/style-packs/hj-huichang-luyan/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "能源电力"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["舞台聚焦构图", "高对比超大标题", "单一点缀色", "每页一个核心信息", "超大数字独立成行", "真实产品摄影", "暗角聚焦处理", "极简信息密度"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-huichang-luyan/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-huichang-luyan/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-huichang-luyan/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-huichang-luyan/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-huichang-luyan/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-huichang-luyan/process.webp" },
+    ],
+  },
+  {
+    id: "anppt-hj-zhengqi-huibao-20260822",
+    name: "沉稳政企汇报风",
+    slug: "沉稳政企汇报风",
+    category: "商务/汇报",
+    description: "米白底藏蓝主色配金色细线，庄重稳健的政企汇报气质，适合现代农业赛道的项目成效与推广汇报。",
+    previewUrl: "/assets/style-packs/hj-zhengqi-huibao/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-zhengqi-huibao/cover.webp",
+      "/assets/style-packs/hj-zhengqi-huibao/toc.webp",
+      "/assets/style-packs/hj-zhengqi-huibao/section.webp",
+      "/assets/style-packs/hj-zhengqi-huibao/content.webp",
+      "/assets/style-packs/hj-zhengqi-huibao/data.webp",
+      "/assets/style-packs/hj-zhengqi-huibao/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "现代农业"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["藏蓝或深红主色", "米白底", "金色细线点缀", "三色相上限", "编号卡片", "真实产业场景摄影", "端庄扁平图表", "从容留白"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-zhengqi-huibao/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-zhengqi-huibao/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-zhengqi-huibao/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-zhengqi-huibao/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-zhengqi-huibao/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-zhengqi-huibao/process.webp" },
+    ],
+  },
+  {
+    id: "anppt-hj-xinxi-tubiao-20260822",
+    name: "数据新闻信息图表风",
+    slug: "数据新闻信息图表风",
+    category: "商务/汇报",
+    description: "浅色底蓝青分类色，图表为主角的数据新闻式版式，适合装备制造赛道的实测数据与工艺流程表达。",
+    previewUrl: "/assets/style-packs/hj-xinxi-tubiao/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-xinxi-tubiao/cover.webp",
+      "/assets/style-packs/hj-xinxi-tubiao/toc.webp",
+      "/assets/style-packs/hj-xinxi-tubiao/section.webp",
+      "/assets/style-packs/hj-xinxi-tubiao/content.webp",
+      "/assets/style-packs/hj-xinxi-tubiao/data.webp",
+      "/assets/style-packs/hj-xinxi-tubiao/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "装备制造"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["浅色底", "蓝青分类色", "图表为主角", "模块化栅格", "扁平精准图表", "文字只做标注", "多图严格对齐", "背景零装饰"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-xinxi-tubiao/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-xinxi-tubiao/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-xinxi-tubiao/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-xinxi-tubiao/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-xinxi-tubiao/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-xinxi-tubiao/process.webp" },
+    ],
+  },
+  {
+    id: "anppt-hj-chuangsan-jingmei-20260822",
+    name: "创赛精美路演风",
+    slug: "创赛精美路演风",
+    category: "赛事/竞赛",
+    description: "墨黑底橙红高亮的舞台张力，粗重大标题配浅色证据卡片，适合教育与成长赛道的创赛路演与成果展示。",
+    previewUrl: "/assets/style-packs/hj-chuangsan-jingmei/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-chuangsan-jingmei/cover.webp",
+      "/assets/style-packs/hj-chuangsan-jingmei/toc.webp",
+      "/assets/style-packs/hj-chuangsan-jingmei/section.webp",
+      "/assets/style-packs/hj-chuangsan-jingmei/content.webp",
+      "/assets/style-packs/hj-chuangsan-jingmei/data.webp",
+      "/assets/style-packs/hj-chuangsan-jingmei/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "教育与成长"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["深色底高亮主色", "粗重艺术字大标题", "笔刷质感", "浅色证据卡片", "数字里程碑放大", "真实人物实景摄影", "三层信息层级", "杂志级精致感"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-chuangsan-jingmei/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-chuangsan-jingmei/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-chuangsan-jingmei/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-chuangsan-jingmei/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-chuangsan-jingmei/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-chuangsan-jingmei/process.webp" },
+    ],
+  },
+  {
+    id: "anppt-hj-shuimo-guofeng-20260822",
+    name: "当代水墨国风",
+    slug: "当代水墨国风",
+    category: "国风/古典",
+    description: "宣纸米白底墨色分层，朱砂石青点到即止的当代留白气韵，适合文旅非遗赛道的文化传承与创意项目展示。",
+    previewUrl: "/assets/style-packs/hj-shuimo-guofeng/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/hj-shuimo-guofeng/cover.webp",
+      "/assets/style-packs/hj-shuimo-guofeng/toc.webp",
+      "/assets/style-packs/hj-shuimo-guofeng/section.webp",
+      "/assets/style-packs/hj-shuimo-guofeng/content.webp",
+      "/assets/style-packs/hj-shuimo-guofeng/data.webp",
+      "/assets/style-packs/hj-shuimo-guofeng/process.webp",
+    ],
+    badgeText: "世校赛模板",
+    tags: ["世校赛", "文旅非遗"],
+    suitablePageTypes: ["世校赛路演", "技能大赛答辩", "参赛项目展示"],
+    suitableScenarios: ["世校赛参赛汇报", "技能大赛路演", "项目成果答辩"],
+    recommendationWeight: 100,
+    visualKeywords: ["宣纸米白底", "墨色浓淡分层", "朱砂石青点缀", "书法感标题", "现代黑体正文", "传统纹样边缘点缀", "水墨笔触配图", "留白即构图"],
+    templatePages: [
+      { pageType: "cover", imageUrl: "/assets/style-packs/hj-shuimo-guofeng/cover.webp" },
+      { pageType: "toc", imageUrl: "/assets/style-packs/hj-shuimo-guofeng/toc.webp" },
+      { pageType: "section", imageUrl: "/assets/style-packs/hj-shuimo-guofeng/section.webp" },
+      { pageType: "content", imageUrl: "/assets/style-packs/hj-shuimo-guofeng/content.webp" },
+      { pageType: "data", imageUrl: "/assets/style-packs/hj-shuimo-guofeng/data.webp" },
+      { pageType: "process", imageUrl: "/assets/style-packs/hj-shuimo-guofeng/process.webp" },
+    ],
+  },
 ]
 
 const PUBLIC_STYLE_NAMES: Readonly<Record<string, string>> = {
@@ -498,6 +800,56 @@ const PUBLIC_STYLE_NAMES: Readonly<Record<string, string>> = {
   cms5q2vfl02qz13yh2jhgo8p3: "冷白极简经营汇报风",
   cmrn8kjb002lyy1o1b81fikbr: "深绿算力基础设施风",
   cmrk9saju00bh10zkedkn6l09: "云雾蓝磨砂轻商务风",
+}
+
+interface StylePackTaxonomy {
+  domain?: StylePackDomain
+  track?: string
+  kind?: StylePackKind
+  colorTags?: string[]
+  themeTags?: string[]
+}
+
+// 模板库三维标签与双路线形态标注（第一阶段静态打标，不入 DB）。
+// kind=template 的包同时作为「真模板」在模板一版露出（同一资产双 tab 可达是刻意的）；
+// 缺省 kind 即纯风格包，只在风格一版出现。世校赛（wvcsc）是第一阶段唯一激活的垂直域。
+const PACK_TAXONOMY: Readonly<Record<string, StylePackTaxonomy>> = {
+  'anppt-original-innovation-20260822': { domain: 'wvcsc', track: '信息技术', kind: 'template', colorTags: ['蓝'], themeTags: ['信息AI', '科技创新'] },
+  'anppt-original-skill-20260822': { domain: 'wvcsc', track: '装备制造', kind: 'template', colorTags: ['蓝', '橙'], themeTags: ['智能制造', '工业技术'] },
+  'anppt-original-career-20260822': { domain: 'wvcsc', track: '教育与成长', kind: 'template', colorTags: ['橙'], themeTags: ['教育培训'] },
+  'anppt-template-wvcsc-aiot-20260822': { domain: 'wvcsc', track: '现代农业', kind: 'template', colorTags: ['蓝'], themeTags: ['智慧农业', '信息AI'] },
+  'anppt-hj-jianyue-shangwu-20260822': { domain: 'wvcsc', track: '财经商贸', kind: 'template', colorTags: ['蓝'], themeTags: ['商务汇报'] },
+  'anppt-hj-keji-weilai-20260822': { domain: 'wvcsc', track: '信息技术', kind: 'template', colorTags: ['蓝'], themeTags: ['信息AI', '科技创新'] },
+  'anppt-hj-xueshu-yanjin-20260822': { domain: 'wvcsc', track: '医疗健康', kind: 'template', colorTags: ['蓝', '红'], themeTags: ['教育培训'] },
+  'anppt-hj-huichang-luyan-20260822': { domain: 'wvcsc', track: '能源电力', kind: 'template', colorTags: ['蓝', '橙'], themeTags: ['科技创新', '能源电力'] },
+  'anppt-hj-zhengqi-huibao-20260822': { domain: 'wvcsc', track: '现代农业', kind: 'template', colorTags: ['蓝', '红'], themeTags: ['商务汇报', '智慧农业'] },
+  'anppt-hj-xinxi-tubiao-20260822': { domain: 'wvcsc', track: '装备制造', kind: 'template', colorTags: ['蓝', '绿'], themeTags: ['智能制造', '工业技术'] },
+  'anppt-hj-chuangsan-jingmei-20260822': { domain: 'wvcsc', track: '教育与成长', kind: 'template', colorTags: ['橙', '蓝'], themeTags: ['教育培训', '科技创新'] },
+  'anppt-hj-shuimo-guofeng-20260822': { domain: 'wvcsc', track: '文旅非遗', kind: 'template', colorTags: ['红'], themeTags: ['文旅非遗'] },
+  cmrudmox70089a55901y20v3o: { domain: 'general', kind: 'template', colorTags: ['蓝'], themeTags: ['商务汇报'] },
+  cms5p1p5m01tl13yheatu8708: { domain: 'general', kind: 'template', colorTags: ['蓝', '黄'], themeTags: ['商务汇报'] },
+  cmrbxz89q001oxty8gxoa9ffq: { domain: 'general', kind: 'template', colorTags: ['蓝'], themeTags: ['商务汇报', '信息AI'] },
+  cms5q2vfl02qz13yh2jhgo8p3: { domain: 'general', kind: 'template', colorTags: ['蓝'], themeTags: ['商务汇报'] },
+  cmrtyn2kl006960kpu3o6yd68: { domain: 'general', kind: 'template', colorTags: ['橙'], themeTags: ['商务汇报'] },
+  cmqs3gcsm0000d3ye34vdheke: { domain: 'general', kind: 'template', colorTags: ['红'], themeTags: ['商务汇报', '金融财经'] },
+  cmronzw9u00sg14jae48stfwf: { domain: 'general', kind: 'template', colorTags: ['红'], themeTags: ['商务汇报'] },
+  cmrn42x3n00e3t9qmt2gdrcv6: { domain: 'general', kind: 'template', colorTags: ['红'], themeTags: ['商务汇报'] },
+  cmseiyimt0qxuck7fzmcdal6m: { domain: 'general', kind: 'template', colorTags: ['蓝', '红'], themeTags: ['科技创新', '教育培训'] },
+  cmsohlood12wnd752l4f7ijxy: { domain: 'general', kind: 'template', colorTags: ['紫'], themeTags: ['医疗健康', '教育培训'] },
+  cmsne1r3800d2o1xqsnu4aw9u: { domain: 'general', kind: 'template', colorTags: ['蓝'], themeTags: ['医疗健康', '教育培训'] },
+  cmrxo1g2q0vxltn4r2fvx00qw: { domain: 'general', colorTags: ['蓝'], themeTags: ['医疗健康', '科技创新'] },
+  cmrn8kjb002lyy1o1b81fikbr: { domain: 'general', colorTags: ['绿'], themeTags: ['信息AI', '科技创新'] },
+  cmrjdv6i80001kup5set1no4a: { domain: 'general', colorTags: ['蓝'], themeTags: ['信息AI', '科技创新'] },
+  cmqs3gctc0003d3yei6wwxjdv: { domain: 'general', colorTags: ['黄'], themeTags: ['酒店文旅'] },
+  cmqs3gct50002d3yetlhjw4di: { domain: 'general', colorTags: ['红'], themeTags: ['能源电力'] },
+  cms5jbscy000nywm197g8ls05: { domain: 'general', colorTags: ['蓝', '绿'], themeTags: ['医疗健康'] },
+  cms5j6bte03v5216o6q5kkfvh: { domain: 'general', colorTags: ['蓝'], themeTags: ['医疗健康'] },
+  cms5ip3kv03cd216omfjve2sl: { domain: 'general', colorTags: ['蓝'], themeTags: ['医疗健康', '信息AI'] },
+  cms5ibx4802yz216ocnp7ob5h: { domain: 'general', colorTags: ['蓝'], themeTags: ['医疗健康'] },
+  cmr1wty4900152p2n49q1au8z: { domain: 'general', colorTags: ['蓝'], themeTags: ['科技创新', '信息AI'] },
+  cmqs3gcsw0001d3ye5wrop6g9: { domain: 'general', colorTags: ['绿'], themeTags: ['文旅非遗'] },
+  cmrk8asi10033v7fx2zbu1y2o: { domain: 'general', colorTags: ['绿'], themeTags: ['商务汇报'] },
+  cmqs3gctm0004d3yedytwwyd2: { domain: 'general', colorTags: ['黄'], themeTags: ['酒店文旅'] },
 }
 
 // 公开库只展示正式资产：测试目录包暂时下线，待按原创重制规范验收后再回归。
@@ -512,6 +864,7 @@ export const STYLE_PACKS: StylePack[] = RAW_STYLE_PACKS
       .filter((slug) => slug !== publicName)
     return {
       ...pack,
+      ...(PACK_TAXONOMY[pack.id] || {}),
       name: publicName,
       // 卡片优先展示人工核验过的封面样张，避免把数据页误当作风格封面。
       previewUrl: pack.previewImageUrls[coverIndex] || pack.previewUrl,
@@ -524,3 +877,50 @@ export const STYLE_PACKS: StylePack[] = RAW_STYLE_PACKS
 
 // 沿用现有产品筛选顺序；「营销活动」保留占位（当前无包）
 export const STYLE_PACK_CATEGORIES: string[] = ['赛事/竞赛', '商务/汇报', '学术答辩', '医疗/医药', '能源/电力', '科技/深色', '营销活动', '国风/古典', '酒店/地产']
+
+// ---------- 开关板门控测试资产（不入公开库） ----------
+// 金奖版式测试包：从 2025 国赛金奖路演版式提炼的 6 页真模板（封面/痛点卡片列/单字锚点对比/
+// 竞品高亮表/数据大字/对仗封底），版式锁死、灌用户内容。仅当 gold_layouts_beta 开关对当前用户
+// 可见时由服务端注入列表与详情，生成链路另有硬门校验；用户验收采纳后才允许转入 STYLE_PACKS 正式公开。
+export const GATED_STYLE_PACKS: StylePack[] = [
+  {
+    id: 'anppt-gold-tianxun-test-20260824',
+    name: '金奖版式·天巡测试包',
+    slug: '金奖版式天巡测试包',
+    category: '赛事/竞赛',
+    description:
+      '以国赛金奖路演版式为骨的真模板测试包：书法主标封面、痛点卡片列、单字锚点对比、竞品整行高亮表、数据大字页、对仗口号封底。版式锁死灌内容，仅测试用户可见。',
+    previewUrl: '/assets/style-packs/gold-tianxun/01-cover.png',
+    previewImageUrls: [
+      '/assets/style-packs/gold-tianxun/01-cover.png',
+      '/assets/style-packs/gold-tianxun/02-pain-cards.png',
+      '/assets/style-packs/gold-tianxun/03-contrast-anchor.png',
+      '/assets/style-packs/gold-tianxun/04-compete-table.png',
+      '/assets/style-packs/gold-tianxun/05-bigdata.png',
+      '/assets/style-packs/gold-tianxun/06-backcover.png',
+    ],
+    badgeText: '测试·金奖版式',
+    tags: ['世校赛', '金奖版式', '测试包'],
+    suitablePageTypes: ['世校赛路演', '赛事答辩', '创新创业路演'],
+    suitableScenarios: ['世校赛路演', '赛事答辩', '创新创业路演'],
+    recommendationWeight: 1,
+    visualKeywords: ['冷白底', '青蓝主色', '证据红结论字', '书法大字锚点', '卡片栅格', '整行高亮对比表', '对仗口号封底'],
+    domain: 'wvcsc',
+    track: '装备制造',
+    kind: 'template',
+    colorTags: ['蓝'],
+    themeTags: ['智能制造', '信息AI'],
+    templatePages: [
+      { pageType: 'cover', imageUrl: '/assets/style-packs/gold-tianxun/01-cover.png' },
+      { pageType: 'pain-analysis', imageUrl: '/assets/style-packs/gold-tianxun/02-pain-cards.png' },
+      { pageType: 'comparison', imageUrl: '/assets/style-packs/gold-tianxun/03-contrast-anchor.png' },
+      { pageType: 'competitive-analysis', imageUrl: '/assets/style-packs/gold-tianxun/04-compete-table.png' },
+      { pageType: 'big-number', imageUrl: '/assets/style-packs/gold-tianxun/05-bigdata.png' },
+      { pageType: 'ending', imageUrl: '/assets/style-packs/gold-tianxun/06-backcover.png' },
+    ],
+    featureFlag: 'gold_layouts_beta',
+  },
+]
+
+/** 服务端解析用全集：公开库 + 门控测试资产。前端公开列表不得使用本出口。 */
+export const ALL_STYLE_PACKS: StylePack[] = [...STYLE_PACKS, ...GATED_STYLE_PACKS]

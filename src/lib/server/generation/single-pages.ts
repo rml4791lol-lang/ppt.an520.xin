@@ -240,6 +240,22 @@ async function runSinglePageJob(
       throw error;
     }
 
+    // requestId 重放命中幂等键：拒绝且不再生成（否则扣一次费可无限生图，失败分支还会误退首笔）
+    if (debit.duplicate) {
+      getGenDb().prepare("UPDATE single_page_versions SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
+        'DUPLICATE_REQUEST',
+        nowMs(),
+        versionId,
+      );
+      getGenDb().prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
+        page.status,
+        page.error,
+        nowMs(),
+        page.pageId,
+      );
+      throw new ApiError('DUPLICATE_REQUEST', '重复请求：请勿重复提交，刷新后可查看结果', 409, false);
+    }
+
     const finish = (status: 'succeeded' | 'failed', imagePath: string, imageUrl: string, errorText: string) => {
       getGenDb()
         .prepare('UPDATE single_page_versions SET status = ?, image_path = ?, image_url = ?, error = ?, updated_at = ? WHERE id = ?')

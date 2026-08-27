@@ -24,6 +24,8 @@ const STAGE_LABELS: Record<string, string> = {
   pending: "等待转换服务处理",
   converting: "逐页识别并重建",
   processing: "逐页识别并重建",
+  extracting: "逐页提取文字层",
+  "building-pptx": "合成可编辑文件",
   saving: "整理转换结果",
   downloading: "保存可编辑文件",
   completed: "转换完成",
@@ -42,19 +44,22 @@ interface UseEditableExportOptions {
   startRequest: (force: boolean) => Promise<EditableExportStart>;
   toast: Toast;
   onCreditsChanged?: () => void;
+  /** editable=Codia 元素级重建；editable_text=轻量文字覆盖层（beta） */
+  kind?: "editable" | "editable_text";
 }
 
 function recordFromStart(
   started: EditableExportStart,
   refType: "deck" | "single-page",
   refId: string,
+  kind: "editable" | "editable_text",
 ): ExportRecord {
   const now = Date.now();
   return {
     exportId: started.exportId,
     refType,
     refId,
-    kind: "editable",
+    kind,
     status: started.status,
     pageCount: started.pageCount,
     progress: started.progress,
@@ -88,6 +93,7 @@ export function useEditableExport({
   startRequest,
   toast,
   onCreditsChanged,
+  kind = "editable",
 }: UseEditableExportOptions) {
   const [record, setRecord] = useState<ExportRecord | null>(null);
   const [loading, setLoading] = useState(false);
@@ -95,6 +101,7 @@ export function useEditableExport({
   const [copyIndex, setCopyIndex] = useState(0);
   const activeSeenRef = useRef<Set<string>>(new Set());
   const terminalNotifiedRef = useRef<Set<string>>(new Set());
+  const fileTag = kind === "editable_text" ? "文字可编辑" : "可编辑";
 
   useEffect(() => {
     let cancelled = false;
@@ -105,7 +112,7 @@ export function useEditableExport({
         return;
       }
       setLoading(true);
-      getLatestEditableExport(refType, refId)
+      getLatestEditableExport(refType, refId, kind)
         .then((latest) => {
           if (cancelled) return;
           setRecord(latest);
@@ -124,7 +131,7 @@ export function useEditableExport({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [refId, refType]);
+  }, [refId, refType, kind]);
 
   const running = record?.status === "pending" || record?.status === "processing";
 
@@ -143,7 +150,7 @@ export function useEditableExport({
           if (next.status === "succeeded") {
             toast("可编辑 PPTX 已转换完成，已放入下载中心。好作品值得多检查一遍。", {
               actionLabel: "立即下载",
-              onAction: () => triggerDownload(next.url, `${title || "PPT"}-可编辑.pptx`),
+              onAction: () => triggerDownload(next.url, `${title || "PPT"}-${fileTag}.pptx`),
               duration: 10_000,
             });
           } else {
@@ -161,7 +168,7 @@ export function useEditableExport({
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [onCreditsChanged, record?.exportId, running, title, toast]);
+  }, [onCreditsChanged, record?.exportId, running, title, toast, fileTag]);
 
   useEffect(() => {
     if (!running) return;
@@ -174,7 +181,7 @@ export function useEditableExport({
     setSubmitting(true);
     try {
       const started = await startRequest(force);
-      const next = recordFromStart(started, refType, refId);
+      const next = recordFromStart(started, refType, refId, kind);
       setCopyIndex(0);
       setRecord(next);
       if (started.status === "succeeded" && started.url) {
@@ -184,7 +191,7 @@ export function useEditableExport({
             : "可编辑文件已完成，可在下载中心查看。",
           {
             actionLabel: "立即下载",
-            onAction: () => triggerDownload(started.url, `${title || "PPT"}-可编辑.pptx`),
+            onAction: () => triggerDownload(started.url, `${title || "PPT"}-${fileTag}.pptx`),
             duration: 8000,
           },
         );
@@ -202,7 +209,7 @@ export function useEditableExport({
     } finally {
       setSubmitting(false);
     }
-  }, [onCreditsChanged, refId, refType, startRequest, submitting, title, toast]);
+  }, [onCreditsChanged, refId, refType, startRequest, submitting, title, toast, kind, fileTag]);
 
   const succeeded = Boolean(
     record?.status === "succeeded" && record.url && record.isCurrentSource !== false,
@@ -218,8 +225,8 @@ export function useEditableExport({
 
   const download = useCallback(() => {
     if (!record?.url) return;
-    triggerDownload(record.url, `${title || "PPT"}-可编辑.pptx`);
-  }, [record, title]);
+    triggerDownload(record.url, `${title || "PPT"}-${fileTag}.pptx`);
+  }, [record, title, fileTag]);
 
   return {
     record,

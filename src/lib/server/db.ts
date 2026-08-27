@@ -127,13 +127,39 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_logs(created_at DESC);
 
-CREATE TABLE IF NOT EXISTS admin_user_watches (
-  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  label TEXT NOT NULL DEFAULT '',
-  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+CREATE TABLE IF NOT EXISTS upstream_balance_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  balance_num REAL,
+  currency TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  fetched_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upstream_snapshots_provider_at ON upstream_balance_snapshots(provider, fetched_at DESC);
+
+CREATE TABLE IF NOT EXISTS upstream_usage_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'ok',
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  units INTEGER NOT NULL DEFAULT 0,
+  cost_fen INTEGER,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_admin_user_watches_created ON admin_user_watches(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_upstream_usage_created ON upstream_usage_records(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_upstream_usage_provider ON upstream_usage_records(provider, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS feature_flags (
+  key TEXT PRIMARY KEY,
+  state TEXT NOT NULL,
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 const globalRef = globalThis as { __anpptV2Db?: DatabaseSync };

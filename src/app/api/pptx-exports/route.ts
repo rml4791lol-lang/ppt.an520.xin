@@ -19,6 +19,7 @@ export const GET = defineApiRoute(async (request) => {
         : url.searchParams.get('refType') === 'upload' ? 'upload' : undefined,
       refId: url.searchParams.get('refId') || undefined,
       kind: url.searchParams.get('kind') === 'editable' ? 'editable'
+        : url.searchParams.get('kind') === 'editable_text' ? 'editable_text'
         : url.searchParams.get('kind') === 'image' ? 'image' : undefined,
       latest: url.searchParams.get('latest') === '1',
     }),

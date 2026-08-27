@@ -195,6 +195,12 @@ function makeDna(
 }
 
 export const STYLE_DESIGN_DNA_BY_ID: Readonly<Record<string, StyleDesignDNA>> = {
+  // 金奖测试包（开关 gold_layouts_beta 门控）：评审扫读 DNA，参考桶指向 6 张金奖版式样张
+  'anppt-gold-tianxun-test-20260824': makeDna(
+    COMPETITION_ACADEMIC,
+    { cover: [0], toc: [1], section: [5], data: [3, 4], process: [1], content: [1, 2] },
+    { scenarioLabels: ['世校赛路演', '赛事答辩'] },
+  ),
   'anppt-original-innovation-20260822': makeDna(
     COMPETITION_ACADEMIC,
     { cover: [0], toc: [1], section: [2], content: [3], data: [4], process: [5] },

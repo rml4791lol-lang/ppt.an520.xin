@@ -1,5 +1,9 @@
-import { STYLE_PACKS } from "@/data/style-packs";
+import { getSessionFromRequest } from "@/lib/server/auth";
+import { visibleStylePacks } from "@/lib/server/templates";
 
-export function GET() {
-  return Response.json({ ok: true, data: { stylePacks: STYLE_PACKS } });
+export const dynamic = "force-dynamic";
+
+export function GET(request: Request) {
+  const session = getSessionFromRequest(request);
+  return Response.json({ ok: true, data: { stylePacks: visibleStylePacks(session?.user ?? null) } });
 }

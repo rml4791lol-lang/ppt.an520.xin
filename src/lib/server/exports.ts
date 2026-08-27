@@ -11,6 +11,7 @@ import { ApiError, validationError } from './http';
 import { debitCredits, estimateCredits, getBalance, refundCredits } from './credits';
 import { createPdfToPptTask, getTask, uploadPdf, type CodiaTaskView } from './codia';
 import { withTransaction } from './db';
+import { chatCompletion } from './engine';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
 import { genId, getGenDb, nowMs } from './generation/db';
 import { getOwnedDeck, listSlides } from './generation/decks';
@@ -25,6 +26,7 @@ export interface ExportDeps {
 // pptxgenjs 用 createRequire 走 node_modules 真实路径，避免打包器内联（jszip/fs 动态引用）。
 interface PptxSlide {
   addImage(opts: { data: string; x: number; y: number; w: number; h: number }): void;
+  addText(text: string, opts: Record<string, unknown>): void;
 }
 interface PptxInstance {
   layout: string;
@@ -222,7 +224,8 @@ function ensureEditablePipeline(row: ExportRow, deps: EditableExportDeps): Promi
   const existing = editablePipelines.get(exportId);
   if (existing) return existing;
   const runDeps = snapshotEditableDeps(deps);
-  const running = runEditableExportPipeline(row, runDeps).finally(() => {
+  const runner = String(row.kind) === 'editable_text' ? runTextEditablePipeline : runEditableExportPipeline;
+  const running = runner(row, runDeps).finally(() => {
     if (editablePipelines.get(exportId) === running) editablePipelines.delete(exportId);
   });
   editablePipelines.set(exportId, running);
@@ -395,14 +398,15 @@ async function prepareEditablePdf(row: ExportRow, config: GenerationConfig): Pro
   return { pdf: await buildImagePdf(images), pageCount: images.length };
 }
 
-/** 退星（幂等：refund 键唯一，重复执行不重复返还） */
+/** 退星（幂等：refund 键唯一，重复执行不重复返还）；键前缀与扣费时一致（按 kind 分档） */
 function refundEditableCharge(row: ExportRow): void {
   const charged = Number(row.charged_credits) || 0;
   if (charged <= 0) return;
+  const ledgerPrefix = String(row.kind) === 'editable_text' ? 'export-editable-text' : 'export-editable';
   try {
     refundCredits(String(row.user_id), charged, {
       reason: '可编辑导出失败退回',
-      idempotencyKey: `export-editable:${row.ref_id}:${row.id}:refund`,
+      idempotencyKey: `${ledgerPrefix}:${row.ref_id}:${row.id}:refund`,
       refType: String(row.ref_type || 'deck'),
       refId: String(row.ref_id),
     });
@@ -590,6 +594,15 @@ export async function startDeckEditableExport(
   );
 }
 
+/** 轻量文字档计价：独立动作 export_editable_text；CREDIT_ACTION_PRICES 被整体覆盖且缺该项时回退 5🌟/页 */
+function estimateTextEditable(pages: number) {
+  try {
+    return estimateCredits({ action: 'export_editable_text', pages });
+  } catch {
+    return { action: 'export_editable_text', unitPrice: 5, pages, credits: 5 * pages };
+  }
+}
+
 type LaunchDecision = { row: ExportRow; created: boolean };
 
 /**
@@ -597,6 +610,7 @@ type LaunchDecision = { row: ExportRow; created: boolean };
  * - 同项目有进行中任务：无条件复用，避免重复转换/重复扣星；
  * - 同一来源版本已有成功任务：默认复用；仅 force=true 才重新转换；
  * - 查重、建行和扣费位于同一 BEGIN IMMEDIATE 事务，防并发双击竞态。
+ * kind 区分重管线（editable=Codia）与轻量文字档（editable_text=VLM 覆盖层），两档记录互不串扰。
  */
 async function launchEditableExport(
   userId: string,
@@ -607,30 +621,33 @@ async function launchEditableExport(
   deps: EditableExportDeps,
   options: { force?: boolean },
   source: EditableSourceMeta = {},
+  kind: 'editable' | 'editable_text' = 'editable',
 ): Promise<StartedEditableExport> {
   const runDeps = snapshotEditableDeps(deps);
   const db = getGenDb();
-  const estimate = estimateCredits({ action: 'export_editable', pages: pageCount });
+  const estimate = kind === 'editable_text'
+    ? estimateTextEditable(pageCount)
+    : estimateCredits({ action: 'export_editable', pages: pageCount });
   const decision = withTransaction(db, (): LaunchDecision => {
     const running = db
       .prepare(
         `SELECT * FROM export_jobs
-         WHERE user_id = ? AND ref_type = ? AND ref_id = ? AND kind = 'editable'
+         WHERE user_id = ? AND ref_type = ? AND ref_id = ? AND kind = ?
            AND status IN ('pending', 'processing')
          ORDER BY created_at DESC LIMIT 1`,
       )
-      .get(userId, refType, refId) as ExportRow | undefined;
+      .get(userId, refType, refId, kind) as ExportRow | undefined;
     if (running) return { row: running, created: false };
 
     if (!options.force) {
       const succeeded = db
         .prepare(
           `SELECT * FROM export_jobs
-           WHERE user_id = ? AND ref_type = ? AND ref_id = ? AND kind = 'editable'
+           WHERE user_id = ? AND ref_type = ? AND ref_id = ? AND kind = ?
              AND status = 'succeeded' AND source_fingerprint = ? AND file_url <> ''
            ORDER BY created_at DESC LIMIT 1`,
         )
-        .get(userId, refType, refId, sourceFingerprint) as ExportRow | undefined;
+        .get(userId, refType, refId, kind, sourceFingerprint) as ExportRow | undefined;
       if (succeeded) return { row: succeeded, created: false };
     }
 
@@ -651,7 +668,7 @@ async function launchEditableExport(
         (id, user_id, ref_type, ref_id, source_fingerprint, source_path, source_name, source_mime,
          kind, status, page_count, progress, completed_pages, stage, file_path, file_url, error,
          upstream_task_id, charged_credits, created_at, updated_at, started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'editable', 'pending', ?, 0, 0, 'queued', '', '', '', '', ?, ?, ?, ?, 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 'queued', '', '', '', '', ?, ?, ?, ?, 0)`,
     ).run(
       exportId,
       userId,
@@ -661,15 +678,17 @@ async function launchEditableExport(
       source.path || '',
       cleanString(source.name, 200),
       cleanString(source.mime, 100),
+      kind,
       pageCount,
       estimate.credits,
       now,
       now,
       now,
     );
+    const ledgerPrefix = kind === 'editable_text' ? 'export-editable-text' : 'export-editable';
     debitCredits(userId, estimate.credits, {
-      reason: `转可编辑 PPTX（${pageCount} 页）`,
-      idempotencyKey: `export-editable:${refId}:${exportId}`,
+      reason: kind === 'editable_text' ? `转文字可编辑 PPTX（${pageCount} 页）` : `转可编辑 PPTX（${pageCount} 页）`,
+      idempotencyKey: `${ledgerPrefix}:${refId}:${exportId}`,
       refType,
       refId,
     });
@@ -816,14 +835,15 @@ export async function startUploadedEditableExport(
   }
 }
 
-/** 懒恢复（服务器重启不丢单）：editable 且 pending/processing 的行现场推进 */
+/** 懒恢复（服务器重启不丢单）：editable/editable_text 且 pending/processing 的行现场推进 */
 async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): Promise<ExportRow> {
   const runDeps = snapshotEditableDeps(deps);
-  if (String(row.kind) !== 'editable') return row;
+  const kind = String(row.kind);
+  if (kind !== 'editable' && kind !== 'editable_text') return row;
   if (!['pending', 'processing'].includes(String(row.status))) return row;
   const exportId = String(row.id);
   const taskId = String(row.upstream_task_id || '');
-  if (taskId) {
+  if (taskId && kind === 'editable') {
     // 已有上游任务：现场 poll 一次并推进状态
     try {
       const view = await getTask(taskId, runDeps);
@@ -848,6 +868,276 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
     ensureEditablePipeline(row, runDeps);
   }
   return row;
+}
+
+// ---------- 轻量文字可编辑导出（editable_text_overlay 开关功能，beta） ----------
+// 链路：页图 → VLM 提取文字块（位置/字号/颜色/字重/对齐）→ 采样文字周边底色 →
+// 整页图垫底 + 同位置纯色底可编辑文本框覆盖（底色块盖住原图文字，省掉擦除 API）。
+// 无 Codia 调用，单次成本 ≈ 一次 VLM 识别；单页提取失败降级为纯图片页，全部失败才退星。
+
+export interface SlideTextBlock {
+  text: string;
+  /** 归一化外接框 [x, y, w, h]，取值 0-1（相对图宽/图高） */
+  box: [number, number, number, number];
+  /** 字高占图高比例（0-1） */
+  fontSizeFrac: number;
+  /** 文字主色，6 位 hex 不带 # */
+  color: string;
+  bold: boolean;
+  align: 'left' | 'center' | 'right';
+}
+
+type OverlayBlock = SlideTextBlock & { fill: string };
+
+const TEXT_EXTRACT_PROMPT = `你是幻灯片文字版式分析器。识别这张 PPT 页面图中的全部文字块，只输出一个 JSON 数组（不要任何其他文字、解释或代码块标记）。每个元素字段：
+- text: 该块文字内容，块内换行用 \\n 表示，逐字提取，不得改写或补全
+- box: [x, y, w, h] 文字块外接框，取 0-1 小数（相对图宽与图高的比例）
+- fontSize: 字高占图高的比例（0-1 小数，例如 0.045）
+- color: 文字主色，六位十六进制（不带 #，例如 "1F2A44"）
+- bold: 是否粗体
+- align: 水平对齐，"left" | "center" | "right"
+规则：按视觉块聚合（标题一块、每组要点一块、每个大数字指标一块、页脚一块……），最多 12 块；纯装饰图形、图标、照片不要报；样式拿不准就按视觉近似估计。`;
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function normalizeHexColor(value: unknown, fallback = '1F2937'): string {
+  const raw = String(value ?? '').trim().replace(/^#/, '');
+  return /^[0-9a-fA-F]{6}$/.test(raw) ? raw.toUpperCase() : fallback;
+}
+
+/** 容错解析 VLM 返回的文字块数组（剥离代码块标记、截取首个 [ 到最后一个 ]，逐块校验钳位） */
+function parseTextBlocks(raw: string): SlideTextBlock[] {
+  const cleaned = String(raw || '').replace(/```(?:json)?/gi, '').trim();
+  let list: unknown;
+  try {
+    list = JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf('[');
+    const end = cleaned.lastIndexOf(']');
+    if (start < 0 || end <= start) return [];
+    try {
+      list = JSON.parse(cleaned.slice(start, end + 1));
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  const blocks: SlideTextBlock[] = [];
+  for (const item of list.slice(0, 12)) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const text = cleanString(record.text, 600);
+    if (!text) continue;
+    const boxRaw = Array.isArray(record.box) ? record.box.map(Number) : [];
+    if (boxRaw.length !== 4 || boxRaw.some((n) => !Number.isFinite(n))) continue;
+    const x = clamp01(boxRaw[0]);
+    const y = clamp01(boxRaw[1]);
+    const w = clamp01(boxRaw[2]);
+    const h = clamp01(boxRaw[3]);
+    if (w < 0.01 || h < 0.01 || x + w > 1.02 || y + h > 1.02) continue;
+    const fontSizeFrac = clamp01(Number(record.fontSize) || h * 0.55);
+    const align = record.align === 'center' || record.align === 'right' ? record.align : 'left';
+    blocks.push({
+      text,
+      box: [x, y, w, h],
+      fontSizeFrac,
+      color: normalizeHexColor(record.color),
+      bold: record.bold === true,
+      align,
+    });
+  }
+  return blocks;
+}
+
+/** 调 VLM（走 LLM 主备链，用量计入上游统计）提取一页的文字块；失败抛错由调用方降级 */
+async function extractSlideTextBlocks(image: Buffer, deps: EditableExportDeps): Promise<SlideTextBlock[]> {
+  const dataUrl = `data:image/png;base64,${image.toString('base64')}`;
+  const raw = await chatCompletion(
+    [{
+      role: 'user',
+      content: [
+        { type: 'text', text: TEXT_EXTRACT_PROMPT },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ],
+    }],
+    deps,
+  );
+  return parseTextBlocks(raw);
+}
+
+/** 采样文字块外围一圈像素取平均色，作为覆盖文本框的底色（模拟"擦除"后的背景）；失败回退白色 */
+async function sampleTextBlockFill(image: Buffer, box: [number, number, number, number]): Promise<string> {
+  try {
+    const require = createRequire(import.meta.url);
+    const sharp = require('sharp') as (input: Buffer) => {
+      raw(): { toBuffer(opts: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number; channels: number } }> };
+    };
+    const { data, info } = await sharp(image).raw().toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
+    if (!width || !height || channels < 3) return 'FFFFFF';
+    const pad = 4;
+    const x0 = Math.max(0, Math.floor(box[0] * width) - pad);
+    const y0 = Math.max(0, Math.floor(box[1] * height) - pad);
+    const x1 = Math.min(width - 1, Math.ceil((box[0] + box[2]) * width) + pad);
+    const y1 = Math.min(height - 1, Math.ceil((box[1] + box[3]) * height) + pad);
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let n = 0;
+    const taste = (x: number, y: number) => {
+      const offset = (y * width + x) * channels;
+      r += data[offset];
+      g += data[offset + 1];
+      b += data[offset + 2];
+      n += 1;
+    };
+    for (let x = x0; x <= x1; x += 2) {
+      taste(x, y0);
+      taste(x, y1);
+    }
+    for (let y = y0; y <= y1; y += 2) {
+      taste(x0, y);
+      taste(x1, y);
+    }
+    if (n === 0) return 'FFFFFF';
+    const toHex = (v: number) => Math.round(v / n).toString(16).padStart(2).toUpperCase();
+    return `${toHex(r)}${toHex(g)}${toHex(b)}`;
+  } catch {
+    return 'FFFFFF';
+  }
+}
+
+/** 整页图垫底 + 可编辑文本框覆盖（底色块盖住原图文字）合成 PPTX */
+async function buildTextOverlayPptx(
+  pages: { image: Buffer; blocks: OverlayBlock[] }[],
+  absPath: string,
+): Promise<void> {
+  const require = createRequire(import.meta.url);
+  const PptxGenJS = require('pptxgenjs') as PptxCtor;
+  const pptx = new PptxGenJS();
+  pptx.defineLayout({ name: 'ANPPT_16x9', width: PAGE_W, height: PAGE_H });
+  pptx.layout = 'ANPPT_16x9';
+  for (const page of pages) {
+    const slide = pptx.addSlide();
+    slide.addImage({
+      data: `data:image/png;base64,${page.image.toString('base64')}`,
+      x: 0,
+      y: 0,
+      w: PAGE_W,
+      h: PAGE_H,
+    });
+    for (const block of page.blocks) {
+      slide.addText(block.text, {
+        x: block.box[0] * PAGE_W,
+        y: block.box[1] * PAGE_H,
+        w: block.box[2] * PAGE_W,
+        h: block.box[3] * PAGE_H,
+        // 页面高 7.5in = 540pt；VLM 字号估计偏乐观，乘 0.92 并 shrink 兜底防溢出
+        fontSize: Math.min(120, Math.max(8, Math.round(block.fontSizeFrac * 540 * 0.92))),
+        color: block.color,
+        bold: block.bold,
+        align: block.align,
+        valign: 'middle',
+        margin: 0,
+        wrap: true,
+        fit: 'shrink',
+        fill: { color: block.fill },
+      });
+    }
+  }
+  await pptx.writeFile({ fileName: absPath });
+}
+
+/** 轻量文字档管线：读图 → 逐页 VLM 提取 + 底色采样 → 合成落盘。全部页提取失败才整体失败退星。 */
+async function runTextEditablePipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
+  const runDeps = snapshotEditableDeps(deps);
+  const config = runDeps.config;
+  const exportId = String(row.id);
+  try {
+    if (String(row.ref_type) === 'upload') throw new Error('轻量文字档暂不支持上传文件来源');
+    updateExportRow(exportId, { status: 'processing', stage: 'preparing', startedAt: Number(row.started_at) || nowMs() });
+    const images = await readExportSourceImages(row, config);
+    if (images.length === 0) throw new Error('没有可转换的页面图');
+    const pages: { image: Buffer; blocks: OverlayBlock[] }[] = [];
+    let extractFailures = 0;
+    for (let index = 0; index < images.length; index += 1) {
+      updateExportRow(exportId, { stage: 'extracting' });
+      let blocks: SlideTextBlock[] = [];
+      try {
+        blocks = await extractSlideTextBlocks(images[index], runDeps);
+      } catch (error) {
+        extractFailures += 1;
+        console.error(`[anppt-v2][exports] text overlay extract failed (export ${exportId} page ${index + 1}):`, error);
+      }
+      const overlaid: OverlayBlock[] = [];
+      for (const block of blocks) {
+        overlaid.push({ ...block, fill: await sampleTextBlockFill(images[index], block.box) });
+      }
+      pages.push({ image: images[index], blocks: overlaid });
+      updateExportRow(exportId, {
+        completedPages: index + 1,
+        progress: Math.round(((index + 1) / images.length) * 90),
+      });
+    }
+    if (extractFailures === images.length) throw new Error('文字层提取全部失败');
+    updateExportRow(exportId, { stage: 'building-pptx', progress: 95 });
+    const saved = await saveFile('exports', String(row.user_id), Buffer.alloc(0), { ext: '.pptx', id: exportId }, config);
+    await buildTextOverlayPptx(pages, saved.absPath);
+    updateExportRow(exportId, {
+      status: 'succeeded',
+      filePath: saved.relPath,
+      fileUrl: saved.url,
+      error: '',
+      progress: 100,
+      completedPages: images.length,
+      stage: 'completed',
+      completedAt: nowMs(),
+    });
+  } catch (error) {
+    console.error('[anppt-v2][exports] text overlay pipeline failed:', error);
+    refundEditableCharge(row);
+    updateExportRow(exportId, {
+      status: 'failed',
+      stage: 'failed',
+      completedAt: nowMs(),
+      error: '文字层提取服务暂时不可用，星星已退回；稍后可重新转换。',
+    });
+  }
+}
+
+/** 发起整套轻量文字可编辑导出（5🌟/页，VLM 覆盖层链）：校验 → 复用/建行扣费 → 后台管线。 */
+export async function startDeckTextEditableExport(
+  userId: string,
+  deckId: string,
+  deps: EditableExportDeps = {},
+  options: { force?: boolean } = {},
+): Promise<StartedEditableExport> {
+  const runDeps = snapshotEditableDeps(deps);
+  const deck = getOwnedDeck(userId, deckId);
+  if (deck.status !== 'generated') {
+    throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转文字可编辑', 409, false);
+  }
+  const slides = listSlides(deck.id);
+  if (slides.length === 0) {
+    throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
+  }
+  const versionIds = slides.map((slide) => cleanString(slide.activeVersionId, 100));
+  if (versionIds.some((id) => !id)) {
+    throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转文字可编辑', 409, false);
+  }
+  return launchEditableExport(
+    userId,
+    'deck',
+    deck.id,
+    slides.length,
+    fingerprintSource('deck', versionIds),
+    runDeps,
+    options,
+    {},
+    'editable_text',
+  );
 }
 
 // ---------- 导出中心 ----------
@@ -889,7 +1179,7 @@ function toExportView(row: ExportRow, activeFingerprint = '') {
     progress,
     completedPages: completed,
     totalPages: pageCount,
-    stage: status === 'succeeded' ? 'completed' : String(row.stage || (kind === 'editable' ? 'queued' : '')),
+    stage: status === 'succeeded' ? 'completed' : String(row.stage || (kind.startsWith('editable') ? 'queued' : '')),
     url: String(row.file_url || ''),
     error: String(row.error || ''),
     chargedCredits: Number(row.charged_credits) || 0,
@@ -908,7 +1198,7 @@ export function listExports(
     pageSize?: number;
     refType?: EditableRefType;
     refId?: string;
-    kind?: 'image' | 'editable';
+    kind?: 'image' | 'editable' | 'editable_text';
     latest?: boolean;
   } = {},
   deps: EditableExportDeps = {},
@@ -937,7 +1227,7 @@ export function listExports(
     .prepare(`SELECT * FROM export_jobs WHERE ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
     .all(...params, pageSize, (page - 1) * pageSize) as ExportRow[];
   let activeFingerprint = '';
-  if (query.refType && query.refType !== 'upload' && query.refId && query.kind === 'editable') {
+  if (query.refType && query.refType !== 'upload' && query.refId && query.kind?.startsWith('editable')) {
     try {
       activeFingerprint = currentSourceFingerprint(userId, query.refType, cleanString(query.refId, 80));
     } catch {
@@ -946,7 +1236,7 @@ export function listExports(
   }
   // 后台懒恢复进行中的可编辑导出（不阻塞列表响应）
   for (const row of rows) {
-    if (String(row.kind) === 'editable' && ['pending', 'processing'].includes(String(row.status))) {
+    if (String(row.kind).startsWith('editable') && ['pending', 'processing'].includes(String(row.status))) {
       void recoverEditableExport(row, deps).catch(() => {});
     }
   }

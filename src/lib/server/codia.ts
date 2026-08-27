@@ -8,6 +8,7 @@
 import { ApiError } from './http';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
 import { cleanString } from './generation/types';
+import { recordUpstreamUsage } from './usage-meter';
 
 export interface CodiaDeps {
   fetchImpl?: typeof fetch;
@@ -167,22 +168,37 @@ export async function createPdfToPptTask(
   input: { uploadId: string; pageNo: number[]; title: string; idempotencyKey: string },
   deps: CodiaDeps = {},
 ): Promise<{ taskId: string; status: string }> {
-  const data = await codiaRequest(
-    'POST',
-    '/v2/open/tasks',
-    {
-      json: {
-        operation: 'pdf_to_ppt',
-        input: { upload_id: input.uploadId, page_no: input.pageNo, title: input.title },
+  // 计费点记账：建任务即扣上游额度（上传免费、查询免费，见 codiaRequest 注释）
+  const startedAt = Date.now();
+  try {
+    const data = await codiaRequest(
+      'POST',
+      '/v2/open/tasks',
+      {
+        json: {
+          operation: 'pdf_to_ppt',
+          input: { upload_id: input.uploadId, page_no: input.pageNo, title: input.title },
+        },
+        idempotencyKey: input.idempotencyKey,
+        timeoutMs: REQUEST_TIMEOUT_MS,
       },
-      idempotencyKey: input.idempotencyKey,
-      timeoutMs: REQUEST_TIMEOUT_MS,
-    },
-    deps,
-  );
-  const taskId = cleanString(data.task_id, 200);
-  if (!taskId) throw new ApiError('CODIA_UPSTREAM_ERROR', UPSTREAM_BUSY_MESSAGE, 502, true);
-  return { taskId, status: cleanString(data.status, 40) || 'pending' };
+      deps,
+    );
+    const taskId = cleanString(data.task_id, 200);
+    if (!taskId) throw new ApiError('CODIA_UPSTREAM_ERROR', UPSTREAM_BUSY_MESSAGE, 502, true);
+    recordUpstreamUsage({
+      provider: 'codia', kind: 'pdf-to-ppt',
+      status: 'ok', units: 1, durationMs: Date.now() - startedAt,
+    });
+    return { taskId, status: cleanString(data.status, 40) || 'pending' };
+  } catch (error) {
+    recordUpstreamUsage({
+      provider: 'codia', kind: 'pdf-to-ppt',
+      status: 'error', durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 /** 查任务状态（官方建议轮询 3-5 秒，由调用方控制节奏） */

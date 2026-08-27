@@ -1,6 +1,7 @@
 // 页型（page_type）注册表：把大纲 LLM 或旧项目的自由文本页型归一到有限页型，
 // 再将“信息任务 + 布局约束 + 参考样张类别”注入生图 prompt。
 // 方法借鉴赛事模板站按页型匹配的思路，但布局规则与视觉资产均为 AnPPT 自己维护。
+// 通用页型之外另含世校赛骨架页型（design/workflow/skill/outcomes/value），与通用页型共用同一套归一逻辑。
 import type { StyleReferenceKind } from '../../../data/style-design-dna'
 import { cleanString } from './types'
 
@@ -29,7 +30,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '主标题为绝对视觉主体，字号最大，居中或左对齐置于页面上半部；副标题一行、汇报人与日期等次要信息一小行，依次排在主标题下方；装饰元素只出现在页面边缘或底层，不得压盖标题文字。',
     referenceKind: 'cover',
-    keywords: ['bp_cover', 'title_page', '封面页', '标题页', '首页', '封面', 'cover'],
+    keywords: ['bp_cover', 'title_page', 'title', '封面页', '标题页', '首页', '封面', 'cover'],
   },
   {
     key: 'toc',
@@ -56,7 +57,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '一句核心口号、结论或致谢语作为唯一视觉主体，居中大字排布；下方最多一行补充信息（如汇报人、团队名）；其余区域大量留白，不出现二维码、联系方式占位符或虚构 Logo。',
     referenceKind: 'section',
-    keywords: ['bp_ending', 'closing', '结束页', '结语展望', '致谢', '感谢', '结尾', '封底', 'ending'],
+    keywords: ['bp_ending', 'closing', '结束页', '结语展望', '结语', '展望', '愿景', '致谢', '感谢', '结尾', '封底', 'ending'],
   },
   {
     key: 'project-background',
@@ -65,7 +66,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '顶部用一句结论概括背景；主体采用「外部环境/对象现状/触发事件」三块结构，或左侧场景证据、右侧背景归纳；如文案含时间、地点、对象或来源，应就近标注，不得用泛化大图替代事实。',
     referenceKind: 'content',
-    keywords: ['bp_background', 'project_background', '项目背景', '背景介绍', '项目缘起', '创始背景', '背景概况'],
+    keywords: ['bp_background', 'project_background', 'background', '项目背景', '背景介绍', '项目缘起', '创始背景', '背景概况'],
   },
   {
     key: 'policy-context',
@@ -74,7 +75,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '采用「政策/要求/与本项目关系」的 2-4 条证据卡，政策名称和原文要点置于上层，项目响应置于下层；仅呈现页面文案中明确提供的政策名称、年份和表述，禁止臆造红头文件、公章或发文单位。',
     referenceKind: 'content',
-    keywords: ['bp_policy', 'policy_context', '政策背景', '政策依据', '政策支持', '政策环境', '政策机遇'],
+    keywords: ['bp_policy', 'policy_context', 'policy', '政策背景', '政策依据', '政策支持', '政策环境', '政策机遇'],
   },
   {
     key: 'pain-analysis',
@@ -92,7 +93,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '页面中央放项目一句话定义，周围按「目标对象、核心能力、交付形态、预期价值」四块展开；若内容较少，使用一张主题示意图配 3 个信息卡，不得堆叠空泛口号。',
     referenceKind: 'content',
-    keywords: ['bp_intro', 'project_overview', '项目介绍', '项目简介', '项目概述', '项目总览', '整体概览'],
+    keywords: ['bp_intro', 'project_overview', 'overview', 'intro', '项目介绍', '项目简介', '项目概述', '项目总览', '整体概览'],
   },
   {
     key: 'solution',
@@ -101,7 +102,11 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '顶部是一句方案总纲；主体采用「问题 → 核心机制/模块 → 输出价值」的映射结构，或 3-5 个相互连接的方案模块；连接关系必须可解释，避免只摆放互不相关的图标卡。',
     referenceKind: 'process',
-    keywords: ['bp_solution', 'solution_architecture', '解决方案', '整体方案', '核心方案', '解决思路', '方案架构'],
+    keywords: [
+      'bp_solution', 'solution_architecture', 'solution', '解决方案', '整体方案', '核心方案', '解决思路', '方案架构',
+      'bp_matching', '需求匹配', '方案匹配', '适配性分析', '契合度论证', 'requirement_match',
+      'bp_feasibility', '可行性论证', '可行性分析', '方案可行性', '实现可能性', 'feasibility',
+    ],
   },
   {
     key: 'product-service',
@@ -110,7 +115,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '使用「一个主产品/服务视觉 + 3-5 个功能或服务模块」结构；每个模块包含短标题、对象/场景和一句价值说明；有真实产品截图或设备图时独立展示，文字不得压在界面或设备细节上。',
     referenceKind: 'content',
-    keywords: ['bp_product', 'product_service', '产品&服务', '产品与服务', '产品介绍', '服务介绍', '产品展示', '功能介绍'],
+    keywords: ['bp_product', 'product_service', 'product', '产品&服务', '产品与服务', '产品介绍', '服务介绍', '产品展示', '功能介绍'],
   },
   {
     key: 'technical-route',
@@ -119,7 +124,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '采用从左到右或自下而上的 3-6 层技术路线/系统架构；每层写清输入、处理和输出，关键技术节点用统一强调色标记；不得使用无法对应正文的随机网络、芯片或代码装饰。',
     referenceKind: 'process',
-    keywords: ['bp_tech', 'technology_route', '技术路线', '技术架构', '核心技术', '技术特点', '技术方案', '技术优势'],
+    keywords: ['bp_tech', 'technology_route', 'technology', '技术路线', '技术架构', '核心技术', '技术特点', '技术方案', '技术优势', '技术创新'],
   },
   {
     key: 'innovation',
@@ -128,7 +133,12 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '用 3-4 个创新点组成统一证据卡，每项严格包含「相对什么不同、具体新在哪里、带来什么结果」；若文案有对比对象，使用前后/传统与本方案的成对结构，禁止只写空泛“领先、首创”。',
     referenceKind: 'content',
-    keywords: ['bp_advantages', 'bp_innovation', 'innovation_point', '创新优势', '创新亮点', '核心创新', '创新点', '差异化优势'],
+    keywords: [
+      'bp_advantages', 'bp_innovation', 'innovation_point', 'innovation', 'project_innovation',
+      'creative', 'novelty', 'breakthrough', 'advantages',
+      '创新优势', '创新亮点', '核心创新', '创新点', '差异化优势', '核心优势', '创意亮点', '创新思路',
+      '项目创新', '创新', '创新创意', '创意',
+    ],
   },
   {
     key: 'intellectual-property',
@@ -137,7 +147,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '采用成果类别分组或「成果 → 保护内容 → 项目作用」矩阵；只展示页面文案明确给出的名称、数量和状态，未提供证书图片时用中性文本卡，不生成伪证书、伪编号或机构 Logo。',
     referenceKind: 'content',
-    keywords: ['bp_ip', 'intellectual_property', '知识产权', '专利软著', '专利成果', '软著', '成果保护'],
+    keywords: ['bp_ip', 'intellectual_property', '知识产权', '专利软著', '专利成果', '软著', '成果保护', '知识产权布局'],
   },
   {
     key: 'market-analysis',
@@ -146,7 +156,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '顶部先给市场结论；主体可用客户分层、趋势图或 TAM/SAM/SOM 结构，但只有页面文案给出对应数据时才能绘制规模数字；否则使用定性分层和需求证据，不得自行补造市场规模。',
     referenceKind: 'data',
-    keywords: ['bp_market', 'market_analysis', '市场分析', '市场规模', '行业分析', '目标市场', '市场机会', '市场趋势'],
+    keywords: ['bp_market', 'market_analysis', 'market', '市场分析', '市场规模', '行业分析', '目标市场', '市场机会', '市场趋势'],
   },
   {
     key: 'business-model',
@@ -173,7 +183,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '采用 3-6 个统一维度的对比矩阵、象限或 SWOT 结构，维度名称置于左侧，比较对象置于顶部；结论区单独说明本方案优势与仍需补强项，禁止用没有依据的全优勾选。',
     referenceKind: 'data',
-    keywords: ['bp_competition', 'competitive_analysis', '竞争分析', '竞品分析', 'SWOT分析', 'swot', '对标分析', '竞争格局'],
+    keywords: ['bp_competition', 'competitive_analysis', '竞争分析', '竞品分析', 'SWOT分析', 'swot', '对标分析', '竞争格局', '竞争优势'],
   },
   {
     key: 'big-number',
@@ -182,7 +192,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '3-4 个 KPI 指标卡片横向等宽排成一行（或 2×2 网格），每张卡片中央是超大号数字（含单位），数字下方一行指标名称、可选一行口径/时间注释；卡片样式统一、边界分明、间距一致。',
     referenceKind: 'data',
-    keywords: ['bp_metrics', 'traction_metrics', '大数字指标', '数据总览', '核心数据', '成果数字', '经营数据', '运营数据', 'KPI', '指标'],
+    keywords: ['bp_metrics', 'traction_metrics', 'traction', 'metrics', '大数字指标', '数据总览', '核心数据', '成果数字', '经营数据', '运营数据', 'KPI', '指标', '核心指标', '业绩数据'],
   },
   {
     key: 'data-chart',
@@ -209,7 +219,11 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '按证据类型组织 2-5 张卡片，每张包含「证据名称/来源、时间或状态、证明了什么」；只有用户提供真实标识或证书图时才展示原图，否则使用中性文本卡，禁止臆造奖项、媒体、机构 Logo 或签章。',
     referenceKind: 'content',
-    keywords: ['bp_endorsement', 'bp_recognition', 'social_proof', '权威背书', '机构背书', '合作背书', '社会认可', '荣誉证明', '媒体报道', '资质背书'],
+    keywords: [
+      'bp_endorsement', 'bp_recognition', 'social_proof', '权威背书', '机构背书', '合作背书', '社会认可',
+      '荣誉证明', '媒体报道', '资质背书', '外部认可', '佐证材料',
+      '专家评价', '专家评审', '专家意见', '专家推荐', 'expert_review',
+    ],
   },
   {
     key: 'social-impact',
@@ -218,7 +232,10 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '按 3-4 类受益对象或价值维度组织「行动 → 直接产出 → 长期影响」；有量化数据时就近标注，未提供时使用定性结果，不生成宏大但无法验证的公益数字。',
     referenceKind: 'content',
-    keywords: ['bp_impact', 'social_impact', '社会价值', '社会效益', '社会影响', '公益价值', '公益贡献'],
+    keywords: [
+      'bp_impact', 'social_impact', '社会价值', '社会效益', '社会影响', '公益价值', '公益贡献',
+      'bp_benefits', '效益评估', '效益分析', '价值评估', '经济效益', 'impact_assessment',
+    ],
   },
   {
     key: 'education-impact',
@@ -227,7 +244,11 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '采用「培养目标 → 教学/实践机制 → 学习成果/成长证据」三段结构；可配课程、实训或师生协作的真实场景，避免用学生剪影和奖杯替代教育证据。',
     referenceKind: 'content',
-    keywords: ['bp_education', 'bp_growth', 'educational_impact', '教育实效', '教育价值', '实践育人', '思政成长', '个人成长', '参赛收获', '课程融合', '产教融合'],
+    keywords: [
+      'bp_education', 'bp_growth', 'educational_impact', '教育实效', '教育价值', '实践育人', '思政成长',
+      '个人成长', '参赛收获', '课程融合', '产教融合', '成长收获', 'personal_growth',
+      '校企合作', '工学结合', '产教结合', 'school_enterprise',
+    ],
   },
   {
     key: 'implementation-plan',
@@ -236,7 +257,12 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '采用 3-5 个阶段或工作包，每个阶段包含「任务、责任对象/协同方、交付物、时间或验收标准」；可用泳道、里程碑或分阶段卡片，禁止只列空泛动词。',
     referenceKind: 'process',
-    keywords: ['bp_implementation', 'bp_operations', 'execution_plan', '实施方案', '执行规划', '运营计划', '落地计划', '行动计划', '推进机制'],
+    keywords: [
+      'bp_implementation', 'bp_operations', 'execution_plan', '实施方案', '执行规划', '执行计划',
+      '运营计划', '落地计划', '行动计划', '推进机制',
+      'bp_sustainability', '可持续性', '可持续发展', '自我造血', '运营保障', '持续运营', 'sustainability',
+      'bp_replication', '推广复制', '推广计划', '规模化', '模式复制', '推广路径', 'scale_up',
+    ],
   },
   {
     key: 'skills-showcase',
@@ -245,7 +271,10 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '主体使用 3-5 个连续画面/步骤框，每格包含动作或作品局部、步骤名与关键标准；优先真实作品、设备或操作照片，没有素材时用准确扁平示意图，不生成虚构获奖现场。',
     referenceKind: 'process',
-    keywords: ['bp_craft', 'bp_skill_demo', 'skill_showcase', '作品展示', '技能演示', '技能展示', '工艺展示', '技艺展示', '操作演示'],
+    keywords: [
+      'bp_craft', 'bp_skill_demo', 'skill_showcase', '作品展示', '技能演示', '技能展示', '工艺展示', '技艺展示', '操作演示',
+      '原型展示', '制作成果', '模型展示', 'demo', 'prototype', '工匠作品', 'craftsmanship',
+    ],
   },
   {
     key: 'funding-plan',
@@ -254,7 +283,10 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '左侧或顶部呈现资金总需求（仅在文案提供时），主体将资金用途拆成 3-5 项并对应阶段里程碑；股权、估值和回报信息只有原文明确给出时才展示，不得自行计算或编造。',
     referenceKind: 'data',
-    keywords: ['bp_funding', 'bp_equity', 'funding_plan', '融资规划', '资金规划', '投资计划', '融资方案', '资金需求', '股权结构'],
+    keywords: [
+      'bp_funding', 'bp_equity', 'funding_plan', 'funding', '融资规划', '资金规划', '投资计划', '融资方案', '资金需求',
+      '股权结构', '股权分配', '持股比例', '股东结构', 'equity', 'equity_structure',
+    ],
   },
   {
     key: 'timeline',
@@ -263,7 +295,11 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '一条横向（或纵向）时间轴贯穿页面，轴上 4-6 个节点等距分布；每个节点包含时间标签与一句事件短句，节点交替或同侧排布，连线与节点样式全套统一。',
     referenceKind: 'process',
-    keywords: ['strategy_roadmap', '发展路线图', '规划路线', '发展阶段', '时间轴', '时间线', '历程', '里程碑'],
+    keywords: [
+      'strategy_roadmap', 'roadmap', '发展路线图', '规划路线', '发展阶段', '时间轴', '时间线', '历程', '里程碑',
+      '战略目标', '发展规划', '路线图', '发展计划', '战略规划', '项目历程',
+      'bp_future', '未来计划', '后续计划', '改进方向', '发展方向', 'next_steps', 'future',
+    ],
   },
   {
     key: 'comparison',
@@ -281,7 +317,7 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '3-5 个步骤按顺序横向（或纵向）排列，步骤之间用箭头或连线串联；每步统一样式：步骤编号 + 步骤名称 + 一句简短说明；起点终点明确，整体居中对齐。',
     referenceKind: 'process',
-    keywords: ['workflow', '实施步骤', '工作流程', '操作步骤', '流程步骤', '推进安排', '三阶段', '流程', '步骤', '路径'],
+    keywords: ['bp_process', 'process', '实施步骤', '操作步骤', '流程步骤', '推进安排', '三阶段', '流程', '步骤', '路径', '实践过程', '探究过程', '研究过程'],
   },
   {
     key: 'quote',
@@ -317,7 +353,11 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
     layout:
       '2-4 张成员卡片等宽横排或网格排列；每张卡片为「真实头像（仅在提供时）/中性头像位 + 姓名 + 职位 + 与项目相关的一句话能力」；不得生成虚构姓名、履历、专家或人脸。',
     referenceKind: 'content',
-    keywords: ['bp_team', 'bp_advisors', 'team_members', '团队介绍', '团队成员', '核心团队', '指导团队', '指导老师', '专家顾问', '成员介绍', '组织架构'],
+    keywords: [
+      'bp_team', 'bp_advisors', 'team_members', 'team', 'members', 'advisors', 'mentors',
+      '团队介绍', '团队成员', '核心团队', '指导团队', '指导老师', '专家顾问', '成员介绍', '组织架构',
+      '团队', '团队协作', '导师团队',
+    ],
   },
   {
     key: 'bullets',
@@ -327,6 +367,51 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
       '3-5 个要点以统一卡片或列表项呈现：每项为「简洁图标 + 要点短标题 + 一行说明」；各项等高等距、纵向列表或网格排列，图标风格全套统一。',
     referenceKind: 'content',
     keywords: ['key_points', '要点罗列', '核心举措', '关键举措', '主要优势', '行动建议', '亮点', '策略', '建议', '功能', '要点'],
+  },
+  {
+    key: 'design',
+    label: '项目设计页',
+    informationGoal: '把项目要解决的问题与对应的设计目标连接成一条可检验的依据链。',
+    layout:
+      '上半部用 2-3 条证据界定问题（命题要求、对象现状或痛点），下半部给出与之一一对应的设计目标与总体思路；问题与设计目标之间用箭头或编号建立明确映射，不得让两边各自孤立成块。',
+    referenceKind: 'content',
+    keywords: ['design', 'project_design', 'context', 'situation', 'problem', 'challenge', '项目设计', 'bp_problem', '命题解析', '企业命题', '需求解读', '命题背景', 'proposition'],
+  },
+  {
+    key: 'workflow',
+    label: '工作流程页',
+    informationGoal: '让观众一眼看懂从输入到成果的总体工作流程与各环节职责。',
+    layout:
+      '一条主流程线从左到右（或自上而下）贯穿页面，4-6 个环节等距排布；每个环节为「环节名 + 一句输入/产出说明」，环节之间用箭头标明真实流向；起点与终点清晰，禁止只摆名词不成流。',
+    referenceKind: 'process',
+    keywords: ['workflow', 'introduction', 'project_intro', 'overall_solution', 'overall_idea', 'approach', 'architecture', '工作流程', '总体思路', '总体设计'],
+  },
+  {
+    key: 'skill',
+    label: '技能要点页',
+    informationGoal: '说明完成项目所依赖的关键技能、应用环节与掌握标准。',
+    layout:
+      '3-5 个技能点以统一卡片呈现，每卡包含「技能名称 + 用在哪个环节 + 一句掌握标准或关键要领」；卡片等宽等距排列，可用统一编号或图标区分层级，不堆砌与项目无关的技能名词。',
+    referenceKind: 'content',
+    keywords: ['skill', 'skills', 'skills_demo', 'skill_demo', '技能要点', '核心技能'],
+  },
+  {
+    key: 'outcomes',
+    label: '项目成果页',
+    informationGoal: '集中展示项目已经产出的作品、数据与成果证据。',
+    layout:
+      '成果按类别组织成 2-4 组，可量化的成果用超大号数字单独强调并标注口径；实物或作品类成果配图片位，每条成果写明「名称 + 证据」；只呈现页面文案明确给出的成果，不得虚构数量与奖项。',
+    referenceKind: 'data',
+    keywords: ['outcomes', 'project_outcomes', 'project_result', 'achievement', 'outcome', 'result', '项目成果', '主要成果', '成果'],
+  },
+  {
+    key: 'value',
+    label: '应用价值页',
+    informationGoal: '说明成果在真实场景中为谁使用、如何解决并带来什么改变。',
+    layout:
+      '按「应用场景/受益对象 → 应用方式 → 实际价值」组织 2-4 条价值链；每条尽量落到可验证的结果，文案未给数据时使用定性描述；可用场景配图位，但不得用泛化素材替代真实应用对象。',
+    referenceKind: 'content',
+    keywords: ['value', 'application_value', 'application', 'benefit', 'impact', '应用价值', '价值', '应用'],
   },
   {
     key: 'content',

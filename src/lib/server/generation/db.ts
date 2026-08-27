@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS decks (
   style_pack_id TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'parsed',
   error TEXT NOT NULL DEFAULT '',
+  anchor_slide_id TEXT NOT NULL DEFAULT '',
+  anchor_image_path TEXT NOT NULL DEFAULT '',
   confirmed_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -178,6 +180,11 @@ export function getGenDb(): DatabaseSync {
     if (!colNames.has('completed_at')) db.exec('ALTER TABLE export_jobs ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0');
     db.exec('CREATE INDEX IF NOT EXISTS idx_export_jobs_ref ON export_jobs(user_id, ref_type, ref_id, kind, created_at DESC)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_generation_jobs_user ON generation_jobs(user_id, created_at DESC)');
+    // decks 补风格锚点列（set-reference 工具；新库 CREATE TABLE 已含）
+    const deckCols = db.prepare("SELECT name FROM pragma_table_info('decks')").all() as Array<{ name: string }>;
+    const deckColNames = new Set(deckCols.map((c) => c.name));
+    if (!deckColNames.has('anchor_slide_id')) db.exec("ALTER TABLE decks ADD COLUMN anchor_slide_id TEXT NOT NULL DEFAULT ''");
+    if (!deckColNames.has('anchor_image_path')) db.exec("ALTER TABLE decks ADD COLUMN anchor_image_path TEXT NOT NULL DEFAULT ''");
     // 单页版本表补 charge_key（崩溃恢复按它找孤儿扣费；新库 CREATE TABLE 已含）
     const singleVerCols = db.prepare("SELECT name FROM pragma_table_info('single_page_versions')").all() as Array<{ name: string }>;
     if (!singleVerCols.some((c) => c.name === 'charge_key')) {

@@ -10,8 +10,9 @@ import {
   type StyleDomain,
   type StyleReferenceKind,
 } from '../../../data/style-design-dna'
-import { STYLE_PACKS, type StylePack } from '../../../data/style-packs'
+import { ALL_STYLE_PACKS, STYLE_PACKS, type StylePack } from '../../../data/style-packs'
 import { resolvePageType, type PageTypeSpec } from './page-types'
+import { getPageProtocol } from './protocols'
 import { cleanString } from './types'
 
 // 易转可编辑条款保持与现有 Codia 链兼容；字体要求沿用当前线上可稳定识别的字形。
@@ -69,6 +70,8 @@ export interface DeckContext {
   deckTitle?: string
   /** 原始材料的有限语义信号，仅参与受众/行业推断，不直接写入生图 prompt。 */
   sourceContext?: string
+  /** 全套全局视觉规范（blueprint.ts 生成、deck 级缓存），有则逐页拼接。 */
+  blueprint?: string
 }
 
 export interface PresentationContext {
@@ -126,7 +129,8 @@ export function listStylePacks(): StylePack[] {
 
 export function findStylePack(id: string): StylePack | null {
   const clean = cleanString(id, 80)
-  return STYLE_PACKS.find((pack) => pack.id === clean) || null
+  // 服务端按全集解析：门控测试包（featureFlag）能否使用由调用方按开关另行校验。
+  return ALL_STYLE_PACKS.find((pack) => pack.id === clean) || null
 }
 
 export function resolveStylePack(id: string): ResolvedStylePack | null {
@@ -383,7 +387,7 @@ export function loadStyleReferenceDataUrl(
 export function buildSlideImagePrompt(
   slide: SlidePromptInput,
   pack: ResolvedStylePack | null,
-  opts: { withStyleReferenceHint?: boolean; deckContext?: DeckContext } = {},
+  opts: { withStyleReferenceHint?: boolean; deckContext?: DeckContext; referenceMode?: 'style' | 'template' } = {},
 ): string {
   const copy = slide.copyLines.map((line) => cleanString(line, 1000)).filter(Boolean)
   const pageSpec = pageSpecForSlide(slide)
@@ -395,18 +399,25 @@ export function buildSlideImagePrompt(
     deck && deck.totalPages > 1
       ? `整套一致性要求：本页是全套 ${deck.totalPages} 页中的第 ${deck.pageIndex + 1} 页${deck.chapter ? `，属于「${deck.chapter}」章节` : ''}；全套页面必须保持完全一致的栅格系统、字号层级、配色方案、页眉页脚与页码位置、装饰元素语言，仅按页型变化版式。内容页页眉必须使用较小字号、固定高度且不得抢过正文标题；未上传真实 Logo 时页眉标识区保持空白，禁止从参考图复制或重新生成 Logo。`
       : '',
+    deck?.blueprint
+      ? `全套全局视觉规范（每一页都必须严格遵守，仅按页型分工调整版式）：\n${deck.blueprint}`
+      : '',
     `页面角色：${slide.role || 'content'}${slide.pageType ? `（大纲标注页型：${slide.pageType}）` : ''}`,
-    `本页信息任务（页型：${pageSpec.label}）：${pageSpec.informationGoal}`,
-    `版式要求：${pageSpec.layout}`,
+    getPageProtocol(pageSpec),
     slide.title ? `页面标题：${slide.title}` : '',
     slide.goal ? `本页表达目标：${slide.goal}` : '',
     copy.length > 0
       ? `页面文案（必须逐字完整呈现，不得增删、不得改写；同一句只出现一次）：\n${copy.map((line) => `- ${line}`).join('\n')}`
       : '',
+    copy.length > 0
+      ? '防幻觉约束：本页只允许出现上方「页面标题」与「页面文案」给出的文字；参考样张中的任何文字块、数字、Logo 一律视为版式占位，严禁带入本页；严禁虚构标语、单位、注释或任何装饰性字符。'
+      : '',
     slide.visualNote ? `版式/配图建议（只能在上述信息任务与页型框架内执行）：${slide.visualNote}` : '',
     `风格要求：\n${styleDirective(pack)}`,
     opts.withStyleReferenceHint
-      ? '随附一张同风格参考样张。只提取它的色板、栅格、卡片边界、标题层级和装饰母题；必须按本页角色重新组织版式，不得把封面布局硬套到内容页，也不得复制参考图的文字、Logo、数字、人物、图表数据、品牌和具体主题。'
+      ? opts.referenceMode === 'template'
+        ? '随附一张真模板参考页：尽量复刻它的版式骨架——大色块划分、标题区位置、分栏比例、卡片与容器形态、装饰密度——并把本页文案准确填入对应区域；参考页中的人物、场景、数字、Logo 与具体文字一律视为版式占位，严禁带入本页。'
+        : '随附一张同风格参考样张。只提取它的色板、栅格、卡片边界、标题层级和装饰母题；必须按本页角色重新组织版式，不得把封面布局硬套到内容页，也不得复制参考图的文字、Logo、数字、人物、图表数据、品牌和具体主题。'
       : '',
     `内容真实性与相关性硬约束（必须严格遵守）：${CONTENT_RELEVANCE_CLAUSE}`,
     `易转可编辑排版条款（必须严格遵守）：${EDITABLE_FRIENDLY_CLAUSE}`,

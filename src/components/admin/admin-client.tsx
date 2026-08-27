@@ -8,7 +8,6 @@ import {
   CoinIcon,
   CopyIcon,
   DatabaseIcon,
-  EyeIcon,
   KeyIcon,
   RefreshIcon,
   ServerIcon,
@@ -43,6 +42,16 @@ interface ConfigPayload {
   fields: ConfigField[];
 }
 
+type FeatureFlagState = "off" | "beta" | "public";
+
+interface FeatureFlag {
+  key: string;
+  label: string;
+  description: string;
+  state: FeatureFlagState;
+  updatedAt: number;
+}
+
 interface TaskSnapshot {
   kind: "generation" | "export";
   status: string;
@@ -70,8 +79,6 @@ interface UserSnapshot {
   lastActivityAt: number | null;
   lastActivityLabel: string;
   lastTask: TaskSnapshot | null;
-  watched: boolean;
-  watchLabel: string;
   accountHealthy: boolean;
 }
 
@@ -96,7 +103,6 @@ interface OverviewPayload {
     failures24h: number;
     totalProjects: number;
   };
-  watchedUsers: UserSnapshot[];
   latestUsers?: UserSnapshot[];
   resources?: {
     uptimeSeconds: number;
@@ -161,17 +167,6 @@ const SOURCE_LABEL: Record<ConfigSource, string> = {
   missing: "未配置",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  queued: "排队中",
-  running: "生成中",
-  pending: "等待转换",
-  processing: "转换中",
-  succeeded: "已完成",
-  completed: "已完成",
-  failed: "失败",
-  canceled: "已取消",
-};
-
 const AUDIT_LABEL: Record<string, string> = {
   "config.update": "更新运行时配置",
   "integration.check": "检查上游连接",
@@ -228,13 +223,6 @@ function formatDuration(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时`;
   return `${Math.floor(seconds / 86400)} 天 ${Math.floor((seconds % 86400) / 3600)} 小时`;
-}
-
-function statusTone(status: string): string {
-  if (["succeeded", "completed"].includes(status)) return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (["queued", "running", "pending", "processing"].includes(status)) return "bg-amber-50 text-amber-700 border-amber-200";
-  if (status === "failed") return "bg-red-50 text-red-700 border-red-200";
-  return "bg-page text-ink-2 border-line";
 }
 
 function Toast({ message, tone }: { message: string; tone: "ok" | "error" }) {
@@ -324,85 +312,6 @@ function UserStatus({ user }: { user: UserSnapshot }) {
   return { label: "账号正常", tone: "bg-emerald-50 text-emerald-700" };
 }
 
-function WatchedUserCard({
-  user,
-  busy,
-  onUnwatch,
-}: {
-  user: UserSnapshot;
-  busy: boolean;
-  onUnwatch: (user: UserSnapshot) => void;
-}) {
-  const state = UserStatus({ user });
-  const isBoss = /老板/.test(user.watchLabel) || user.redeemedCredits >= 1000;
-  return (
-    <article className={`overflow-hidden rounded-2xl border ${isBoss ? "border-brand-line bg-gradient-to-br from-brand-softer to-white" : "border-line bg-white"}`}>
-      <div className="flex flex-col gap-3 border-b border-line/80 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate font-semibold text-ink">{user.watchLabel || user.displayName}</h3>
-            {isBoss && <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold text-white">重点保障</span>}
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${state.tone}`}>{state.label}</span>
-          </div>
-          <p className="mt-1 truncate text-xs text-ink-3">
-            {user.displayName} · @{user.username}{user.email ? ` · ${user.email}` : ""}
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={busy || isBoss}
-          onClick={() => onUnwatch(user)}
-          className="self-start rounded-lg border border-line px-3 py-1.5 text-xs text-ink-3 transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          title={isBoss ? "老板账号保持重点监控" : "取消重点监控"}
-        >
-          {isBoss ? "持续监控中" : "取消监控"}
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-px bg-line/70 sm:grid-cols-4">
-        {[
-          ["当前余额", `${user.balance} 🌟`],
-          ["累计兑换", `${user.redeemedCredits} 🌟`],
-          ["项目数量", String(user.projectCount)],
-          ["活跃任务", String(user.activeJobs)],
-        ].map(([label, value]) => (
-          <div key={label} className="bg-white/90 px-4 py-3">
-            <div className="text-[10px] text-ink-3">{label}</div>
-            <div className="mt-1 text-sm font-semibold text-ink">{value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="space-y-3 p-4 sm:p-5">
-        <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-3">
-          <span>注册：{formatDate(user.createdAt)}</span>
-          <span>最近登录：{formatDate(user.lastLoginAt)}</span>
-          <span>有效会话：{user.activeSessions}</span>
-          <span>近 24h 失败：{user.failures24h}</span>
-        </div>
-        {user.lastTask ? (
-          <div className="rounded-xl bg-page px-3 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-ink-2">最近任务 · {user.lastTask.label}</span>
-              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${statusTone(user.lastTask.status)}`}>
-                {STATUS_LABEL[user.lastTask.status] || user.lastTask.status}
-              </span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
-              <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${user.lastTask.progress}%` }} />
-            </div>
-            <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] text-ink-3">
-              <span>{user.lastTask.progress}% · {formatDate(user.lastTask.updatedAt)}</span>
-              {user.lastTask.error && <span className="truncate text-red-600">{user.lastTask.error}</span>}
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl bg-page px-3 py-3 text-xs text-ink-3">暂无生成或导出任务，账号与余额状态正常。</div>
-        )}
-        <p className="text-[11px] text-ink-3">最近动态：{user.lastActivityLabel} · {formatDate(user.lastActivityAt)}</p>
-      </div>
-    </article>
-  );
-}
-
 export function AdminClient({ admin }: AdminClientProps) {
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -416,6 +325,7 @@ export function AdminClient({ admin }: AdminClientProps) {
   const [toast, setToast] = useState<{ message: string; tone: "ok" | "error" } | null>(null);
   const [codeForm, setCodeForm] = useState({ credits: "1000", count: "1", batch: "admin", expiresDays: "" });
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
+  const [flags, setFlags] = useState<FeatureFlag[]>([]);
 
   const showToast = useCallback((message: string, tone: "ok" | "error" = "ok") => {
     setToast({ message, tone });
@@ -425,12 +335,14 @@ export function AdminClient({ admin }: AdminClientProps) {
   const loadFull = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
     try {
-      const [nextOverview, nextConfig] = await Promise.all([
+      const [nextOverview, nextConfig, nextFlags] = await Promise.all([
         adminFetch<OverviewPayload>("/api/admin/overview"),
         adminFetch<ConfigPayload>("/api/admin/config"),
+        adminFetch<{ flags: FeatureFlag[] }>("/api/admin/feature-flags"),
       ]);
       setOverview(nextOverview);
       setConfig(nextConfig);
+      setFlags(nextFlags.flags);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "后台数据加载失败", "error");
     } finally {
@@ -446,7 +358,6 @@ export function AdminClient({ admin }: AdminClientProps) {
         ...current,
         generatedAt: compact.generatedAt,
         metrics: compact.metrics,
-        watchedUsers: compact.watchedUsers,
       } : compact);
     } catch {
       // 静默保留上一帧，避免轮询抖动打扰管理员；手动刷新仍会显示错误。
@@ -557,33 +468,34 @@ export function AdminClient({ admin }: AdminClientProps) {
     }
   };
 
-  const watchUser = async (user: UserSnapshot) => {
-    setBusyAction(`watch-${user.id}`);
+  const toggleTester = async (user: UserSnapshot) => {
+    const nextRole = user.role === "tester" ? "user" : "tester";
+    setBusyAction(`role-${user.id}`);
     try {
-      await adminFetch<UserSnapshot>(
-        `/api/admin/users/${encodeURIComponent(user.id)}/watch`,
-        mutationInit("PUT", { label: `重点关注 · ${user.displayName}` }),
+      await adminFetch<{ role: string }>(
+        `/api/admin/users/${encodeURIComponent(user.id)}/role`,
+        mutationInit("POST", { role: nextRole }),
       );
-      showToast(`${user.displayName} 已加入重点监控`);
+      showToast(nextRole === "tester" ? `${user.displayName} 已设为测试用户` : `${user.displayName} 已取消测试用户`);
       await loadFull(true);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "加入监控失败", "error");
+      showToast(error instanceof Error ? error.message : "测试用户设置失败", "error");
     } finally {
       setBusyAction("");
     }
   };
 
-  const unwatchUser = async (user: UserSnapshot) => {
-    setBusyAction(`unwatch-${user.id}`);
+  const setFlag = async (key: string, state: FeatureFlagState) => {
+    setBusyAction(`flag-${key}`);
     try {
-      await adminFetch<{ watched: false }>(
-        `/api/admin/users/${encodeURIComponent(user.id)}/watch`,
-        mutationInit("DELETE"),
+      const result = await adminFetch<{ flags: FeatureFlag[] }>(
+        "/api/admin/feature-flags",
+        mutationInit("PUT", { key, state }),
       );
-      showToast(`${user.displayName} 已取消重点监控`);
-      await loadFull(true);
+      setFlags(result.flags);
+      showToast("功能开关已更新");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "取消监控失败", "error");
+      showToast(error instanceof Error ? error.message : "开关更新失败", "error");
     } finally {
       setBusyAction("");
     }
@@ -704,29 +616,6 @@ export function AdminClient({ admin }: AdminClientProps) {
           </div>
         </section>
 
-        <section className="mt-5 overflow-hidden rounded-2xl border border-line bg-card shadow-card">
-          <SectionTitle
-            icon={EyeIcon}
-            title="重点用户实时监控"
-            description="只读取账号、余额、项目与任务元数据；不会读取文档正文、提示词或生成内容。"
-            action={<span className="text-xs text-ink-3">{overview.watchedUsers.length} 个重点账号</span>}
-          />
-          <div className="grid gap-4 p-4 sm:p-6 xl:grid-cols-2">
-            {overview.watchedUsers.length > 0 ? overview.watchedUsers.map((user) => (
-              <WatchedUserCard
-                key={user.id}
-                user={user}
-                busy={busyAction === `unwatch-${user.id}`}
-                onUnwatch={unwatchUser}
-              />
-            )) : (
-              <div className="col-span-full rounded-2xl border border-dashed border-line-strong px-5 py-10 text-center text-sm text-ink-3">
-                暂无重点监控用户，可从“最新注册用户”中加入。
-              </div>
-            )}
-          </div>
-        </section>
-
         <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
           <section className="overflow-hidden rounded-2xl border border-line bg-card shadow-card">
             <SectionTitle icon={ServerIcon} title="系统与服务状态" description="轻量只读采样，不触发外部付费动作。" />
@@ -765,7 +654,7 @@ export function AdminClient({ admin }: AdminClientProps) {
           </section>
 
           <section className="overflow-hidden rounded-2xl border border-line bg-card shadow-card">
-            <SectionTitle icon={UsersIcon} title="最新注册用户" description="默认展示最近 12 位，加入监控不会改变用户权限或余额。" />
+            <SectionTitle icon={UsersIcon} title="最新注册用户" description="默认展示最近 12 位；可设为测试用户以体验开关板上的 beta 功能。" />
             <div className="divide-y divide-line">
               {(overview.latestUsers ?? []).map((user) => {
                 const state = UserStatus({ user });
@@ -775,22 +664,26 @@ export function AdminClient({ admin }: AdminClientProps) {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate text-sm font-medium text-ink">{user.displayName}</span>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] ${state.tone}`}>{state.label}</span>
-                        {user.watched && <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10px] text-brand">已监控</span>}
                         {user.role === "admin" && <span className="rounded-full bg-dark px-2 py-0.5 text-[10px] text-white">管理员</span>}
+                        {user.role === "tester" && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] text-violet-700">测试用户</span>}
                       </div>
                       <p className="mt-1 truncate text-xs text-ink-3">
                         @{user.username}{user.email ? ` · ${user.email}` : ""} · 注册 {formatDate(user.createdAt)}
                       </p>
                       <p className="mt-1 text-[11px] text-ink-3">{user.balance} 🌟 · {user.projectCount} 个项目 · 最近登录 {formatDate(user.lastLoginAt)}</p>
                     </div>
-                    <button
-                      type="button"
-                      disabled={user.watched || busyAction === `watch-${user.id}`}
-                      onClick={() => void watchUser(user)}
-                      className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-2 transition hover:border-brand-line hover:bg-brand-softer hover:text-brand disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      {user.watched ? "监控中" : busyAction === `watch-${user.id}` ? "添加中" : "加入监控"}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {user.role !== "admin" && (
+                        <button
+                          type="button"
+                          disabled={busyAction === `role-${user.id}`}
+                          onClick={() => void toggleTester(user)}
+                          className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-2 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          {busyAction === `role-${user.id}` ? "设置中" : user.role === "tester" ? "取消测试" : "设为测试"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -909,6 +802,42 @@ export function AdminClient({ admin }: AdminClientProps) {
                 {busyAction === "save-config" ? "加密保存中" : "保存运行时配置"}
               </button>
             </div>
+          </div>
+        </section>
+
+        <section className="mt-5 overflow-hidden rounded-2xl border border-line bg-card shadow-card">
+          <SectionTitle
+            icon={StarIcon}
+            title="功能开关板"
+            description="新功能先对测试用户开放（测试态），验收通过后转公开；隐藏态仅管理员可见可用。切换即时生效，无需重启。"
+          />
+          <div className="divide-y divide-line">
+            {flags.map((flag) => (
+              <div key={flag.key} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-ink">{flag.label}</span>
+                    <span className="rounded-full bg-page px-2 py-0.5 text-[10px] text-ink-3">{flag.key}</span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-ink-3">{flag.description}</p>
+                </div>
+                <div className="flex shrink-0 rounded-xl border border-line bg-page p-0.5">
+                  {(["off", "beta", "public"] as const).map((state) => (
+                    <button
+                      key={state}
+                      type="button"
+                      disabled={busyAction === `flag-${flag.key}`}
+                      onClick={() => void setFlag(flag.key, state)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                        flag.state === state ? "bg-dark text-white" : "text-ink-2 hover:text-ink"
+                      } disabled:opacity-45`}
+                    >
+                      {state === "off" ? "隐藏" : state === "beta" ? "测试" : "公开"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 

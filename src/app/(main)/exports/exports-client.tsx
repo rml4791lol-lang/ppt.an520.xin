@@ -141,7 +141,7 @@ export function ExportsClient() {
                     </span>
                   )}
                 </span>
-                <span className="text-ink-3">{item.refType === "upload" ? "文件转换" : item.kind === "editable" ? "可编辑" : "图片版"}</span>
+                <span className="text-ink-3">{item.refType === "upload" ? "文件转换" : item.kind === "editable" ? "可编辑" : item.kind === "editable_text" ? "文字可编辑" : "图片版"}</span>
                 <span className="text-ink-3">{item.pageCount} 页</span>
                 <span>{statusChip(item)}</span>
                 <span className="sm:text-right">

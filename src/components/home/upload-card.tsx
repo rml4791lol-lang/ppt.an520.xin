@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -16,6 +16,7 @@ import {
 } from "@/components/icons";
 import { ApiClientError } from "@/lib/client/api";
 import { createPagedCopyDeck, parseDeckDocument } from "@/lib/client/deck-api";
+import { useGatedStylePacks } from "@/components/use-gated-style-packs";
 import type { StylePack } from "@/data/style-packs";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
@@ -23,11 +24,15 @@ const DOC_ACCEPT = [".txt", ".md", ".pdf", ".docx"];
 const PPT_ACCEPT = [".ppt", ".pptx"];
 const MAX_PAGE_CHARS = 1500;
 
+const CUSTOM_PAGE_MIN = 4;
+const CUSTOM_PAGE_MAX = 40;
+
 const DURATION_OPTIONS = [
   { value: "10", label: "汇报 10 分钟 · 约 7 页", pages: 7 },
   { value: "15", label: "汇报 15 分钟 · 约 10 页", pages: 10 },
   { value: "20", label: "汇报 20 分钟 · 约 13 页", pages: 13 },
   { value: "30", label: "汇报 30 分钟 · 约 20 页", pages: 20 },
+  { value: "custom", label: "自定义页数", pages: 0 },
 ];
 
 const QUALITY_OPTIONS = [
@@ -301,30 +306,52 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
   const [tab, setTab] = useState<TabKey>("import");
   const [style, setStyle] = useState<StylePack | null>(null);
   const [duration, setDuration] = useState("15");
+  const [customPages, setCustomPages] = useState("20");
   const [quality, setQuality] = useState("standard");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [pages, setPages] = useState<string[]>([""]);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<null | "import" | "paged">(null);
+  const gatedPacks = useGatedStylePacks();
+  const allPacks = useMemo(
+    () => (gatedPacks.length > 0 ? [...packs, ...gatedPacks] : packs),
+    [packs, gatedPacks],
+  );
 
   // 风格卡「使用此风格」链接带 ?style={slug}：进入首页时预选该风格
   // （slug 优先，兼容 id / name），否则用户点了链接还要手动重选一遍
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("style");
     if (!value) return;
-    const found = packs.find(
+    const found = allPacks.find(
       (p) => p.slug === value || p.id === value || p.name === value || p.legacySlugs?.includes(value),
     );
     if (!found) return;
     const timer = window.setTimeout(() => setStyle(found), 0);
     return () => window.clearTimeout(timer);
-  }, [packs]);
+  }, [allPacks]);
 
   const flash = (msg: string) => {
     setNotice(msg);
     window.setTimeout(() => setNotice(null), 4000);
   };
+
+  // 自定义页数：4-40；汇报时长按比例派生（对齐四档的 1.5 分钟/页），引擎只需要一个时长语义
+  const isCustomDuration = duration === "custom";
+  const parsedCustomPages = Math.floor(Number(customPages));
+  const customPageCount =
+    Number.isSafeInteger(parsedCustomPages) &&
+    parsedCustomPages >= CUSTOM_PAGE_MIN &&
+    parsedCustomPages <= CUSTOM_PAGE_MAX
+      ? parsedCustomPages
+      : null;
+  const selectedPageCount = isCustomDuration
+    ? (customPageCount ?? 0)
+    : (DURATION_OPTIONS.find((o) => o.value === duration)?.pages ?? 10);
+  const selectedDurationMinutes = isCustomDuration
+    ? Math.max(1, Math.round(selectedPageCount * 1.5))
+    : Number(duration);
 
   // 统一错误处理：401 → 跳登录（回跳首页）；402 → 提示充值；其余直接展示文案
   const handleSubmitError = (error: unknown, fallback: string) => {
@@ -347,13 +374,16 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
       return;
     }
     if (submitting) return;
+    if (isCustomDuration && customPageCount === null) {
+      flash(`请输入 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 之间的页数`);
+      return;
+    }
     setSubmitting("import");
     try {
-      const opt = DURATION_OPTIONS.find((o) => o.value === duration)!;
       const result = await parseDeckDocument({
         file: docFile,
-        duration: Number(duration),
-        targetPageCount: opt.pages,
+        duration: selectedDurationMinutes,
+        targetPageCount: selectedPageCount,
         pageCountMode: "auto",
         qualityTier: quality,
         stylePackId: style?.id ?? null,
@@ -425,7 +455,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 <p className="text-sm text-ink-3">
                   适合已有完整文档，需要 AI 规划结构并生成整套 PPT
                 </p>
-                <StylePicker packs={packs} selected={style} onSelect={setStyle} />
+                <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />
               </div>
               <div className="mt-4">
                 <Dropzone
@@ -443,6 +473,20 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                   onChange={setDuration}
                   className="w-full sm:w-auto sm:min-w-56"
                 />
+                {isCustomDuration && (
+                  <label className="flex items-center gap-1.5 rounded-full border border-line bg-card px-4 py-2 text-sm text-ink-2 transition focus-within:border-brand-line">
+                    <input
+                      type="number"
+                      min={CUSTOM_PAGE_MIN}
+                      max={CUSTOM_PAGE_MAX}
+                      value={customPages}
+                      onChange={(e) => setCustomPages(e.target.value)}
+                      aria-label="自定义页数"
+                      className="w-12 bg-transparent text-center outline-none"
+                    />
+                    页
+                  </label>
+                )}
                 <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
                   <Dropdown
                     value={quality}
@@ -460,6 +504,12 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                   </button>
                 </div>
               </div>
+              <p className="mt-2 px-1 text-xs text-ink-4">
+                {isCustomDuration && customPageCount === null
+                  ? `自定义页数范围 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 页`
+                  : `预计约 ${selectedPageCount} 页 · 生成消耗约 ${selectedPageCount * 10}🌟`}
+                {selectedPageCount > 20 && " · 超过 20 页暂不支持转可编辑 PPTX"}
+              </p>
             </div>
           )}
 
@@ -469,7 +519,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 <p className="text-sm text-ink-3">
                   已有逐页文案？逐页粘贴文字，AI 按你的分页直接生成
                 </p>
-                <StylePicker packs={packs} selected={style} onSelect={setStyle} />
+                <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />
               </div>
               <div className="mt-4 space-y-3">
                 {pages.map((content, i) => (
@@ -550,7 +600,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 <p className="text-sm text-ink-3">
                   上传已有 PPT，AI 按所选风格逐页翻新美化
                 </p>
-                <StylePicker packs={packs} selected={style} onSelect={setStyle} />
+                <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />
               </div>
               <div className="mt-4">
                 <Dropzone
