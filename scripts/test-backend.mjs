@@ -2,7 +2,7 @@
 // Backend lib-layer smoke tests. Runs plain node (no Next dev server needed):
 //   node scripts/test-backend.mjs
 // Uses a throwaway sqlite db; exercises auth/OTP/credits/redemption/recharge flows.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -369,6 +369,23 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   check('管理员 overview 未登录 401', noAuthOverview.status === 401, `实际 ${noAuthOverview.status}`);
   const normalOverview = await overviewRoute.GET(normalRequest);
   check('管理员 overview 普通用户 403', normalOverview.status === 403, `实际 ${normalOverview.status}`);
+
+  const problemsRoute = await import('../src/app/api/admin/problems/route.ts');
+  const anonProblems = await problemsRoute.GET(new Request('http://localhost/api/admin/problems'));
+  check('管理员 problems 未登录 401', anonProblems.status === 401, `实际 ${anonProblems.status}`);
+  const normalProblems = await problemsRoute.GET(new Request('http://localhost/api/admin/problems', {
+    headers: { cookie: cookie(reg.sessionToken) },
+  }));
+  check('管理员 problems 普通用户 403', normalProblems.status === 403, `实际 ${normalProblems.status}`);
+  const problemLog = await import('../src/lib/server/problem-log.ts');
+  problemLog.logProblem({ category: 'api', level: 'warn', message: '路由回环断言', refType: 'admin', refId: 'problems' });
+  const adminProblemsResponse = await problemsRoute.GET(adminRequest('http://localhost/api/admin/problems?days=7&limit=5'));
+  const adminProblemsJson = await adminProblemsResponse.json().catch(() => null);
+  check('管理员 problems 200 且返回 {items}（含刚写入记录）',
+    adminProblemsResponse.status === 200
+      && Array.isArray(adminProblemsJson?.data?.items)
+      && adminProblemsJson.data.items.some((item) => item.message === '路由回环断言' && item.level === 'warn'),
+    `实际 ${adminProblemsResponse.status}`);
 
   const configRoute = await import('../src/app/api/admin/config/route.ts');
   const secretValue = 'runtime-secret-must-never-be-returned';
@@ -753,6 +770,66 @@ console.log('\n[12c] 导入文档页数上限 40（自定义页数；超出回�
   const overRes = await parseRoute.POST(parseRequest(99));
   const overJson = await overRes.json();
   check('99 页超出上限回退默认 10 页', overRes.status === 201 && pageCountOf(overJson?.data?.deckId) === 10, `实际 ${overRes.status}`);
+}
+
+console.log('\n[12d] 问题日志：落盘 / 回环 / 坏行跳过 / 过期清理');
+{
+  const problems = await import('../src/lib/server/problem-log.ts');
+  const logDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-problem-log-'));
+  const previousDir = process.env.ANPPT_V2_PROBLEM_LOG_DIR;
+  process.env.ANPPT_V2_PROBLEM_LOG_DIR = logDir;
+  const dayKey = (offsetDays) => {
+    const date = new Date();
+    date.setDate(date.getDate() + offsetDays);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  try {
+    problems.logProblem({
+      category: 'api',
+      level: 'error',
+      message: '回环测试：接口异常',
+      detail: 'boom',
+      userId: 'user-1234567890',
+      refType: 'deck',
+      refId: 'deck-1',
+    });
+    problems.logProblem({ category: 'generation', level: 'warn', message: '回环测试：退款警告' });
+
+    const roundTrip = problems.readProblems({ days: 1 });
+    check('logProblem 落盘 + readProblems 回环（新→旧、字段完整）',
+      roundTrip.items.length === 2
+        && roundTrip.items[0].message === '回环测试：退款警告'
+        && roundTrip.items[0].level === 'warn'
+        && roundTrip.items[1].level === 'error'
+        && roundTrip.items[1].category === 'api'
+        && roundTrip.items[1].userId === 'user-1234567890'
+        && roundTrip.items[1].refType === 'deck'
+        && roundTrip.items[1].refId === 'deck-1'
+        && roundTrip.items[1].detail === 'boom'
+        && typeof roundTrip.items[1].ts === 'number',
+      `items=${roundTrip.items.length}`);
+
+    check('category / level / limit 过滤生效',
+      problems.readProblems({ days: 1, category: 'api' }).items.length === 1
+        && problems.readProblems({ days: 1, level: 'warn' }).items.length === 1
+        && problems.readProblems({ days: 1, limit: 1 }).items.length === 1
+        && problems.readProblems({ days: 1, limit: 1 }).items[0].message === '回环测试：退款警告');
+
+    const todayName = readdirSync(logDir).find((name) => name.endsWith('.jsonl'));
+    appendFileSync(path.join(logDir, todayName), '{ bad json line\n');
+    check('坏行跳过、其余行仍可读', problems.readProblems({ days: 1 }).items.length === 2);
+
+    const oldFile = path.join(logDir, `problems-${dayKey(-20)}.jsonl`);
+    const keepFile = path.join(logDir, `problems-${dayKey(-5)}.jsonl`);
+    writeFileSync(oldFile, '');
+    writeFileSync(keepFile, '');
+    problems.logProblem({ category: 'api', level: 'error', message: '触发清理' });
+    check('写入时清理超 14 天文件、保留 14 天内文件', !existsSync(oldFile) && existsSync(keepFile));
+  } finally {
+    if (previousDir === undefined) delete process.env.ANPPT_V2_PROBLEM_LOG_DIR;
+    else process.env.ANPPT_V2_PROBLEM_LOG_DIR = previousDir;
+    rmSync(logDir, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败${failed ? ` — 失败项: ${failures.join('、')}` : ''}`);

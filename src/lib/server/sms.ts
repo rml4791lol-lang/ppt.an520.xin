@@ -4,6 +4,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { getEnv } from './env';
 import { ApiError } from './http';
+import { logProblem } from './problem-log';
 
 const ALIYUN_SMS_ENDPOINT = 'https://dysmsapi.aliyuncs.com';
 
@@ -61,7 +62,12 @@ export async function sendSmsCode(phone: string, code: string): Promise<void> {
     });
     const payload = (await response.json().catch(() => null)) as { Code?: string; Message?: string } | null;
     if (!response.ok || payload?.Code !== 'OK') {
-      console.warn('[anppt-v2][sms] aliyun rejected:', payload?.Code, payload?.Message);
+      logProblem({
+        category: 'sms',
+        level: 'error',
+        message: `阿里云短信发送被拒（${payload?.Code || response.status}）`,
+        detail: payload?.Message,
+      });
       throw new ApiError('OTP_DELIVERY_FAILED', '短信验证码发送失败，请稍后重试', 503, true);
     }
   } finally {

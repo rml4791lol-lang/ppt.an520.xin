@@ -15,6 +15,7 @@ import {
 } from './auth';
 import { sendSmsCode } from './sms';
 import { grantSignupBonusTx } from './credits';
+import { logProblem } from './problem-log';
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_COOLDOWN_MS = 60 * 1000;
@@ -204,8 +205,15 @@ export async function requestEmailOtp(identifier: unknown, clientIp: string): Pr
       db.prepare('UPDATE auth_otp_challenges SET delivery_status = ? WHERE id = ?').run('sent', challengeId);
     } catch (error) {
       db.prepare('UPDATE auth_otp_challenges SET delivery_status = ? WHERE id = ?').run('failed', challengeId);
+      logProblem({
+        category: 'otp',
+        level: 'error',
+        message: id.kind === 'email' ? '邮件验证码发送失败' : '短信验证码发送失败',
+        detail: error,
+        refType: 'otp',
+        refId: challengeId,
+      });
       if (error instanceof ApiError) throw error;
-      console.warn('[anppt-v2][otp] delivery failed:', error instanceof Error ? error.message : error);
       throw new ApiError('OTP_DELIVERY_FAILED', '验证码发送失败，请稍后重试', 503, true);
     }
   }

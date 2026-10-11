@@ -19,6 +19,7 @@ import { getActiveVersionImagePath, listSingleProjectPages } from '@/lib/server/
 import { absPathForRelPath, readSiteFile, saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
+import { logProblem } from '@/lib/server/problem-log';
 // ---------- 可编辑导出（Codia 链） ----------
 
 /** Codia 单任务页数上限（官方限制 ≤20 页/任务） */
@@ -276,7 +277,15 @@ function refundEditableCharge(row: ExportRow): void {
       refId: String(row.ref_id),
     });
   } catch (error) {
-    console.error('[anppt-v2][exports] editable refund failed:', error);
+    logProblem({
+      category: 'editable',
+      level: 'error',
+      message: '可编辑导出退款失败',
+      detail: error,
+      userId: String(row.user_id),
+      refType: 'export',
+      refId: String(row.id),
+    });
   }
 }
 
@@ -397,11 +406,15 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
     throw new Error(lastError);
   } catch (error) {
     const noCredits = error instanceof ApiError && error.code === 'UPSTREAM_NO_CREDITS';
-    if (noCredits) {
-      console.error('[anppt-v2][codia] ⚠️⚠️ 上游 Codia 余额不足（402），可编辑导出全部失败，站方需尽快充值！');
-    } else {
-      console.error('[anppt-v2][exports] editable pipeline failed:', error);
-    }
+    logProblem({
+      category: 'editable',
+      level: 'error',
+      message: noCredits ? '上游 Codia 余额不足（402），可编辑导出全部失败，站方需尽快充值' : '可编辑导出管线失败',
+      detail: error,
+      userId: String(row.user_id),
+      refType: 'export',
+      refId: exportId,
+    });
     refundEditableCharge(row);
     updateExportRow(exportId, {
       status: 'failed',
@@ -962,7 +975,15 @@ async function runTextEditablePipeline(row: ExportRow, deps: EditableExportDeps)
       completedAt: nowMs(),
     });
   } catch (error) {
-    console.error('[anppt-v2][exports] text overlay pipeline failed:', error);
+    logProblem({
+      category: 'editable',
+      level: 'error',
+      message: '文字可编辑导出管线失败',
+      detail: error,
+      userId: String(row.user_id),
+      refType: 'export',
+      refId: exportId,
+    });
     refundEditableCharge(row);
     updateExportRow(exportId, {
       status: 'failed',

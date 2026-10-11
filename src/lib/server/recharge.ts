@@ -7,6 +7,7 @@ import { grantCreditsTx } from './credits';
 import { createWechatNativeOrder, parseWechatPayNotify } from './payments/wechat';
 import { createEpayOrder, parseEpayNotify, majorAmountToMinor } from './payments/epay';
 import { hitRateLimit } from './rate-limit';
+import { logProblem } from './problem-log';
 
 export type OrderProvider = 'wechat' | 'epay' | 'mock';
 export type OrderStatus = 'pending' | 'paid' | 'expired' | 'cancelled';
@@ -255,6 +256,14 @@ export async function handleWechatNotify(
   } catch (error) {
     const message = error instanceof ApiError ? error.message : '入账失败';
     const status = error instanceof ApiError && error.status < 500 ? 200 : 500;
+    logProblem({
+      category: 'payments',
+      level: 'error',
+      message: `微信支付回调入账失败：${message}`,
+      detail: error,
+      refType: 'recharge-order',
+      refId: String(parsed.outTradeNo || ''),
+    });
     // 4xx business mismatches are acked with FAIL/200 so wechat stops retrying poisoned callbacks;
     // transient failures return 500 so wechat retries.
     return { status, body: { code: 'FAIL', message } };
@@ -277,7 +286,14 @@ export function handleEpayNotify(params: Record<string, string>): string {
       amountFen,
     });
   } catch (error) {
-    console.error('[anppt-v2][epay] fulfill failed:', error instanceof Error ? error.message : error);
+    logProblem({
+      category: 'payments',
+      level: 'error',
+      message: 'epay 回调入账失败',
+      detail: error,
+      refType: 'recharge-order',
+      refId: String(parsed.outTradeNo || ''),
+    });
     return 'fail';
   }
   return 'success';

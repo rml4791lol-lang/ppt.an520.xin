@@ -101,7 +101,7 @@ NODE
 
 ```bash
 node scripts/test-generation.mjs  # 当前 415 断言，Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 127 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE
+node scripts/test-backend.mjs     # 当前 134 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
 npm run build
@@ -112,12 +112,13 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 ## 9. 日志前缀速查
 
-- `[anppt-v2][codia]` — Codia 上游调用/402 告警
-- `[anppt-v2][exports]` — 导出管线/退星失败
-- `[anppt-v2][generation]` — 生成管线/退星失败
+- `[anppt-v2][problem][category]` — 问题日志写入行（同内容落盘 `logs/problems-*.jsonl`，见 §24）；category ∈ api / generation / image-upstream / editable / ppt-to-base / payments / otp / sms
+- `[anppt-v2][codia]` — Codia 上游调用告警（超时/非 JSON/HTTP 错误/重试）
+- `[anppt-v2][exports]` — 导出管线内部异常（上传源清理、懒恢复轮询、文字层单页提取）
+- `[anppt-v2][generation]` — 生成管线非致命降级（如全局视觉规范生成失败后继续）
+- `[anppt-v2][image-upstream]` — 生图上游瞬态重试/灾备切换（非 2xx 终态失败已进问题日志）
 - `[anppt-v2][recovery]` — 崩溃懒恢复触发（出现即说明发生过中断，值得看上一条 journal）
-- `[anppt-v2][admin]` — 管理员审计写入或运行时配置异常（日志仍须脱敏）
-- `[anppt-v2][api] unexpected error` — 路由未捕获异常（含堆栈）
+- `[anppt-v2][admin]` / `[anppt-v2][admin-config]` — 管理员审计写入或运行时配置异常（日志仍须脱敏）
 
 ## 10. 已知未修（勿重复排查）
 
@@ -277,3 +278,14 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - image2.5 渠道实况（2026-09-15 校准记录）：an520 中转站已退役（503）；atlascloud 已上架 `openai/gpt-image-2.5-sunburst/edit`（IMAGE-TO-IMAGE，≤16 参考图），但**入参与现网 gpt-image-2/edit 不同**：图字段是 `images` 数组（现网灾备调用体用 `image` 单数），size 枚举无 1536x864，16:9 选 `2048x1152`，quality 新增 xhigh/max。主站恢复后切 2.5 只改 `ANPPT_V2_IMAGE_EDIT_MODEL`；若要灾备也上 2.5，需同步改 `images.ts` atlas 分支调用体。校准脚本 `output/ppt-to-base-e2e/calibrate-prompt.mjs`（主站默认 / 加 `atlas:` 前缀走灾备）。
 - **次路线·pptx 本地擦除（免费）**：页面底部折叠入口。上传 `.pptx`，浏览器本地 jszip + DOMParser 解析 OOXML 并重绘——不画任何文字，保留版式/配色/图片/装饰形状——导出 1536×864 底座 PNG + 槽位 JSON。无任何服务端路由、无计价；文件不出浏览器。渲染划界（有意为之）：文字一律不画只收槽位；graphicFrame（表格/图表/SmartArt）跳过并计数提示；未识别 prstGeom 回退 rect；渐变只近似线性、组旋转/flip 忽略。**文字已烧进位图的页面擦不掉**——那类页正由主路线覆盖，两路互补。
 - 测试：`scripts/tests/ppt-to-base.test.mjs`——[7e]（17 断言）钉 pptx 纯函数层契约（EMU 换算、Office 基准色值 tint 0.2≈#d9e2f3 / shade 0.5≈#203864、槽位角色启发式）；[7f]（19 断言）截图 AI 路线服务端全 mock：成功链路（标题+落盘+扣 5🌟）、提示词契约（点名参考图/改变项不变量分离/中性词加引号）、VLM vision 分段、requestId 重放 409 且不重复扣费、VLM 失败降级、edits 400→`IMAGE_REQUEST_INVALID` 且全退、开关外 404、余额不足 402、缺 requestId 400、估价 5🌟、崩溃残留行懒恢复补退（在途不误退 / 幂等）。真实 image2.5 校准（付费）走 `output/ppt-to-base-e2e/calibrate-prompt.mjs` 手测，不进套件。
+
+## 24. 问题日志（结构化落盘 + 管理后台，2026-10-11）
+
+- 背景：站点关键失败此前只 `console.error` 进 systemd journal，没有集中记录、管理员在后台不可查。第一期只做「结构化落盘 + 后台查看页」，不改动任何计费/支付/恢复逻辑与控制流。
+- 写入端 `src/lib/server/problem-log.ts` 的 `logProblem()`：追加一行 JSONL 到 `<ANPPT_V2_DATA_DIR>/logs/problems-YYYY-MM-DD.jsonl`（生产 = `/opt/anppt-v2/shared/data/logs/`；目录不存在自动创建；整个日志目录可用 `ANPPT_V2_PROBLEM_LOG_DIR` 覆盖）。行字段固定：`ts`（毫秒时间戳）/ `level`（`error`|`warn`）/ `category` / `message` / `detail` / `userId` / `refType` / `refId`（后四者无值时为 `""`）；Error 取 stack、对象 JSON 化，Bearer 令牌落盘前打码，message ≤500 / detail ≤4000 字符。
+- 双写与兜底：整个函数 try/catch 静默兜底——落盘/序列化失败绝不影响业务；同时输出一行 `[anppt-v2][problem][category] message`（warn 走 console.warn，error 走 console.error），journal 运维视角保持可见。写入时机会式清理同目录早于 14 天的 `problems-*.jsonl`（best effort，失败忽略）。
+- 已接入的失败点（category）：`api` 路由未捕获异常（http.ts `toErrorResponse`）；`generation` 逐页/单页生成退款失败、生成管线异常中断、崩溃恢复补退款失败（generate.ts / single-pages.ts / recovery.ts）；`ppt-to-base` 底座退款失败（base-image.ts）；`payments` 微信/epay 回调入账失败与回调异常（recharge.ts / wechat notify route）；`otp` 验证码交付失败（otp.ts）；`sms` 阿里云拒发（sms.ts）；`image-upstream` 主站与 atlas 非 2xx（images.ts）；`editable` 可编辑导出管线失败/402 余额不足/退款失败/文字档管线失败（editable.ts）。
+- 读取端 `readProblems({days, category, level, limit, offset})`：读最近 N 天（含今天；默认 3 天、上限 14 天；limit 默认 200、上限 500），坏行跳过，单次最多解析 3000 行（从最新一天往前，防文件异常膨胀），过滤后按 ts 倒序切片，返回 `{ items }`。
+- 管理后台页 `/admin/problems`（`src/app/(main)/admin/problems/page.tsx` + `src/components/admin/problems-client.tsx`，与 /admin 相同的 cookie session + admin 角色守卫，非管理员 redirect）：默认读最近 200 条，筛选 category（下拉）/ level / 天数（1/3/7），列 = 时间 / 级别 / 类别 / 消息（含 detail 摘要）/ 用户（userId 前 8 位）/ 引用（`refType:refId`）；/admin 头部有「问题日志」入口。空态提示「该时间范围内没有匹配的问题记录」。
+- API：`GET /api/admin/problems?days=&category=&level=&limit=`（管理员会话才可访问；`days/limit` 越界自动钳制；响应为统一 envelope `{ ok, data: { items } }`，`Cache-Control: private, no-store`）。
+- 测试：`node scripts/test-backend.mjs` [12d]（落盘/回环/过滤/坏行跳过/超 14 天清理，mkdtemp 临时目录）与 [10]（未登录 401、普通用户 403、管理员 200）。

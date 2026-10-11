@@ -7,6 +7,7 @@
 // 本进程活跃任务有注册表守卫，绝不动活跃任务。
 import { getDb } from '../db';
 import { deriveRefundKey, refundCredits } from '../credits';
+import { logProblem } from '../problem-log';
 import { getGenDb, nowMs } from './db';
 import { getGenerationConfig } from './config';
 import type { DeckRow } from './decks';
@@ -63,7 +64,15 @@ export function refundCharge(
   try {
     refundCredits(userId, amount, { reason, idempotencyKey: refundKey, refType, refId });
   } catch (error) {
-    console.error('[anppt-v2][recovery] refund failed:', chargeKey, error);
+    logProblem({
+      category: 'generation',
+      level: 'error',
+      message: '崩溃恢复补退款失败',
+      detail: `chargeKey=${chargeKey} reason=${reason} error=${error instanceof Error ? error.message : String(error)}`,
+      userId,
+      refType,
+      refId,
+    });
   }
 }
 

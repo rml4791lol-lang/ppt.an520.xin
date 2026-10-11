@@ -1,6 +1,7 @@
 // 逐页生图管线：估价 → 整单余额校验（不足 402）→ 建持久化 job → 按配置逐页并发
 // debit（幂等键 deck-generate:{deckId}:{jobId}:{slideId}）→ 成功落盘 / 失败 refund。
 import { ApiError } from '../http';
+import { logProblem } from '../problem-log';
 import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '../credits';
 import { getGenerationConfig } from './config';
 import { getGenDb } from './db';
@@ -234,7 +235,15 @@ async function runSlideGeneration(
         refId: deck.id,
       });
     } catch (refundError) {
-      console.error('[anppt-v2][generation] refund failed:', refundError);
+      logProblem({
+        category: 'generation',
+        level: 'error',
+        message: `第 ${slide.pageIndex + 1} 页生成失败退款失败`,
+        detail: refundError,
+        userId: deck.userId,
+        refType: 'deck',
+        refId: deck.id,
+      });
     }
     return 'failed';
   }
@@ -373,7 +382,15 @@ export async function startDeckGeneration(
   })().catch((error) => {
     // 管线级异常（非页面级）：job 置终态后走统一恢复——卡 queued/running 的页
     // 收敛为 failed、孤儿扣费补退款、deck 状态收敛（见 recovery.ts）
-    console.error('[anppt-v2][generation] pipeline crashed:', error);
+    logProblem({
+      category: 'generation',
+      level: 'error',
+      message: '生成管线异常中断',
+      detail: error,
+      userId: deck.userId,
+      refType: 'deck',
+      refId: deck.id,
+    });
     markJobDone(job.jobId);
     updateJob(job.jobId, { status: 'failed', error: '生成管线异常中断，请重试失败页' });
     reconcileDeckGeneration(getOwnedDeck(deck.userId, deck.id));

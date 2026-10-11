@@ -15,6 +15,7 @@ import { editImage, toPublicImageError, type ImageDeps } from '@/lib/server/gene
 import { saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { hitRateLimit } from '@/lib/server/rate-limit';
+import { logProblem } from '@/lib/server/problem-log';
 
 export const PPT_TO_BASE_ACTION = 'ppt_to_base';
 export const PPT_TO_BASE_RATE = { windowMs: 60 * 60 * 1000, max: 30 };
@@ -179,7 +180,15 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
           refId: requestId,
         });
       } catch (refundError) {
-        console.error('[anppt-v2][ppt-to-base] refund failed:', refundError);
+        logProblem({
+          category: 'ppt-to-base',
+          level: 'error',
+          message: '底座生成失败退款失败',
+          detail: refundError,
+          userId,
+          refType: 'ppt-to-base',
+          refId: requestId,
+        });
       }
       const pub = toPublicImageError(error);
       finishJob(jobId, 'failed', `${pub.code}: ${pub.message}`);

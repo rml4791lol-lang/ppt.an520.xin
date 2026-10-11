@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIcon,
@@ -584,15 +585,24 @@ export function AdminClient({ admin }: AdminClientProps) {
                 <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">服务端权限已验证</span>
               </div>
             </div>
-            <button
-              type="button"
-              disabled={refreshing}
-              onClick={() => void loadFull()}
-              className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-dark px-4 text-sm font-medium text-white transition hover:bg-ink disabled:opacity-60"
-            >
-              <RefreshIcon width={16} height={16} className={refreshing ? "animate-spin" : ""} />
-              {refreshing ? "刷新中" : "刷新全量状态"}
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Link
+                href="/admin/problems"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-ink-2 transition hover:text-ink"
+              >
+                <AlertIcon width={15} height={15} />
+                问题日志
+              </Link>
+              <button
+                type="button"
+                disabled={refreshing}
+                onClick={() => void loadFull()}
+                className="flex h-10 items-center justify-center gap-2 rounded-xl bg-dark px-4 text-sm font-medium text-white transition hover:bg-ink disabled:opacity-60"
+              >
+                <RefreshIcon width={16} height={16} className={refreshing ? "animate-spin" : ""} />
+                {refreshing ? "刷新中" : "刷新全量状态"}
+              </button>
+            </div>
           </div>
         </section>
 

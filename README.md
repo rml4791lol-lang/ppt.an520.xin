@@ -25,10 +25,10 @@ src/
   lib/plugin/             插件运行时三件：types(契约) / ctx(服务注册表) / profile(配置单 boot)
   lib/server/             服务端平台件：auth(OTP+会话) credits(台账幂等) recharge(订单履约)
                           payments/(wechat native + epay) documents(解析) exports(pptx)
-                          generation/(deck 状态机/DSL/生图/单页运行时/项目)
+                          generation/(deck 状态机/DSL/生图/单页运行时/项目) problem-log(问题日志落盘/读取)
 scripts/
   tests/                  模块测试（由两套主套件注入 ctx 调用）
-  test-backend.mjs        B 层：127 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限）
+  test-backend.mjs        B 层：134 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限/问题日志）
   test-generation.mjs     C 层：415 项（解析/DSL/引擎+兜底/状态机/扣费退还/导出/轻量文字档/图片级编辑工具/复刻PPT/幂等重放/LLM频控/插件运行时）
   ts-hooks.mjs            node 直跑 TS 的 resolve 钩子（含 @/ 别名）
 docs/                     DEBUG-HANDBOOK（系统全貌）/ DEVELOPMENT（架构与流程）

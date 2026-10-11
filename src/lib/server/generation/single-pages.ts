@@ -3,6 +3,7 @@
 import { ApiError, validationError } from '../http';
 import { withTransaction } from '../db';
 import { chargeRefundKeys, debitCredits, refundCredits } from '../credits';
+import { logProblem } from '../problem-log';
 import { findUserById } from '../auth';
 import { assertFeatureVisible } from '../feature-flags';
 import { getGenerationConfig } from './config';
@@ -390,7 +391,15 @@ async function runSinglePageJob(
           refId: page.pageId,
         });
       } catch (refundError) {
-        console.error('[anppt-v2][single-page] refund failed:', refundError);
+        logProblem({
+          category: 'generation',
+          level: 'error',
+          message: '单页生成失败退款失败',
+          detail: refundError,
+          userId: page.userId,
+          refType: 'single-page',
+          refId: page.pageId,
+        });
       }
       return {
         page: getOwnedPage(page.userId, page.pageId),

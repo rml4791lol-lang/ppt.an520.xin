@@ -1,6 +1,8 @@
 // Uniform API envelope + CSRF/origin guard. Pure web-standard Request/Response,
 // no next imports, so scripts/test-backend.mjs can exercise it directly.
 
+import { logProblem } from './problem-log';
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -37,7 +39,7 @@ export function jsonError(error: ApiError, headers?: Record<string, string>): Re
 
 export function toErrorResponse(error: unknown): Response {
   if (error instanceof ApiError) return jsonError(error);
-  console.error('[anppt-v2][api] unexpected error:', error);
+  logProblem({ category: 'api', level: 'error', message: '接口未捕获异常', detail: error });
   return jsonError(new ApiError('INTERNAL_ERROR', '服务器开小差了，请稍后重试', 500, true));
 }
 

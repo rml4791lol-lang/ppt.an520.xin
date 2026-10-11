@@ -4,6 +4,7 @@
 import { getGenerationConfig, type GenerationConfig } from './config';
 import { cleanString } from './types';
 import { recordUpstreamUsage } from '../usage-meter';
+import { logProblem } from '../problem-log';
 
 export interface ImageDeps {
   fetchImpl?: typeof fetch;
@@ -129,7 +130,12 @@ async function parseImageResponse(
     throw new ImageUpstreamError(`HTTP ${response.status}: 上游返回非 JSON`, response.status || 502);
   }
   if (!response.ok) {
-    console.error(`[anppt-v2][image-upstream] HTTP ${response.status}: ${text.slice(0, 500)}`);
+    logProblem({
+      category: 'image-upstream',
+      level: 'error',
+      message: `生图上游 HTTP ${response.status}`,
+      detail: text.slice(0, 500),
+    });
     throw new ImageUpstreamError(
       `HTTP ${response.status}: ${cleanString(payload?.error?.message, 300) || 'upstream error'}`,
       response.status,
@@ -254,7 +260,12 @@ async function atlasHttp<T>(
     }
     // atlascloud 业务错误也可能以 HTTP 200 + code!==200 返回
     if (!response.ok || (typeof payload.code === 'number' && payload.code !== 200)) {
-      console.error(`[anppt-v2][image-upstream] atlas HTTP ${response.status}: ${text.slice(0, 500)}`);
+      logProblem({
+        category: 'image-upstream',
+        level: 'error',
+        message: `atlas 生图上游 HTTP ${response.status}${typeof payload.code === 'number' ? ` code=${payload.code}` : ''}`,
+        detail: text.slice(0, 500),
+      });
       throw new ImageUpstreamError(
         `HTTP ${response.status}: ${cleanString(payload?.message, 300) || 'atlascloud upstream error'}`,
         response.status || 502,
