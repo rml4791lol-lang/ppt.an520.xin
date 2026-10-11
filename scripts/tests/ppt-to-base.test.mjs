@@ -166,4 +166,28 @@ export async function runPptToBaseServerTests(ctx) {
     baseImage.runPptToBase(tid, { image: shot, requestId: '' }, { fetchImpl: makeMockFetcher([]), config: llmConfig }),
     'VALIDATION_ERROR');
   check('估价动作键已接入（5🌟/张）', credits.estimateCredits({ action: 'ppt_to_base' }).credits === 5);
+
+  // --- 崩溃恢复：扣费后残留 running 行 → 懒恢复按实扣金额补退（幂等）---
+  const genDb = (await import('../../src/lib/server/generation/db.ts')).getGenDb();
+  const crashJobId = 'ptb_crash';
+  const crashChargeKey = `ppt-to-base:${tid}:p2b-crash`;
+  const beforeCrash = credits.getBalance(tid);
+  credits.debitCredits(tid, 5, {
+    reason: 'PPT 转模版底座', idempotencyKey: crashChargeKey, refType: 'ppt-to-base', refId: 'p2b-crash',
+  });
+  genDb.prepare(
+    "INSERT INTO ppt_to_base_jobs (id, user_id, request_id, charge_key, status, error, created_at, updated_at) VALUES (?, ?, ?, ?, 'running', '', ?, ?)",
+  ).run(crashJobId, tid, 'p2b-crash', crashChargeKey, Date.now(), Date.now());
+  check('中断现场：已扣 5🌟 且未退回', credits.getBalance(tid) === beforeCrash - 5);
+  check('在途未超时不误收敛',
+    baseImage.reconcilePptToBase(tid) === false && credits.getBalance(tid) === beforeCrash - 5);
+  const staleAt = Date.now() - 2 * 60 * 60 * 1000;
+  genDb.prepare('UPDATE ppt_to_base_jobs SET created_at = ?, updated_at = ? WHERE id = ?').run(staleAt, staleAt, crashJobId);
+  check('超时残留行被懒恢复收敛', baseImage.reconcilePptToBase(tid) === true);
+  check('中断任务补退实扣金额（余额回原值）', credits.getBalance(tid) === beforeCrash, `实际 ${credits.getBalance(tid)}`);
+  const crashRow = genDb.prepare('SELECT status, error FROM ppt_to_base_jobs WHERE id = ?').get(crashJobId);
+  check('残留行置 failed 带中断文案',
+    String(crashRow?.status) === 'failed' && String(crashRow?.error).includes('中断'));
+  check('恢复幂等：重复收敛不重复退款',
+    baseImage.reconcilePptToBase(tid) === false && credits.getBalance(tid) === beforeCrash);
 }

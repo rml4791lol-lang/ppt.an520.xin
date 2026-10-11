@@ -78,6 +78,13 @@ auth.revokeSession(login.sessionToken);
 check('登出后 session 失效', auth.getSessionByToken(login.sessionToken) === null);
 
 console.log('\n[3] OTP 流程（dev echo）');
+check('SMTP_FROM 支持「显示名 <地址>」并回落 SMTP_USER 语义',
+  otp.parseSmtpFrom('AnPPT <otp@qq.com>').address === 'otp@qq.com'
+    && otp.parseSmtpFrom('AnPPT <otp@qq.com>').name === 'AnPPT'
+    && otp.parseSmtpFrom('客服 <otp@qq.com>').name === '客服'
+    && otp.parseSmtpFrom('otp@qq.com').address === 'otp@qq.com'
+    && otp.parseSmtpFrom('otp@qq.com').name === 'AnPPT'
+    && otp.parseSmtpFrom('').address === '');
 const email = 'otp-user@example.com';
 const req1 = await otp.requestEmailOtp(email, '127.0.0.1');
 check('OTP 请求成功且回显 devCode', /^\d{6}$/.test(req1.devCode || ''));

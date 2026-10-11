@@ -1,13 +1,16 @@
 // PPT 转模版底座·截图 AI 路线：VLM 抽标题 + 精准编辑模型做「去风格化 + 文字中性词替换」。
 // 5🌟/张（env 价键 ppt_to_base，插件动作 tool.ppt-to-base），失败全退；requestId 幂等，重放 409。
+// 扣费前先落 ppt_to_base_jobs 状态行：进程崩溃/重启打断在途请求时，reconcilePptToBase
+// 按 charge_key 补退（懒恢复读点 = 同用户下一次生成、站点头部 /api/credits/balance）。
 // 编辑提示词纪律（GPT Image 2.5 最佳实践）：点名参考图角色 → 改变项/保留项分离 → 不变量重复声明 → 中性词逐字加引号。
 import { ApiError, validationError } from '@/lib/server/http';
 import { findUserById } from '@/lib/server/auth';
 import { assertFeatureVisible } from '@/lib/server/feature-flags';
-import { debitCredits, estimateCredits, refundCredits } from '@/lib/server/credits';
+import { chargeRefundKeys, debitCredits, estimateCredits, refundCredits } from '@/lib/server/credits';
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig } from '@/lib/server/generation/config';
-import { genId } from '@/lib/server/generation/db';
+import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
+import { refundCharge } from '@/lib/server/generation/recovery';
 import { editImage, toPublicImageError, type ImageDeps } from '@/lib/server/generation/images';
 import { saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
@@ -65,6 +68,41 @@ export async function extractTitleText(image: Buffer, deps: ImageDeps): Promise<
   }
 }
 
+/** 本进程在途任务守卫：懒恢复只收敛「超过 jobStaleMs 且非本进程在跑」的残留行 */
+const activeJobs = new Set<string>();
+
+function finishJob(jobId: string, status: 'succeeded' | 'failed', error = ''): void {
+  getGenDb()
+    .prepare('UPDATE ppt_to_base_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?')
+    .run(status, cleanString(error, 200), nowMs(), jobId);
+}
+
+/**
+ * 收敛中断的底座生成（懒恢复，幂等）：status=running 且超 jobStaleMs 视为进程已死，
+ * 置 failed 并按 ledger 实扣金额补退款（退款键由扣费键定长派生，与正常失败退款同键，不双退）。
+ * 返回是否修复了残留行。
+ */
+export function reconcilePptToBase(userId: string): boolean {
+  const staleBefore = nowMs() - getGenerationConfig().jobStaleMs;
+  const rows = getGenDb()
+    .prepare("SELECT id, request_id, charge_key, status, updated_at FROM ppt_to_base_jobs WHERE user_id = ? AND status = 'running'")
+    .all(userId) as Array<{ id: string; request_id: string; charge_key: string; updated_at: number }>;
+  let healed = false;
+  for (const row of rows) {
+    const jobId = String(row.id);
+    if (activeJobs.has(jobId)) continue;
+    if (Number(row.updated_at) >= staleBefore) continue;
+    finishJob(jobId, 'failed', '生成中断（服务重启），已自动退回');
+    const chargeKey = String(row.charge_key || '');
+    if (chargeKey) {
+      refundCharge(chargeKey, userId, '底座生成中断退回', 'ppt-to-base', String(row.request_id || jobId));
+    }
+    healed = true;
+  }
+  if (healed) console.warn(`[anppt-v2][ppt-to-base] ${userId} 收敛了中断任务`);
+  return healed;
+}
+
 export interface PptToBaseInput {
   /** 客户端已 letterbox 成 1536×864 的 PNG 截图 */
   image: Buffer;
@@ -91,34 +129,63 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
     throw new ApiError('RATE_LIMITED', `操作太频繁，请 ${rl.retryAfterSeconds} 秒后再试`, 429, true);
   }
 
-  const unitPrice = estimateCredits({ action: PPT_TO_BASE_ACTION }).credits;
-  // 与 credits.cleanKey 同口径归一：重放命中即拒，不重复扣费也不再生成
-  const chargeKey = `ppt-to-base:${userId}:${requestId}`.trim().slice(0, 128);
-  const debit = debitCredits(userId, unitPrice, {
-    reason: 'PPT 转模版底座',
-    idempotencyKey: chargeKey,
-    refType: 'ppt-to-base',
-    refId: requestId,
-  });
-  if (debit.duplicate) throw new ApiError('DUPLICATE_REQUEST', '重复请求：请勿重复提交，结果请稍候查看', 409, false);
+  reconcilePptToBase(userId);
 
+  const unitPrice = estimateCredits({ action: PPT_TO_BASE_ACTION }).credits;
+  // 与 credits.cleanKey 同口径归一：重放命中即拒，不重复扣费也不再生成；
+  // 退款键不拼后缀（超长键会被截回扣费键），由扣费键定长派生
+  const { chargeKey, refundKey } = chargeRefundKeys(`ppt-to-base:${userId}:${requestId}`);
+  const jobId = genId('ptb');
+  const ts = nowMs();
+  // 先落状态行再扣费：进程死在扣费后，残留 running 行也能被懒恢复补退
+  getGenDb()
+    .prepare(
+      `INSERT INTO ppt_to_base_jobs (id, user_id, request_id, charge_key, status, error, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'running', '', ?, ?)`,
+    )
+    .run(jobId, userId, requestId, chargeKey, ts, ts);
+  activeJobs.add(jobId);
   try {
-    const title = await extractTitleText(input.image, runDeps);
-    const edited = await editImage({ image: input.image, instruction: BASE_IMAGE_INSTRUCTION }, runDeps);
-    const saved = await saveFile('generated', userId, edited, { kind: 'ppt-to-base', ext: '.png', id: genId('base') }, config);
-    return { title, imageUrl: saved.url, balance: debit.balance };
-  } catch (error) {
+    let debit;
     try {
-      refundCredits(userId, unitPrice, {
-        reason: '底座生成失败退回',
-        idempotencyKey: `${chargeKey}:refund`,
+      debit = debitCredits(userId, unitPrice, {
+        reason: 'PPT 转模版底座',
+        idempotencyKey: chargeKey,
         refType: 'ppt-to-base',
         refId: requestId,
       });
-    } catch (refundError) {
-      console.error('[anppt-v2][ppt-to-base] refund failed:', refundError);
+    } catch (error) {
+      finishJob(jobId, 'failed', error instanceof ApiError ? error.code : 'DEBIT_FAILED');
+      throw error;
     }
-    const pub = toPublicImageError(error);
-    throw new ApiError(pub.code, pub.message, pub.status, true);
+    if (debit.duplicate) {
+      finishJob(jobId, 'failed', 'DUPLICATE_REQUEST');
+      throw new ApiError('DUPLICATE_REQUEST', '重复请求：请勿重复提交，结果请稍候查看', 409, false);
+    }
+
+    try {
+      const title = await extractTitleText(input.image, runDeps);
+      const edited = await editImage({ image: input.image, instruction: BASE_IMAGE_INSTRUCTION }, runDeps);
+      const saved = await saveFile('generated', userId, edited, { kind: 'ppt-to-base', ext: '.png', id: genId('base') }, config);
+      finishJob(jobId, 'succeeded');
+      return { title, imageUrl: saved.url, balance: debit.balance };
+    } catch (error) {
+      // 先退款后落 failed：中途崩溃时残留行仍是 running，懒恢复会按同一退款键补退（不双退）
+      try {
+        refundCredits(userId, unitPrice, {
+          reason: '底座生成失败退回',
+          idempotencyKey: refundKey,
+          refType: 'ppt-to-base',
+          refId: requestId,
+        });
+      } catch (refundError) {
+        console.error('[anppt-v2][ppt-to-base] refund failed:', refundError);
+      }
+      const pub = toPublicImageError(error);
+      finishJob(jobId, 'failed', `${pub.code}: ${pub.message}`);
+      throw new ApiError(pub.code, pub.message, pub.status, true);
+    }
+  } finally {
+    activeJobs.delete(jobId);
   }
 }

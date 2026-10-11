@@ -1,7 +1,7 @@
 // 逐页生图管线：估价 → 整单余额校验（不足 402）→ 建持久化 job → 按配置逐页并发
 // debit（幂等键 deck-generate:{deckId}:{jobId}:{slideId}）→ 成功落盘 / 失败 refund。
 import { ApiError } from '../http';
-import { debitCredits, estimateCredits, getBalance, refundCredits } from '../credits';
+import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '../credits';
 import { getGenerationConfig } from './config';
 import { getGenDb } from './db';
 import {
@@ -128,8 +128,7 @@ async function runSlideGeneration(
     pages: 1,
   }).unitPrice;
   // 幂等键含 jobId（契约口径 deck-generate:{deckId}:{jobId}，逐页追加 slideId 保证唯一）
-  const chargeKey = `deck-generate:${deck.id}:${jobId}:${slide.slideId}`;
-  const refundKey = `${chargeKey}:refund`;
+  const { chargeKey, refundKey } = chargeRefundKeys(`deck-generate:${deck.id}:${jobId}:${slide.slideId}`);
   const { prompt, referencePath, anchorReference } = promptForSlide(
     slide,
     deck.stylePackId,

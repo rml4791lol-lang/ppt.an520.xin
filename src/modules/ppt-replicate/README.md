@@ -10,7 +10,7 @@
 
 ## 依赖的平台件（只准用，不准在本模块改）
 
-`lib/server/generation/single-pages.ts`（复刻是单页运行时的 `mode:'replicate'` 分支，扣费/退款/版本/恢复全部复用）、`storage.ts`（壳图落盘与清理）、`rate-limit.ts`、`engine.ts`（LLM）、`credits.ts`。改这些走平台评审，不算模块改动。
+`lib/server/generation/single-pages.ts`（复刻是单页运行时的 `mode:'replicate'` 分支，扣费/退款/版本/恢复全部复用，生成链路检查+落版本+置 running 在同一 BEGIN IMMEDIATE 事务）、`storage.ts`（壳图落盘与清理）、`rate-limit.ts`、`engine.ts`（LLM）、`credits.ts`（`/api/credits/estimate` 现读单价，客户端不硬编码）。改这些走平台评审，不算模块改动。
 
 ## 测试
 

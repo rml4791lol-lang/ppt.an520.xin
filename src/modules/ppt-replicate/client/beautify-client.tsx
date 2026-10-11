@@ -36,7 +36,7 @@ import {
   remainingGenerateCredits,
   restoreProjectHint,
 } from "./beautify-pages";
-import { getAuthSession, getFeatureFlags, getMe } from "@/lib/client/deck-api";
+import { estimateCredits, getAuthSession, getFeatureFlags, getMe } from "@/lib/client/deck-api";
 import { blobFromUrl, canvasToBlob, filesToShellCanvases, mapPool, toJpegFile } from "./replicate-shell";
 import { beautifyHref, safeReplicateFileUrl } from "./replicate-urls";
 
@@ -56,6 +56,8 @@ export function BeautifyClient() {
   const [gate, setGate] = useState<"loading" | "login" | "closed" | "ready">("loading");
   const [username, setUsername] = useState("");
   const [balance, setBalance] = useState(0);
+  // 单价来自 /api/credits/estimate（可被 CREDIT_ACTION_PRICES / ANPPT_V2_SINGLE_PAGE_CREDITS 覆盖）
+  const [unitPrices, setUnitPrices] = useState<{ generate: number; editable: number } | null>(null);
   const [colorMode, setColorMode] = useState<BeautifyColorMode>("follow-shell");
   const [copyMode, setCopyMode] = useState<BeautifyCopyMode>("improve");
   const [gapPolicy, setGapPolicy] = useState<BeautifyGapPolicy>("topic");
@@ -134,7 +136,12 @@ export function BeautifyClient() {
       projectIdRef.current = detail.project.id;
       const restored = (detail.pages ?? []).map((page, i) => {
         const versions = page.versions ?? [];
-        const succeeded = versions.find((item) => item.status === "succeeded" && item.imageUrl) || versions[0];
+        // 优先当前生效版本（单页工作台可切版本），找不到再回落最新成功版本
+        const active = page.activeVersionId
+          ? versions.find((item) => item.versionId === page.activeVersionId && item.imageUrl)
+          : undefined;
+        const succeeded =
+          active || versions.find((item) => item.status === "succeeded" && item.imageUrl) || versions[0];
         const imageUrl = safeReplicateFileUrl(succeeded?.imageUrl || "");
         const imagePath = String(page.shellPath || "");
         const shellUrl = imagePath ? safeReplicateFileUrl(`/api/files/${imagePath}`) : imageUrl;
@@ -172,6 +179,14 @@ export function BeautifyClient() {
         if (cancelled) return;
         setUsername(me.user.username);
         setBalance(me.balance);
+        const [genPrice, editablePrice] = await Promise.all([
+          estimateCredits("single_page_generate", 1).then((e) => e.unitPrice).catch(() => null),
+          estimateCredits("export_editable", 1).then((e) => e.unitPrice).catch(() => null),
+        ]);
+        if (cancelled) return;
+        if (typeof genPrice === "number" && typeof editablePrice === "number") {
+          setUnitPrices({ generate: genPrice, editable: editablePrice });
+        }
         const draft = parseBeautifyDraft(localStorage.getItem(BEAUTIFY_DRAFT_KEY));
         if (draft) {
           setTopic(draft.topic);
@@ -215,7 +230,8 @@ export function BeautifyClient() {
       done += 1;
       onProgress?.(done, snapshot.length);
     });
-    return pagesRef.current.map((page) => page.imagePath).filter(Boolean);
+    // 定长按页对齐：缺壳图的页留空串，服务端按下标挂结构卡（过滤塌缩会让结构卡串页）
+    return pagesRef.current.map((page) => page.imagePath);
   }
 
   async function generateOne(index: number, force: boolean) {
@@ -425,8 +441,8 @@ export function BeautifyClient() {
     if (exporting || running) return;
     const ready = pagesRef.current.filter((page) => page.imageUrl);
     if (!ready.length) return;
-    const need = remainingEditableCredits(ready);
-    if (balance < need) {
+    const need = remainingEditableCredits(ready, unitPrices?.editable ?? 0);
+    if (unitPrices && balance < need) {
       setRunBanner({ kind: "err", text: `星星不足：转可编辑约需 ${need}，当前 ${balance}` });
       return;
     }
@@ -463,8 +479,8 @@ export function BeautifyClient() {
 
   const locked = planning || running || exporting;
   const canExport = pages.some((page) => page.imageUrl);
-  const generateCredits = remainingGenerateCredits(pages);
-  const editableCredits = remainingEditableCredits(pages);
+  const generateCredits = remainingGenerateCredits(pages, unitPrices?.generate ?? 0);
+  const editableCredits = remainingEditableCredits(pages, unitPrices?.editable ?? 0);
 
   if (gate === "loading") {
     return <p className="py-20 text-center text-sm text-ink-3">正在打开 PPT 美化…</p>;
@@ -671,7 +687,9 @@ export function BeautifyClient() {
       <section className="mt-4 rounded-2xl border border-line bg-card p-5 shadow-card sm:p-6">
         <h2 className="text-base font-semibold text-ink">4. 生成与导出</h2>
         <p className="mt-1 text-sm text-ink-3">
-          画面跟参考稿，只换各页文案。未生成的页 10 星/页；已生成的整批再点不会重复扣星。转可编辑 20 星/页，按 20 页一批排队。
+          {unitPrices
+            ? `画面跟参考稿，只换各页文案。未生成的页 ${unitPrices.generate} 星/页；已生成的整批再点不会重复扣星。转可编辑 ${unitPrices.editable} 星/页，按 ${BEAUTIFY_EXPORT_BATCH} 页一批排队。`
+            : `画面跟参考稿，只换各页文案。未生成的页按页扣星，已生成的整批再点不会重复扣星。转可编辑按页扣星，按 ${BEAUTIFY_EXPORT_BATCH} 页一批排队。`}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
@@ -691,7 +709,7 @@ export function BeautifyClient() {
             {exporting ? "排队中…" : "转可编辑 PPTX"}
           </button>
           <span className="text-sm text-ink-3">
-            {pages.length
+            {pages.length && unitPrices
               ? `待生成约 ${generateCredits} 星 · 转可编辑约 ${editableCredits} 星 · 余额 ${balance}`
               : `余额 ${balance}`}
           </span>

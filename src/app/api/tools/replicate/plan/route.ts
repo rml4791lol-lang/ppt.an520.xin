@@ -9,6 +9,8 @@ import { defineApiRoute } from '@/lib/server/generation/route';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+
 async function fileText(file: FormDataEntryValue | null, maxBytes: number): Promise<string> {
   if (!(file instanceof File) || file.size <= 0) return '';
   if (file.size > maxBytes) throw new ApiError('FILE_TOO_LARGE', '单文件最大 30MB', 413, false);
@@ -27,8 +29,19 @@ async function readPlanInput(request: Request): Promise<{
 }> {
   const contentType = request.headers.get('content-type') || '';
   if (contentType.includes('multipart/form-data')) {
-    const form = await request.formData();
     const maxBytes = getGenerationConfig().uploadMaxBytes;
+    // 先验 content-length 再解析：formData() 会把整个 multipart 先读进内存，
+    // 两个文件字段各限 maxBytes，留 1MB 边界余量
+    const contentLength = Number(request.headers.get('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes * 2 + MULTIPART_OVERHEAD_BYTES) {
+      throw new ApiError(
+        'FILE_TOO_LARGE',
+        `文件合计不能超过 ${Math.floor((maxBytes * 2) / 1024 / 1024)}MB`,
+        413,
+        false,
+      );
+    }
+    const form = await request.formData();
     const sourceText = [String(form.get('sourceText') || '').trim(), await fileText(form.get('file'), maxBytes)]
       .filter(Boolean)
       .join('\n\n');

@@ -238,6 +238,7 @@ export async function extractReplicatePageHints(
     return { text: formatReplicatePageHints(cards), cards, extracted: 0 }
   }
   let extracted = 0
+  let started = 0
   let cursor = 0
   const workerCount = Math.min(3, images.length, maxCount)
   await Promise.all(
@@ -245,12 +246,16 @@ export async function extractReplicatePageHints(
       while (true) {
         const index = cursor
         cursor += 1
-        if (index >= images.length || index >= maxCount) return
+        if (index >= images.length || started >= maxCount) return
         if (opts?.deadlineAt && Date.now() >= opts.deadlineAt) return
         const image = images[index]
+        // 空槽 = 该页没有壳图，跳过但不占名额：maxCount 是抽取张数上限，不是下标上限
         if (!image?.length) continue
-        cards[index] = await extractSlideStructure(image, deps)
-        extracted += 1
+        started += 1
+        const card = await extractSlideStructure(image, deps)
+        cards[index] = card
+        // VLM 失败降级 null，不算已抽到结构（否则 /beautify 会谎报 N/M 页读到了结构）
+        if (card) extracted += 1
       }
     }),
   )
@@ -390,22 +395,22 @@ export async function planReplicateCopy(
   return slides
 }
 
+/**
+ * 壳图路径按页下标对齐：返回定长数组（第 i 项 = 第 i 页，缺失/非法留空串）。
+ * 不能过滤塌缩——服务端按下标把结构卡挂到页上，塌缩会让后面的页拿到前一页的结构。
+ */
 export function ownedReplicateImagePaths(raw: unknown, userId: string, pageCount: number): string[] {
+  const total = Math.max(0, Math.min(pageCount, REPLICATE_MAX_PAGES))
   let list: unknown = raw
   if (typeof raw === 'string' && raw.trim()) {
     try {
       list = JSON.parse(raw) as unknown
     } catch {
-      return []
+      list = null
     }
   }
-  if (!Array.isArray(list)) return []
-  const paths: string[] = []
-  for (const item of list.slice(0, Math.min(pageCount, REPLICATE_MAX_PAGES))) {
-    const rel = parseOwnedUploadRelPath(userId, item)
-    if (rel) paths.push(rel)
-  }
-  return paths
+  const items = Array.isArray(list) ? list.slice(0, total) : []
+  return Array.from({ length: total }, (_, i) => parseOwnedUploadRelPath(userId, items[i]) || '')
 }
 
 function assertReplicatePlanRate(userId: string): void {
@@ -439,15 +444,21 @@ export async function runReplicatePlan(
   const config = deps.config ?? getGenerationConfig()
   const maxChars = config.sourceTextMaxChars
   const paths = ownedReplicateImagePaths(input.imagePaths, userId, pageCount)
-  const want = budgetReplicateExtracts(paths.length, REPLICATE_VLM_WINDOW_MAX)
+  const present = paths.map((rel, pageIndex) => ({ rel, pageIndex })).filter((entry) => entry.rel)
+  const want = budgetReplicateExtracts(present.length, REPLICATE_VLM_WINDOW_MAX)
   const vlm = consumeRateLimit(replicateVlmRateKey(userId), {
     windowMs: REPLICATE_VLM_WINDOW_MS,
     max: REPLICATE_VLM_WINDOW_MAX,
     cost: want,
   })
   const extractCount = vlm.consumed
-  const loaded = await Promise.all(paths.slice(0, extractCount).map((rel) => readSiteFile(rel, config)))
-  const buffers = Array.from({ length: Math.max(pageCount, 0) }, (_, i) => loaded[i] || Buffer.alloc(0))
+  const chosen = present.slice(0, extractCount)
+  const loaded = await Promise.all(chosen.map((entry) => readSiteFile(entry.rel, config)))
+  // buffers 定长按页对齐：缺口是空 Buffer，抽取时跳过，结构卡不会串页
+  const buffers: Buffer[] = Array.from({ length: Math.max(pageCount, 0) }, () => Buffer.alloc(0))
+  chosen.forEach((entry, i) => {
+    buffers[entry.pageIndex] = loaded[i] || Buffer.alloc(0)
+  })
   const extracted = await extractReplicatePageHints(buffers, deps, {
     maxCount: extractCount,
     deadlineAt: Date.now() + REPLICATE_EXTRACT_BUDGET_MS,

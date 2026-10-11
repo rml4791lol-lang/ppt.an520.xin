@@ -6,7 +6,7 @@
 // 判定依据：job 心跳（每页完成时更新 updated_at）超时或已终态 = 进程已死；
 // 本进程活跃任务有注册表守卫，绝不动活跃任务。
 import { getDb } from '../db';
-import { refundCredits } from '../credits';
+import { deriveRefundKey, refundCredits } from '../credits';
 import { getGenDb, nowMs } from './db';
 import { getGenerationConfig } from './config';
 import type { DeckRow } from './decks';
@@ -44,14 +44,14 @@ function jobStillLive(jobId: string): boolean {
 }
 
 /** 按 ledger 实扣金额补退款（幂等键 = 正常退款键，重复执行/已退过都不双退） */
-function refundCharge(
+export function refundCharge(
   chargeKey: string,
   userId: string,
   reason: string,
   refType: string,
   refId: string,
 ): void {
-  const refundKey = `${chargeKey}:refund`;
+  const refundKey = deriveRefundKey(chargeKey);
   const ledger = getDb();
   if (ledger.prepare('SELECT 1 FROM credit_ledger WHERE idempotency_key = ?').get(refundKey)) return;
   const debit = ledger.prepare('SELECT delta FROM credit_ledger WHERE idempotency_key = ?').get(chargeKey) as

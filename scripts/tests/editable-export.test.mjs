@@ -156,7 +156,8 @@ export async function runEditableExportTests(ctx) {
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('两次失败 → status=failed 且 error 非空', exp.status === 'failed' && exp.error.length > 0, `实际 ${exp.status}`);
       check('失败全额退星（余额不变）', credits.getBalance(uid) === before);
-      check('refund 键唯一', ledgerKeys().filter((k) => k === `export-editable:${deck.id}:${started.exportId}:refund`).length === 1);
+      const refundKey = credits.deriveRefundKey(`export-editable:${deck.id}:${started.exportId}`);
+      check('refund 键唯一', ledgerKeys().filter((k) => k === refundKey).length === 1);
       check('确已自动重试过一次（建任务 2 次）', createN === 2);
     }
 
@@ -358,7 +359,7 @@ export async function runEditableExportTests(ctx) {
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('单页两次失败 → failed + 全额退星', exp.status === 'failed' && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
       check('refund 键唯一', Number(genDb.prepare('SELECT COUNT(*) AS c FROM credit_ledger WHERE idempotency_key = ?')
-        .get(`export-editable:${spProject}:${started.exportId}:refund`)?.c || 0) === 1);
+        .get(credits.deriveRefundKey(`export-editable:${spProject}:${started.exportId}`))?.c || 0) === 1);
     }
 
     // ---- 余额不足 402：先校验再建行，不产生 export 行 ----
@@ -584,7 +585,7 @@ export async function runEditableExportTests(ctx) {
       check('全部页 VLM 失败 → failed + 全额退星',
         exp.status === 'failed' && exp.error.includes('已退回') && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
       check('refund 键唯一（export-editable-text）',
-        textLedgerKeys().filter((k) => k === `export-editable-text:${deck.id}:${started.exportId}:refund`).length === 1);
+        textLedgerKeys().filter((k) => k === credits.deriveRefundKey(`export-editable-text:${deck.id}:${started.exportId}`)).length === 1);
     }
 
     // ---- 余额不足 402：先校验再建行，不产生 export 行 ----

@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-09-08（美化对抗审查修补：幂等键/改图失败/再规划脏页/refine 硬门/PDF worker）
+> 最后更新：2026-10-11（9ba82e7 审查修补：退款键定长派生 / ppt_to_base 懒恢复 / OTP SMTP_FROM / 单页并发事务 / 价格统一走估价接口）
 
 ## 1. 系统是什么
 
@@ -55,14 +55,15 @@ NODE
 - 风格数据：`src/data/style-packs.ts` 保留 30 个稳定 id，公开过滤 2 个测试目录后展示 28 包；公开名称/slug 已整理，`legacySlugs` 兼容历史链接。`src/data/style-design-dna.ts` 为每包维护色板、栅格、装饰母题、场景和逐页参考类别。
 - 生成管线：`src/lib/server/generation/generate.ts`（估价→整单 402 预检→建 job→单套逐页并发 6；`images.ts` 再统一约束全站在途 20 / 每分钟启动 24→debit 幂等键 `deck-generate:{deckId}:{jobId}:{slideId}`→失败 refund）。每个已启动任务固定一次配置快照，管理员中途改模型、并发或密钥只影响后续任务。
 - 状态机：decks.ts（parsed→outlined→structured→confirmed→generating→generated/partial；stale 作废机制）。
-- **崩溃恢复（2026-08-20 上线）**：`src/lib/server/generation/recovery.ts`。重启/崩溃打断生成后，deck 卡 generating（409 死锁）、页卡 queued/running、已扣费页无退款的问题由懒恢复解决：`getDeckState`/`startDeckGeneration`/单页读写入口触发 `reconcile*`，把中断页收敛为 failed、deck 收敛为 partial/confirmed，并按 ledger **实扣金额**补退款（refund 幂等键与正常失败退款同格式，不双退）。判定依据 = job 心跳（每页完成刷新 `generation_jobs.updated_at`）超过 `ANPPT_V2_JOB_STALE_MS`（默认生图超时+2min，下限 5min）或 job 已终态；本进程活跃任务有注册表守卫不会误伤。**整批在途守卫（2026-08-24 修）**：deck 有活跃 job 时整体跳过收敛——页先置 queued、`slide_versions` 行要等蓝图/调度后才逐页落库，此前按「页最新版本所属旧 job 已死」判收敛会把在途页误置 failed，并对 refine/重生成页按旧版本误退原始扣费。单页扣费键存 `single_page_versions.charge_key`（老库懒迁移补列）。
+- **崩溃恢复（2026-08-20 上线）**：`src/lib/server/generation/recovery.ts`。重启/崩溃打断生成后，deck 卡 generating（409 死锁）、页卡 queued/running、已扣费页无退款的问题由懒恢复解决：`getDeckState`/`startDeckGeneration`/单页读写入口触发 `reconcile*`，把中断页收敛为 failed、deck 收敛为 partial/confirmed，并按 ledger **实扣金额**补退款（refund 幂等键与正常失败退款同格式，不双退）。判定依据 = job 心跳（每页完成刷新 `generation_jobs.updated_at`）超过 `ANPPT_V2_JOB_STALE_MS`（默认生图超时+2min，下限 5min）或 job 已终态；本进程活跃任务有注册表守卫不会误伤。**整批在途守卫（2026-08-24 修）**：deck 有活跃 job 时整体跳过收敛——页先置 queued、`slide_versions` 行要等蓝图/调度后才逐页落库，此前按「页最新版本所属旧 job 已死」判收敛会把在途页误置 failed，并对 refine/重生成页按旧版本误退原始扣费。单页扣费键存 `single_page_versions.charge_key`（老库懒迁移补列）。**ppt_to_base 懒恢复（2026-10-11 补）**：`ppt_to_base_jobs`（user_id/request_id/charge_key/status/updated_at）在**扣费前**落 running 行，`reconcilePptToBase` 把超 `jobStaleMs` 的 running 残留行置 failed 并按 `charge_key` 补退款；读点 = 同用户下一次生成 + `/api/credits/balance`（站点头部每次加载都查余额），本进程在途任务有注册表守卫。**退款幂等键统一改为定长派生** `refund:<sha256(chargeKey)[0:32]>`（`credits.chargeRefundKeys`）——旧写法 `${chargeKey}:refund` 在超长键下会被 128 截断撞回扣费键，退款被 duplicate 静默吞掉。
 - **软删清理（同日上线）**：`projects.ts` `listProjects` 时懒清理软删超 `ANPPT_V2_PROJECT_RETENTION_DAYS`（默认 7 天）的项目——行级联删除（FK ON）+ 生成图删除（deck 整目录、单页按 version.image_path）；**复刻壳图**（`single_pages.shell_path` 与 `uploads/{userId}/replicate/` 中超期且未被在用页引用的文件）一并清；导出文件仍不清；**credit_ledger 永不删除**。
 
 ## 5. 计费与支付
 
 - 价格表：`src/lib/server/env.ts` DEFAULT_ACTION_PRICES（`deck_page_generate:10`、`export_editable:20`、`export_editable_text:5`、outline/export_image:0）。可用 env `CREDIT_ACTION_PRICES` JSON 覆盖（整体覆盖缺 `export_editable_text` 时轻量档回退 5🌟/页）。
 - 充值档：DEFAULT_RECHARGE_PLANS（¥9.9/100🌟、¥39.9/500🌟、¥79.9/1000🌟、¥149.9/2000🌟），env `RECHARGE_PLANS` 可覆盖。
-- 账：`credit_ledger` 幂等键防重；所有扣费先整单估价+余额预检（402）；失败自动退还（refund 键唯一）。
+- 账：`credit_ledger` 幂等键防重；所有扣费先整单估价+余额预检（402）；失败自动退还（refund 键唯一）。**退款键（2026-10-11）**：扣费/退款成对键由 `credits.chargeRefundKeys` 生成——`chargeKey` 走 cleanKey（trim+截 128），退款键固定为 `refund:<sha256(chargeKey)[0:32]>`，两侧都断言两键不同；改为拼后缀会在超长 chargeKey 下退化成同一个键、退款静默失效。
+- 估价接口：`estimateCredits` 覆盖全部客户端可见单价；单页生成/改图用动作键 `single_page_generate` / `single_page_refine`（价源 `ANPPT_V2_SINGLE_PAGE_CREDITS`，不重复进动作价目表），美化工作台据此显示与预检，不再硬编码 10/20。
 - **幂等键口径（2026-08-24 修复）**：deck 生成/导出的键含服务端 jobId/exportId，客户端不可控；单页生成/改图接受客户端 `requestId`，命中幂等键（`duplicate`）一律 409 `DUPLICATE_REQUEST` 拒绝——此前只防重扣不防重生，重放可扣一次费无限生图且失败分支误退首笔。前端不传 `requestId`（永远落服务端 jobId），拒绝重放不影响第一方 UI。
 - 支付渠道：
   - **epay 支付宝收银台（活）**
@@ -99,8 +100,8 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 401 断言，Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 126 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE
+node scripts/test-generation.mjs  # 当前 415 断言，Codia/生图/VLM 全部 mock
+node scripts/test-backend.mjs     # 当前 127 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
 npm run build
@@ -253,7 +254,8 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 路径：拒绝 `.` / `..` / 编码穿越。预览图只允许 `/api/files/` 与 `data:image`。
 - 壳图清理：软删过期后删 `shell_path`；`uploads/{userId}/replicate/` 中超保留期且未被在用页引用的文件懒清理。导出文件仍不清。
 - 转可编辑：20 页一批；可编辑是位图转 PPTX，不是原槽位（产品边界）。
-- 计费：10🌟/页生成、失败退星；可编辑 20🌟/页。
+- 计费：10🌟/页生成、失败退星；可编辑 20🌟/页。单价由 `/api/credits/estimate` 现读（`single_page_generate`/`export_editable`），客户端不硬编码。
+- **2026-10-11 审查修补**：恢复项目优先用 `page.activeVersionId` 的版本（找不到才回落最新成功版，避免把非当前版本送去转可编辑）；壳图 `imagePaths` 改为定长数组按页对齐（缺失留空，服务端 `ownedReplicateImagePaths` 同样保下标，不再过滤塌缩导致结构卡串页）；`structureExtracted` 只统计非 null 结构卡（VLM 失败不再虚报 N/M）；限流桶各记自己的 windowMs，短窗口调用不再驱逐长窗口桶。
 - 测试：`scripts/tests/ppt-replicate.test.mjs`（套件内段名 [7c]）含结构卡/路径/项目 source/llm-free 隔离/40 页上限/壳图过期清理/美化 URL 白名单/已生成不扣星/402 横幅/409 文案；开关门控在 test-backend.mjs [11]。**禁止真实 VLM/生图/Codia。**
 
 ## 22. 插件运行时三件与先锋插件（pricing / models，2026-09-06）
@@ -270,8 +272,8 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 ## 23. PPT 转模版底座（ppt_to_base，beta，2026-09-15）
 
 - 定位：§18 留下「需程序化底座」缺口的落地。工具页 `/tools/ppt-to-base`（侧栏入口按开关 `ppt_to_base` 门控，beta 期带「试验」标）。**输入是截图/PPT 图片，输出两样：①主标题原文（可复制）②去风格化通用模版底图**——版式栅格/区域位置大小/元素数量形状全保留，具体文字全部替换为中性角色词（"标题/副标题/正文/要点/标签/编号/图片/数据"），配色归一为中性浅色系（白底、浅灰分区、中灰线条、无 Logo/水印）。产物定位 = `templatePages` 真模板位图的通用化来源：拿到手填内容、换风格即可。
-- **主路线·截图 AI 通用化（5🌟/张）**：`POST /api/tools/ppt-to-base`（multipart：file=PNG ≤10MB + requestId；mutation 带 CSRF）。服务端 `src/modules/ppt-to-base/server/base-image.ts`：`assertFeatureVisible('ppt_to_base')` 硬门（开关外用户 404）→ 限流 `ppt-to-base:{uid}` 30 次/时 → `estimateCredits({action:'ppt_to_base'})` 取价（插件动作键 `tool.ppt-to-base`，§22 pricing 契约已映射）→ chargeKey `ppt-to-base:{uid}:{requestId}` 幂等扣费（duplicate→409，不重复扣）→ VLM 抽主标题（带图 vision 分段，**失败降级空串不阻塞主流程**）→ `editImage` 精准编辑 → `saveFile('generated',…,{kind:'ppt-to-base'})` 落盘；任一步失败经 `{chargeKey}:refund` 键全退星星后抛 `toPublicImageError` 公开码。客户端先把任意截图 letterbox 成 1536×864 白底 PNG 再传（`client/image-prepare.ts`）。
+- **主路线·截图 AI 通用化（5🌟/张）**：`POST /api/tools/ppt-to-base`（multipart：file=PNG ≤10MB + requestId；mutation 带 CSRF）。服务端 `src/modules/ppt-to-base/server/base-image.ts`：`assertFeatureVisible('ppt_to_base')` 硬门（开关外用户 404）→ 限流 `ppt-to-base:{uid}` 30 次/时 → `estimateCredits({action:'ppt_to_base'})` 取价（插件动作键 `tool.ppt-to-base`，§22 pricing 契约已映射）→ chargeKey `ppt-to-base:{uid}:{requestId}` 幂等扣费（duplicate→409，不重复扣；扣费前先落 `ppt_to_base_jobs` running 行）→ VLM 抽主标题（带图 vision 分段，**失败降级空串不阻塞主流程**）→ `editImage` 精准编辑 → `saveFile('generated',…,{kind:'ppt-to-base'})` 落盘（行置 succeeded）；任一步失败经定长派生退款键全退星星后抛 `toPublicImageError` 公开码，崩溃/重启打断则走 `reconcilePptToBase` 补退（见 §4）。路由在解析 multipart 之前先做开关硬门 + content-length 预检（formData 会把整个 body 读进内存）。客户端先把任意截图 letterbox 成 1536×864 白底 PNG 再传（`client/image-prepare.ts`）。
 - 生图规范：编辑档默认走 `ANPPT_V2_IMAGE_EDIT_MODEL`（管理端运行时配置可热切换），image2.5 时代档名 `gpt-image-2.5-sunburst`（精准编辑）/ `gpt-image-2.5-flare`（快速）。编辑指令 `BASE_IMAGE_INSTRUCTION` 按 GPT Image 精准编辑最佳实践固化：点名参考图角色 → 改变项/保留项分离 → 不变量重复声明（构图/栅格/区域位置大小/元素数量/栏数/边距/16:9）→ 中性词逐字加引号 → 约束词频与原页面同类文字块数量一致、禁原文字与品牌残留。改提示词先改常量再跑 [7f] 契约断言。
 - image2.5 渠道实况（2026-09-15 校准记录）：an520 中转站已退役（503）；atlascloud 已上架 `openai/gpt-image-2.5-sunburst/edit`（IMAGE-TO-IMAGE，≤16 参考图），但**入参与现网 gpt-image-2/edit 不同**：图字段是 `images` 数组（现网灾备调用体用 `image` 单数），size 枚举无 1536x864，16:9 选 `2048x1152`，quality 新增 xhigh/max。主站恢复后切 2.5 只改 `ANPPT_V2_IMAGE_EDIT_MODEL`；若要灾备也上 2.5，需同步改 `images.ts` atlas 分支调用体。校准脚本 `output/ppt-to-base-e2e/calibrate-prompt.mjs`（主站默认 / 加 `atlas:` 前缀走灾备）。
 - **次路线·pptx 本地擦除（免费）**：页面底部折叠入口。上传 `.pptx`，浏览器本地 jszip + DOMParser 解析 OOXML 并重绘——不画任何文字，保留版式/配色/图片/装饰形状——导出 1536×864 底座 PNG + 槽位 JSON。无任何服务端路由、无计价；文件不出浏览器。渲染划界（有意为之）：文字一律不画只收槽位；graphicFrame（表格/图表/SmartArt）跳过并计数提示；未识别 prstGeom 回退 rect；渐变只近似线性、组旋转/flip 忽略。**文字已烧进位图的页面擦不掉**——那类页正由主路线覆盖，两路互补。
-- 测试：`scripts/tests/ppt-to-base.test.mjs`——[7e]（17 断言）钉 pptx 纯函数层契约（EMU 换算、Office 基准色值 tint 0.2≈#d9e2f3 / shade 0.5≈#203864、槽位角色启发式）；[7f]（13 断言）截图 AI 路线服务端全 mock：成功链路（标题+落盘+扣 5🌟）、提示词契约（点名参考图/改变项不变量分离/中性词加引号）、VLM vision 分段、requestId 重放 409 且不重复扣费、VLM 失败降级、edits 400→`IMAGE_REQUEST_INVALID` 且全退、开关外 404、余额不足 402、缺 requestId 400、估价 5🌟。真实 image2.5 校准（付费）走 `output/ppt-to-base-e2e/calibrate-prompt.mjs` 手测，不进套件。
+- 测试：`scripts/tests/ppt-to-base.test.mjs`——[7e]（17 断言）钉 pptx 纯函数层契约（EMU 换算、Office 基准色值 tint 0.2≈#d9e2f3 / shade 0.5≈#203864、槽位角色启发式）；[7f]（19 断言）截图 AI 路线服务端全 mock：成功链路（标题+落盘+扣 5🌟）、提示词契约（点名参考图/改变项不变量分离/中性词加引号）、VLM vision 分段、requestId 重放 409 且不重复扣费、VLM 失败降级、edits 400→`IMAGE_REQUEST_INVALID` 且全退、开关外 404、余额不足 402、缺 requestId 400、估价 5🌟、崩溃残留行懒恢复补退（在途不误退 / 幂等）。真实 image2.5 校准（付费）走 `output/ppt-to-base-e2e/calibrate-prompt.mjs` 手测，不进套件。

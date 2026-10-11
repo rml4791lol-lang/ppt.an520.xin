@@ -31,8 +31,15 @@ export async function runPptReplicateTests(ctx) {
     ];
     check('已生成页不进待扣费名单，空文案也不扣',
       pagesLogic.indexesNeedingGenerate(samplePages).join(',') === '1'
-        && pagesLogic.remainingGenerateCredits(samplePages) === 10
-        && pagesLogic.remainingEditableCredits(samplePages) === 20);
+        && pagesLogic.remainingGenerateCredits(samplePages, 10) === 10
+        && pagesLogic.remainingEditableCredits(samplePages, 20) === 20);
+    check('单价由入参决定（客户端不再硬编码 10/20）',
+      pagesLogic.remainingGenerateCredits(samplePages, 12) === 12
+        && pagesLogic.remainingEditableCredits(samplePages, 25) === 25);
+    check('单页单价走 /api/credits/estimate 同一份配置',
+      credits.estimateCredits({ action: 'single_page_generate', pages: 1 }).unitPrice === llmConfig.singlePageCredits
+        && credits.estimateCredits({ action: 'single_page_generate', pages: 3 }).credits === llmConfig.singlePageCredits * 3
+        && credits.estimateCredits({ action: 'single_page_refine', pages: 1 }).unitPrice === llmConfig.singlePageCredits);
     check('星星不足横幅不被成功文案盖掉',
       pagesLogic.buildGenerateFinishBanner({
         newlyOk: 2, failed: 0, skippedDone: 0, stoppedForCredits: true, creditsMessage: '星星不足',
@@ -107,6 +114,25 @@ export async function runPptReplicateTests(ctx) {
     check('归属校验接受自己的上传路径', storage.parseOwnedUploadRelPath(uid, shell.relPath) === shell.relPath);
     const victimShell = await storage.saveFile('uploads', 'victim_user', Buffer.from(PNG_1X1_B64, 'base64'), { kind: 'shell', ext: '.png' }, llmConfig);
     const traversalPath = `uploads/${uid}/../${victimShell.relPath.slice('uploads/'.length)}`;
+    const alignedPaths = replicate.ownedReplicateImagePaths(
+      JSON.stringify(['', shell.relPath, `/api/files/${victimShell.relPath}`]),
+      uid,
+      3,
+    );
+    check('壳图路径定长按页对齐（缺失留空、越权作废）',
+      alignedPaths.length === 3 && alignedPaths[0] === '' && alignedPaths[1] === shell.relPath && alignedPaths[2] === '');
+    const gapFetcher = makeMockFetcher([{
+      match: '/chat/completions',
+      payload: { choices: [{ message: { content: '{"family":"cards","zones":"三卡","slots":"3 张卡","world":"水彩","forbidden":[]}' } }] },
+    }]);
+    const gapExtract = await replicate.extractReplicatePageHints(
+      [Buffer.alloc(0), Buffer.from(PNG_1X1_B64, 'base64')],
+      { fetchImpl: gapFetcher, config: llmConfig },
+      { maxCount: 1 },
+    );
+    check('缺失壳图不吃抽取名额，结构卡按页对齐',
+      gapExtract.extracted === 1 && gapExtract.cards[0] === null && Boolean(gapExtract.cards[1])
+        && gapFetcher.calls.length === 1);
     check('归属校验拒绝 .. 穿越', storage.parseOwnedUploadRelPath(uid, traversalPath) === null);
     await expectThrows('复刻 imagePath 带 .. 返回 403', () =>
       singlePages.generateSinglePage(uid, {
@@ -223,6 +249,13 @@ export async function runPptReplicateTests(ctx) {
     );
     check('结构抽取超过截止时间则降级为空卡',
       dead.extracted === 0 && deadFetcher.calls.length === 0);
+    const vlmDownFetcher = makeMockFetcher([{ match: '/chat/completions', payload: () => { throw new Error('vlm down'); } }]);
+    const degraded = await replicate.extractReplicatePageHints(
+      [Buffer.from(PNG_1X1_B64, 'base64')],
+      { fetchImpl: vlmDownFetcher, config: llmConfig },
+    );
+    check('VLM 失败不算已读到结构（structureExtracted 不虚报）',
+      degraded.extracted === 0 && degraded.cards[0] === null && degraded.text.includes('结构未知'));
 
     const planRaw = JSON.stringify({
       slides: [

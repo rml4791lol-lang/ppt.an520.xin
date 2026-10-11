@@ -1,7 +1,8 @@
 // 单页生成器（创意页面生成器）：generate / refine / 导出图片版 PPTX。
 // 与 deck 共用生图上游与扣费语义：每张 singlePageCredits（默认 10🌟），失败自动退还。
 import { ApiError, validationError } from '../http';
-import { debitCredits, refundCredits } from '../credits';
+import { withTransaction } from '../db';
+import { chargeRefundKeys, debitCredits, refundCredits } from '../credits';
 import { findUserById } from '../auth';
 import { assertFeatureVisible } from '../feature-flags';
 import { getGenerationConfig } from './config';
@@ -255,9 +256,9 @@ async function runSinglePageJob(
   const runDeps: SinglePageDeps = { ...deps, config };
   const unitPrice = config.singlePageCredits;
   const jobId = genId('job');
-  // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费
-  const chargeKey = `single-page:${page.pageId}:${opts.requestId || jobId}`.trim().slice(0, 128);
-  const refundKey = `${chargeKey}:refund`;
+  // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费；
+  // 退款键由扣费键定长派生（后缀式退款键在超长 requestId 下会被截回扣费键，退款静默失效）
+  const { chargeKey, refundKey } = chargeRefundKeys(`single-page:${page.pageId}:${opts.requestId || jobId}`);
   const { prompt, referencePath } = opts.replicate
     ? { prompt: buildReplicateCopyPrompt({ title: page.title, content: page.content }), referencePath: null }
     : buildPagePrompt(page, opts.refineInstruction);
@@ -266,16 +267,29 @@ async function runSinglePageJob(
   const ts = nowMs();
   markSinglePageActive(page.pageId);
   try {
-    getGenDb()
-      .prepare(
-        `INSERT INTO single_page_versions
-          (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?, ?)`,
-      )
-      .run(versionId, page.pageId, opts.kind === 'single-refine' ? 'refine' : 'generate', prompt, jobId, chargeKey, ts, ts);
-    getGenDb()
-      .prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?')
-      .run('running', '', ts, page.pageId);
+    // 读页状态 + 落 version + 置 running 同一 BEGIN IMMEDIATE 事务：并发双击只有一路能通过，
+    // 另一路拿到 409（否则两路各插版本、各扣一次星，结果 last-writer-wins）
+    const started = withTransaction(getGenDb(), () => {
+      const current = getGenDb()
+        .prepare('SELECT status, error FROM single_pages WHERE id = ? AND user_id = ?')
+        .get(page.pageId, page.userId) as Row | undefined;
+      if (!current) throw new ApiError('PAGE_NOT_FOUND', '页面不存在', 404, false);
+      const status = String(current.status || 'idle');
+      if (status === 'running' || status === 'queued') {
+        throw new ApiError('GENERATION_RUNNING', '该页正在生成中，请稍候', 409, true);
+      }
+      getGenDb()
+        .prepare(
+          `INSERT INTO single_page_versions
+            (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?, ?)`,
+        )
+        .run(versionId, page.pageId, opts.kind === 'single-refine' ? 'refine' : 'generate', prompt, jobId, chargeKey, ts, ts);
+      getGenDb()
+        .prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?')
+        .run('running', '', ts, page.pageId);
+      return { status, error: String(current.error || '') };
+    });
 
     let debit;
     try {
@@ -307,8 +321,8 @@ async function runSinglePageJob(
         versionId,
       );
       getGenDb().prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
-        page.status,
-        page.error,
+        started.status,
+        started.error,
         nowMs(),
         page.pageId,
       );

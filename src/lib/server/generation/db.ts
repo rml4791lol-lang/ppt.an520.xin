@@ -154,6 +154,18 @@ CREATE TABLE IF NOT EXISTS export_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_export_jobs_user ON export_jobs(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_export_jobs_ref ON export_jobs(user_id, ref_type, ref_id, kind, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ppt_to_base_jobs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  request_id TEXT NOT NULL DEFAULT '',
+  charge_key TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'running',
+  error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ppt_to_base_jobs_user ON ppt_to_base_jobs(user_id, status, updated_at);
 `;
 
 const migrated = new WeakSet<DatabaseSync>();

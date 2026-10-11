@@ -8,7 +8,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import { ApiError, validationError } from '@/lib/server/http';
-import { debitCredits, estimateCredits, getBalance, refundCredits } from '@/lib/server/credits';
+import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '@/lib/server/credits';
 import { createPdfToPptTask, getTask, uploadPdf, type CodiaTaskView } from './codia';
 import { withTransaction } from '@/lib/server/db';
 import { chatCompletion } from '@/lib/server/engine';
@@ -262,15 +262,16 @@ async function prepareEditablePdf(row: ExportRow, config: GenerationConfig): Pro
   return { pdf: await buildImagePdf(images), pageCount: images.length };
 }
 
-/** 退星（幂等：refund 键唯一，重复执行不重复返还）；键前缀与扣费时一致（按 kind 分档） */
+/** 退星（幂等：退款键由扣费键定长派生，重复执行不重复返还）；键前缀与扣费时一致（按 kind 分档） */
 function refundEditableCharge(row: ExportRow): void {
   const charged = Number(row.charged_credits) || 0;
   if (charged <= 0) return;
   const ledgerPrefix = String(row.kind) === 'editable_text' ? 'export-editable-text' : 'export-editable';
   try {
+    const { refundKey } = chargeRefundKeys(`${ledgerPrefix}:${row.ref_id}:${row.id}`);
     refundCredits(String(row.user_id), charged, {
       reason: '可编辑导出失败退回',
-      idempotencyKey: `${ledgerPrefix}:${row.ref_id}:${row.id}:refund`,
+      idempotencyKey: refundKey,
       refType: String(row.ref_type || 'deck'),
       refId: String(row.ref_id),
     });
@@ -550,9 +551,10 @@ async function launchEditableExport(
       now,
     );
     const ledgerPrefix = kind === 'editable_text' ? 'export-editable-text' : 'export-editable';
+    const { chargeKey } = chargeRefundKeys(`${ledgerPrefix}:${refId}:${exportId}`);
     debitCredits(userId, estimate.credits, {
       reason: kind === 'editable_text' ? `转文字可编辑 PPTX（${pageCount} 页）` : `转可编辑 PPTX（${pageCount} 页）`,
-      idempotencyKey: `${ledgerPrefix}:${refId}:${exportId}`,
+      idempotencyKey: chargeKey,
       refType,
       refId,
     });

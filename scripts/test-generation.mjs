@@ -739,8 +739,8 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   const slideIds = s5.slides.map((s) => s.slideId);
   check('逐页 debit 键 = deck-generate:{deckId}:{jobId}:{slideId}',
     slideIds.every((sid) => keys.includes(`deck-generate:${deck.id}:${jobId}:${sid}`)));
-  check('失败页 refund 键唯一且只退一次',
-    keys.filter((k) => k === `deck-generate:${deck.id}:${jobId}:${slideIds[1]}:refund`).length === 1);
+  const deckRefundKey = credits.deriveRefundKey(`deck-generate:${deck.id}:${jobId}:${slideIds[1]}`);
+  check('失败页 refund 键唯一且只退一次', keys.filter((k) => k === deckRefundKey).length === 1);
 
   const genPrompts = fullFetcher.calls
     .filter((c) => c.url.includes('/images/generations'))
@@ -1076,6 +1076,29 @@ console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
   await expectThrows('失败页同 requestId 重放也被拒（不再误退）', () =>
     singlePages.generateSinglePage(uid, { pageId: 'page-004', content: '会失败的内容', requestId: 'replay-003' }, okDeps), 'DUPLICATE_REQUEST');
   check('重放后余额不变（无误退）', credits.getBalance(uid) === replayBefore - 20, `实际 ${credits.getBalance(uid)}`);
+
+  // 超长 requestId（chargeKey 被 cleanKey 截到 128）：退款键必须是定长派生值，
+  // 否则 `${chargeKey}:refund` 再截回扣费键、退款被 duplicate 静默吞掉，失败不退星。
+  const longRequestId = `long-${'x'.repeat(200)}`;
+  const longBefore = credits.getBalance(uid);
+  const rfLong = await singlePages.generateSinglePage(
+    uid,
+    { pageId: 'pg-long-replay', content: '会失败的内容', requestId: longRequestId },
+    okDeps,
+  );
+  check('超长 requestId 失败仍出图失败状态', rfLong.status === 'failed');
+  check('超长 requestId 失败路径成功退星（余额不变）',
+    credits.getBalance(uid) === longBefore, `before=${longBefore} after=${credits.getBalance(uid)}`);
+  const longChargeKey = `single-page:pg-long-replay:${longRequestId}`.trim().slice(0, 128);
+  const { getDb: getLedgerDb } = await import('../src/lib/server/db.ts');
+  const longRows = getLedgerDb()
+    .prepare('SELECT idempotency_key, delta FROM credit_ledger WHERE user_id = ?')
+    .all(uid)
+    .filter((r) => String(r.idempotency_key) === credits.deriveRefundKey(longChargeKey));
+  check('超长 requestId 退款键与扣费键不同且只退一次',
+    credits.deriveRefundKey(longChargeKey) !== longChargeKey
+      && longRows.length === 1 && Number(longRows[0].delta) === 10,
+    `refundRows=${longRows.length}`);
 }
 
 console.log('\n[7b] 单页项目详情 / 版本选择 / i2i 原稿重设计');
@@ -1194,7 +1217,7 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
     .prepare('SELECT idempotency_key FROM credit_ledger WHERE user_id = ? AND delta > 0').all(uid2)
     .map((r) => String(r.idempotency_key));
   check('恢复：refund 键与正常失败退款同格式',
-    slides9.every((s) => refundKeys.includes(`deck-generate:${d9.id}:${job9.jobId}:${s.slideId}:refund`)));
+    slides9.every((s) => refundKeys.includes(credits.deriveRefundKey(`deck-generate:${d9.id}:${job9.jobId}:${s.slideId}`))));
   const againHealed = decks.getDeckState(uid2, d9.id);
   check('恢复幂等：重复读不重复退款', credits.getBalance(uid2) === 100 && againHealed.deck.status === 'confirmed');
 

@@ -103,12 +103,25 @@ function getTransporter(): Promise<nodemailer.Transporter> {
   return transporterPromise;
 }
 
+/**
+ * 解析 SMTP_FROM：支持 `显示名 <地址>` 写法，裸地址则用固定显示名。
+ * 地址取 SMTP_FROM 覆盖值（env 已默认回退 SMTP_USER）——中继/代发场景发信地址可以不等于登录账号；
+ * QQ 邮箱要求 From 地址 = SMTP_USER 的约束交给部署侧（设 SMTP_FROM=$SMTP_USER 或不设）。
+ */
+export function parseSmtpFrom(value: string): { name: string; address: string } {
+  const raw = String(value || '').trim();
+  const matched = /^(.*)<([^<>]+)>\s*$/.exec(raw);
+  if (!matched) return { name: 'AnPPT', address: raw };
+  const name = matched[1].trim().replace(/^"(.*)"$/, '$1').trim();
+  return { name: name || 'AnPPT', address: matched[2].trim() };
+}
+
 async function sendOtpEmail(email: string, code: string): Promise<void> {
   const env = getEnv();
   if (!env.smtpReady) throw new ApiError('OTP_DELIVERY_UNAVAILABLE', '邮件验证码暂不可用，请稍后重试', 503, true);
   const transporter = await getTransporter();
   await transporter.sendMail({
-    from: { name: 'AnPPT', address: env.smtp.user },
+    from: parseSmtpFrom(env.smtp.from),
     to: email,
     subject: 'AnPPT 登录验证码',
     html: emailHtml(code),

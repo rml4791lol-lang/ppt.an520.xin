@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { getDb, withTransaction } from './db';
 import { getEnv } from './env';
 import { ApiError, validationError } from './http';
 import { getDefaultCtx } from '@/lib/plugin/default';
+import { getGenerationConfig } from './generation/config';
 import { actionKeyForEnvKey, type PricingService } from '@/lib/plugin/contracts/pricing';
 
 export interface LedgerOptions {
@@ -34,6 +35,23 @@ function cleanKey(key: unknown): string {
   const k = String(key ?? '').trim();
   if (!k) throw validationError('缺少幂等键');
   return k.slice(0, 128);
+}
+
+/**
+ * 扣费键 + 与之配对的退款幂等键（两者都按 cleanKey 归一）。
+ * 退款键必须是定长派生值：写成 `${chargeKey}:refund` 时，超长 chargeKey 先被截成 128 字符、
+ * 拼后缀后又截回同一个键，退款会命中扣费行被当作 duplicate 静默吞掉（不退星、无日志）。
+ */
+export function chargeRefundKeys(rawChargeKey: unknown): { chargeKey: string; refundKey: string } {
+  const chargeKey = cleanKey(rawChargeKey);
+  const refundKey = `refund:${createHash('sha256').update(chargeKey).digest('hex').slice(0, 32)}`;
+  if (refundKey === chargeKey) throw new Error('退款幂等键与扣费键相同，拒绝扣费');
+  return { chargeKey, refundKey };
+}
+
+/** 已存库的扣费键 → 退款幂等键（懒恢复按 ledger 实扣金额补退；与正常失败退款同键，不双退）。 */
+export function deriveRefundKey(rawChargeKey: unknown): string {
+  return chargeRefundKeys(rawChargeKey).refundKey;
 }
 
 function readBalance(userId: string): number {
@@ -201,15 +219,27 @@ export interface EstimateInput {
 export function estimateCredits(input: EstimateInput) {
   const prices = getEnv().creditActionPrices;
   const action = String(input.action || '').trim();
-  if (!action || !(action in prices)) throw validationError('未知的计费动作');
+  // 单页生成/改图的价格在生成链配置（ANPPT_V2_SINGLE_PAGE_CREDITS），不进动作价目表：
+  // 客户端展示与实际扣费读同一个值，不硬编码 10/20 造成覆盖后漂移。
+  const configPrice =
+    action === 'single_page_generate' || action === 'single_page_refine'
+      ? getGenerationConfig().singlePageCredits
+      : null;
+  if (!action || (configPrice === null && !(action in prices))) throw validationError('未知的计费动作');
   // 生产读价走插件服务键（插件内部仍读同一 env 覆盖链，数字不变）；
   // 未映射插件动作键的自定义 env 键回退直读，兼容 CREDIT_ACTION_PRICES 扩展。
   const actionKey = actionKeyForEnvKey(action);
-  const unitPrice = actionKey
+  const unitPrice = configPrice ?? (actionKey
     ? getDefaultCtx().use<PricingService>('pricing').quote(actionKey)
-    : prices[action];
+    : prices[action]);
   let pages = 1;
-  if (action === 'deck_page_generate' || action === 'deck_page_refine' || action === 'export_editable' || action === 'export_editable_text') {
+  if (
+    action === 'deck_page_generate'
+    || action === 'deck_page_refine'
+    || action === 'export_editable'
+    || action === 'export_editable_text'
+    || configPrice !== null
+  ) {
     pages = Math.floor(Number(input.pages) || 0);
     if (!Number.isSafeInteger(pages) || pages < 1 || pages > 100) {
       throw validationError('页数需为 1-100 的整数');

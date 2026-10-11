@@ -5,8 +5,6 @@ export type BeautifyCopyMode = "improve" | "strict";
 export type BeautifyGapPolicy = "topic" | "brief" | "skip";
 export type BeautifyBannerKind = "err" | "warn" | "ok";
 
-export const BEAUTIFY_PAGE_CREDITS = 10;
-export const BEAUTIFY_EDITABLE_CREDITS = 20;
 export const BEAUTIFY_EXPORT_BATCH = 20;
 export const BEAUTIFY_DRAFT_KEY = "anppt-replicate-draft-v1";
 
@@ -92,12 +90,13 @@ export function indexesNeedingGenerate(pages: BeautifyPage[]): number[] {
   }, []);
 }
 
-export function remainingGenerateCredits(pages: BeautifyPage[]): number {
-  return indexesNeedingGenerate(pages).length * BEAUTIFY_PAGE_CREDITS;
+/** 单价由服务端 /api/credits/estimate 给出（不在客户端硬编码，避免价格覆盖后预检/文案漂移） */
+export function remainingGenerateCredits(pages: BeautifyPage[], unitPrice: number): number {
+  return indexesNeedingGenerate(pages).length * unitPrice;
 }
 
-export function remainingEditableCredits(pages: BeautifyPage[]): number {
-  return pages.filter((page) => page.imageUrl).length * BEAUTIFY_EDITABLE_CREDITS;
+export function remainingEditableCredits(pages: BeautifyPage[], unitPrice: number): number {
+  return pages.filter((page) => page.imageUrl).length * unitPrice;
 }
 
 export function parseBeautifyDraft(raw: string | null): BeautifyDraft | null {

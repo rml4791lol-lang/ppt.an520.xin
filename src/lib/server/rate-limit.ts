@@ -4,20 +4,27 @@
 interface Bucket {
   startedAt: number;
   count: number;
+  /** 自己的窗口：清理/过期判定必须按各自窗口，不能被调用方的短窗口提前驱逐 */
+  windowMs: number;
 }
 
 const buckets = new Map<string, Bucket>();
 
-function cleanup(now: number, windowMs: number): void {
+function cleanup(now: number): void {
   if (buckets.size < 4096) return;
   for (const [key, bucket] of buckets) {
-    if (now - bucket.startedAt > windowMs * 2) buckets.delete(key);
+    if (now - bucket.startedAt > bucket.windowMs * 2) buckets.delete(key);
   }
   while (buckets.size > 8192) {
     const oldest = buckets.keys().next().value;
     if (oldest === undefined) break;
     buckets.delete(oldest);
   }
+}
+
+/** 桶已过期（或调用方换了窗口）：按桶自己的 windowMs 判定，与清理逻辑同源 */
+function staleBucket(bucket: Bucket, now: number, windowMs: number): boolean {
+  return bucket.windowMs !== windowMs || now - bucket.startedAt > windowMs;
 }
 
 export interface RateLimitResult {
@@ -28,10 +35,10 @@ export interface RateLimitResult {
 
 export function hitRateLimit(key: string, opts: { windowMs: number; max: number }): RateLimitResult {
   const now = Date.now();
-  cleanup(now, opts.windowMs);
+  cleanup(now);
   const current = buckets.get(key);
-  if (!current || now - current.startedAt > opts.windowMs) {
-    buckets.set(key, { startedAt: now, count: 1 });
+  if (!current || staleBucket(current, now, opts.windowMs)) {
+    buckets.set(key, { startedAt: now, count: 1, windowMs: opts.windowMs });
     return { allowed: true, count: 1, retryAfterSeconds: 0 };
   }
   current.count += 1;
@@ -46,10 +53,10 @@ export function consumeRateLimit(
 ): RateLimitResult & { consumed: number } {
   const cost = Math.max(0, Math.floor(Number(opts.cost) || 0));
   const now = Date.now();
-  cleanup(now, opts.windowMs);
+  cleanup(now);
   let current = buckets.get(key);
-  if (!current || now - current.startedAt > opts.windowMs) {
-    current = { startedAt: now, count: 0 };
+  if (!current || staleBucket(current, now, opts.windowMs)) {
+    current = { startedAt: now, count: 0, windowMs: opts.windowMs };
     buckets.set(key, current);
   }
   const remaining = Math.max(0, opts.max - current.count);

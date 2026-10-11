@@ -29,7 +29,7 @@ ANPPT_V2_DATA_DIR=/opt/anppt-v2/shared/data
 ANPPT_OTP_HMAC_SECRET=<openssl rand -hex 32>
 
 # 从 /opt/slideflow-studio/shared/.env 平移：
-SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM   # QQ 邮箱授权码
+SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM   # QQ 邮箱授权码；SMTP_FROM 不设则地址回落 SMTP_USER，设了地址须等于 SMTP_USER
 WECHAT_PAY_ENABLED=true 及全部 WECHAT_PAY_*                  # 正式商户号参数
 EPAY_ENABLED=true 及全部 EPAY_*
 ANPPT_V2_LLM_API_KEY                                        # DeepSeek 官方，与生图密钥分开
