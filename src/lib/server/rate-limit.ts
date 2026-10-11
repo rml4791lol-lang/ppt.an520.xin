@@ -39,6 +39,27 @@ export function hitRateLimit(key: string, opts: { windowMs: number; max: number 
   return { allowed: current.count <= opts.max, count: current.count, retryAfterSeconds };
 }
 
+/** 一次消耗 cost 个名额；窗口不够则吃掉剩余，不透支。allowed=是否拿满 cost。 */
+export function consumeRateLimit(
+  key: string,
+  opts: { windowMs: number; max: number; cost: number },
+): RateLimitResult & { consumed: number } {
+  const cost = Math.max(0, Math.floor(Number(opts.cost) || 0));
+  const now = Date.now();
+  cleanup(now, opts.windowMs);
+  let current = buckets.get(key);
+  if (!current || now - current.startedAt > opts.windowMs) {
+    current = { startedAt: now, count: 0 };
+    buckets.set(key, current);
+  }
+  const remaining = Math.max(0, opts.max - current.count);
+  const consumed = Math.min(cost, remaining);
+  current.count += consumed;
+  const retryAfterSeconds =
+    consumed < cost ? Math.max(1, Math.ceil((current.startedAt + opts.windowMs - now) / 1000)) : 0;
+  return { allowed: consumed === cost, consumed, count: current.count, retryAfterSeconds };
+}
+
 export function resetRateLimit(key: string): void {
   buckets.delete(key);
 }

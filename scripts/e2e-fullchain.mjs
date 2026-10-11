@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // 对抗审查第二层：真实上游全链路（注册→解析→大纲→梳理→冻结→风格→生成→导出→账对）。
-// 需要 dev/prod server 已带真实上游 env 启动（LLM/生图走 127.0.0.1:6800 隧道）：
-//   ssh -L 6800:127.0.0.1:6800 hk-hermes   # 先打隧道
+// 需要 dev/prod server 已带真实上游 env 启动（LLM=DeepSeek 官方，生图=sqface）：
 //   BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs
 // 会真实消耗上游生图（页数控制在 2 页以内）与账户星星。截图输出 scripts/output/。
 import { mkdirSync } from 'node:fs';

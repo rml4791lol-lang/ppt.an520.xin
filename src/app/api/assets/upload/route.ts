@@ -12,7 +12,14 @@ export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   // 上传免费但占磁盘/带宽：按用户限 60 次/小时
   const rate = hitRateLimit(`upload:${user.id}`, { windowMs: 60 * 60 * 1000, max: 60 });
-  if (!rate.allowed) throw new ApiError('UPLOAD_RATE_LIMITED', '上传过于频繁，请稍后再试', 429, true);
+  if (!rate.allowed) {
+    throw new ApiError(
+      'UPLOAD_RATE_LIMITED',
+      `上传过于频繁（每小时最多 60 个文件），请 ${rate.retryAfterSeconds} 秒后再试`,
+      429,
+      true,
+    );
+  }
   const config = getGenerationConfig();
   let form: FormData;
   try {

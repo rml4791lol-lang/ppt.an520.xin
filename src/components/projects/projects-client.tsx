@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PlusIcon } from "@/components/icons";
+import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
 
 interface Project {
   id: string;
   title?: string;
   name?: string;
   projectType?: string;
+  source?: "single" | "replicate";
   updatedAt?: string;
   createdAt?: string;
   coverUrl?: string | null;
@@ -115,7 +117,13 @@ export function ProjectsClient() {
           {projects.map((p) => (
             <div key={p.id} className="group relative">
               <Link
-                href={p.projectType === "single-page" ? `/single-page?projectId=${p.id}` : `/deck/${p.id}`}
+                href={
+                  p.source === "replicate"
+                    ? beautifyHref(p.id)
+                    : p.projectType === "single-page"
+                      ? `/single-page?projectId=${p.id}`
+                      : `/deck/${p.id}`
+                }
                 className="block rounded-2xl border border-line bg-card p-4 shadow-card transition hover:shadow-pop"
               >
                 <div className="flex aspect-[16/9] items-center justify-center rounded-xl bg-page text-ink-4">
@@ -131,6 +139,7 @@ export function ProjectsClient() {
                   )}
                 </div>
                 <p className="mt-3 truncate text-sm font-medium text-ink">
+                  {p.source === "replicate" ? "美化 · " : ""}
                   {p.title ?? p.name ?? "未命名项目"}
                 </p>
                 <p className="mt-1 text-xs text-ink-4">

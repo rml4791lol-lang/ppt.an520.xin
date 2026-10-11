@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/server/auth';
-import { startUploadedEditableExport } from '@/lib/server/exports';
+import { startUploadedEditableExport } from '@/modules/editable-export/server/editable';
 import { ApiError, jsonOk } from '@/lib/server/http';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { defineApiRoute } from '@/lib/server/generation/route';

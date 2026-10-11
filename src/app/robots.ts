@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: ['/', '/style-packs', '/login', '/showcase-cases'],
-        disallow: ['/api/', '/deck/', '/projects', '/recharge', '/account/', '/single-page'],
+        disallow: ['/api/', '/deck/', '/projects', '/recharge', '/account/', '/single-page', '/beautify', '/tools/'],
       },
     ],
     sitemap: 'https://ppt.an520.xin/sitemap.xml',

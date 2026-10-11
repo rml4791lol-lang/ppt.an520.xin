@@ -1,0 +1,67 @@
+import { jsonOk, readJsonBody, ApiError } from '@/lib/server/http';
+import { requireUser } from '@/lib/server/auth';
+import { assertFeatureVisible } from '@/lib/server/feature-flags';
+import { parseDocument } from '@/lib/server/documents';
+import { getGenerationConfig } from '@/lib/server/generation/config';
+import { runReplicatePlan } from '@/modules/ppt-replicate/server/replicate';
+import { defineApiRoute } from '@/lib/server/generation/route';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+async function fileText(file: FormDataEntryValue | null, maxBytes: number): Promise<string> {
+  if (!(file instanceof File) || file.size <= 0) return '';
+  if (file.size > maxBytes) throw new ApiError('FILE_TOO_LARGE', '单文件最大 30MB', 413, false);
+  const parsed = await parseDocument(Buffer.from(await file.arrayBuffer()), file.name);
+  return parsed.text.trim();
+}
+
+async function readPlanInput(request: Request): Promise<{
+  topic: string;
+  sourceText: string;
+  outlineText: string;
+  pageCount: number;
+  gapPolicy: string;
+  copyMode: string;
+  imagePaths: unknown;
+}> {
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('multipart/form-data')) {
+    const form = await request.formData();
+    const maxBytes = getGenerationConfig().uploadMaxBytes;
+    const sourceText = [String(form.get('sourceText') || '').trim(), await fileText(form.get('file'), maxBytes)]
+      .filter(Boolean)
+      .join('\n\n');
+    const outlineText = [String(form.get('outlineText') || '').trim(), await fileText(form.get('outlineFile'), maxBytes)]
+      .filter(Boolean)
+      .join('\n\n');
+    return {
+      topic: String(form.get('topic') || ''),
+      sourceText,
+      outlineText,
+      pageCount: Number(form.get('pageCount')),
+      gapPolicy: String(form.get('gapPolicy') || ''),
+      copyMode: String(form.get('copyMode') || ''),
+      imagePaths: form.get('imagePaths'),
+    };
+  }
+  const body = await readJsonBody(request);
+  return {
+    topic: String(body.topic ?? ''),
+    sourceText: String(body.sourceText ?? ''),
+    outlineText: String(body.outlineText ?? ''),
+    pageCount: Number(body.pageCount),
+    gapPolicy: String(body.gapPolicy ?? ''),
+    copyMode: String(body.copyMode ?? ''),
+    imagePaths: body.imagePaths,
+  };
+}
+
+/** 按主题 / 大纲 / 材料拆成与壳页数一致的文案。免费 LLM，不计星星。有壳图时先读结构再拆页。 */
+export const POST = defineApiRoute(async (request) => {
+  const { user } = requireUser(request);
+  assertFeatureVisible('ppt_replicate', user);
+  const input = await readPlanInput(request);
+  const result = await runReplicatePlan(user.id, input);
+  return jsonOk(result);
+}, { mutation: true });

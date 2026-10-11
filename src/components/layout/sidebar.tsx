@@ -12,12 +12,15 @@ import {
   FolderIcon,
   HeadsetIcon,
   HomeIcon,
+  ImageIcon,
   LayersIcon,
+  MonitorIcon,
   ReceiptIcon,
   ShieldIcon,
   SparklesIcon,
   WandIcon,
 } from "@/components/icons";
+import { useFeatureFlag } from "@/components/use-feature-flag";
 
 interface NavItem {
   key: string;
@@ -66,11 +69,16 @@ export function SidebarNav({
   const pathname = usePathname();
   const hash = useHash();
   const [serviceOpen, setServiceOpen] = useState(false);
+  const showBeautify = useFeatureFlag("ppt_replicate");
+  const showPptToBase = useFeatureFlag("ppt_to_base");
 
   const groups: NavItem[][] = [
     [
       { key: "home", label: "首页", href: "/", icon: HomeIcon },
       { key: "styles", label: "设计风格", href: "/style-packs", icon: SparklesIcon },
+      ...(showBeautify
+        ? [{ key: "beautify", label: "PPT 美化", href: "/beautify", icon: MonitorIcon, badge: "试验" }]
+        : []),
       { key: "projects", label: "我的项目", href: "/projects", icon: FolderIcon },
       { key: "exports", label: "下载中心", href: "/exports", icon: DownloadIcon },
     ],
@@ -99,6 +107,9 @@ export function SidebarNav({
         icon: BookIcon,
         badge: "会员权益",
       },
+      ...(showPptToBase
+        ? [{ key: "ppt-to-base", label: "PPT 转模版底座", href: "/tools/ppt-to-base", icon: ImageIcon, badge: "试验" }]
+        : []),
       { key: "single-page", label: "创意页面生成器", href: "/single-page", icon: WandIcon },
     ],
     ...(isAdmin

@@ -1,7 +1,7 @@
 import { jsonOk, readJsonBody } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
-import { quoteExport } from '@/lib/server/exports';
+import { quoteExport } from '@/modules/editable-export/server/editable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

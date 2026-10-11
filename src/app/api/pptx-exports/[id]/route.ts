@@ -1,7 +1,7 @@
 import { jsonOk } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute, paramOf } from '@/lib/server/generation/route';
-import { getExport } from '@/lib/server/exports';
+import { getExport } from '@/modules/editable-export/server/editable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { getDb, withTransaction } from './db';
 import { getEnv } from './env';
 import { ApiError, validationError } from './http';
+import { getDefaultCtx } from '@/lib/plugin/default';
+import { actionKeyForEnvKey, type PricingService } from '@/lib/plugin/contracts/pricing';
 
 export interface LedgerOptions {
   reason: string;
@@ -200,7 +202,12 @@ export function estimateCredits(input: EstimateInput) {
   const prices = getEnv().creditActionPrices;
   const action = String(input.action || '').trim();
   if (!action || !(action in prices)) throw validationError('未知的计费动作');
-  const unitPrice = prices[action];
+  // 生产读价走插件服务键（插件内部仍读同一 env 覆盖链，数字不变）；
+  // 未映射插件动作键的自定义 env 键回退直读，兼容 CREDIT_ACTION_PRICES 扩展。
+  const actionKey = actionKeyForEnvKey(action);
+  const unitPrice = actionKey
+    ? getDefaultCtx().use<PricingService>('pricing').quote(actionKey)
+    : prices[action];
   let pages = 1;
   if (action === 'deck_page_generate' || action === 'deck_page_refine' || action === 'export_editable' || action === 'export_editable_text') {
     pages = Math.floor(Number(input.pages) || 0);

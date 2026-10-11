@@ -41,7 +41,7 @@ export interface AdminConfigDefinition {
 const DEFINITIONS: readonly AdminConfigDefinition[] = [
   {
     key: 'ANPPT_V2_LLM_BASE_URL', group: 'llm', label: 'LLM API 地址', input: 'url', secret: false,
-    defaultValue: 'http://127.0.0.1:6800/v1', description: 'OpenAI 兼容接口根地址，检查时只请求 /models。',
+    defaultValue: 'https://api.deepseek.com/v1', description: 'OpenAI 兼容接口根地址，检查时只请求 /models。',
   },
   {
     key: 'ANPPT_V2_LLM_API_KEY', group: 'llm', label: 'LLM API 密钥', input: 'password', secret: true,
@@ -49,11 +49,11 @@ const DEFINITIONS: readonly AdminConfigDefinition[] = [
   },
   {
     key: 'ANPPT_V2_LLM_MODEL', group: 'llm', label: '主模型', input: 'text', secret: false,
-    defaultValue: 'gemini-3.1-flash-lite', description: '大纲与内容梳理优先使用的模型。',
+    defaultValue: 'deepseek-v4-flash', description: '大纲与内容梳理优先使用的模型。不用 PRO。',
   },
   {
     key: 'ANPPT_V2_LLM_FALLBACK_MODELS', group: 'llm', label: '回退模型链', input: 'text', secret: false,
-    defaultValue: 'gpt-5.6-luna,deepseek-v4-flash', description: '按顺序用英文逗号分隔，最多 3 个。',
+    defaultValue: '', description: '按顺序用英文逗号分隔，最多 3 个。空=不回退。',
   },
   {
     key: 'ANPPT_V2_IMAGE_BASE_URL', group: 'image', label: '生图 API 地址', input: 'url', secret: false,

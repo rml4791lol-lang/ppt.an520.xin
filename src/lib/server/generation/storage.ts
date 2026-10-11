@@ -1,7 +1,7 @@
 // 文件落盘与 /api/files 读取的安全解析。
 // 目录约定：{root}/{userId}/...，读取路由强制第二段 == session 用户 id，天然隔离。
 import { mkdirSync } from 'node:fs';
-import { writeFile, readFile, stat } from 'node:fs/promises';
+import { writeFile, readFile, stat, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { ApiError } from '../http';
 import { getGenerationConfig, type GenerationConfig } from './config';
@@ -89,22 +89,14 @@ export function resolveFilePath(
   ownerUserId: string,
   config: GenerationConfig = getGenerationConfig(),
 ): { absPath: string; root: FileRoot } {
-  const decoded = segments.map((segment) => {
-    let value = segment;
-    try {
-      value = decodeURIComponent(segment);
-    } catch {
-      // keep raw
-    }
-    return value;
-  });
+  const decoded = segments.map(decodePathSegment);
   if (decoded.length < 2) throw new ApiError('FILE_NOT_FOUND', '文件不存在', 404, false);
   const root = decoded[0] as FileRoot;
   if (!(FILE_ROOTS as readonly string[]).includes(root)) {
     throw new ApiError('FILE_NOT_FOUND', '文件不存在', 404, false);
   }
   if (decoded[1] !== ownerUserId) throw new ApiError('FILE_FORBIDDEN', '无权访问该文件', 403, false);
-  if (decoded.some((segment) => !segment || segment === '.' || segment === '..')) {
+  if (decoded.some(isUnsafePathSegment)) {
     throw new ApiError('FILE_NOT_FOUND', '文件不存在', 404, false);
   }
   const base = path.resolve(rootDir(root, config));
@@ -127,19 +119,45 @@ export async function readResolvedFile(absPath: string): Promise<{ data: Buffer;
   return { data, size: info.size };
 }
 
+function decodePathSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+function isUnsafePathSegment(segment: string): boolean {
+  return !segment || segment === '.' || segment === '..' || segment.includes('/') || segment.includes('\\') || segment.includes('\0');
+}
+
 /** 相对路径（/api/files/URL 或裸 rel）→ 安全绝对路径；不合法返回 null（不读盘） */
 export function absPathForRelPath(
   relPathOrUrl: string,
   config: GenerationConfig = getGenerationConfig(),
 ): string | null {
   const rel = String(relPathOrUrl || '').replace(/^\/api\/files\//, '').replace(/^\/+/, '');
-  const segments = rel.split('/').filter(Boolean);
+  const segments = rel.split('/').filter(Boolean).map(decodePathSegment);
   if (segments.length < 2) return null;
+  if (segments.some(isUnsafePathSegment)) return null;
   const root = segments[0] as FileRoot;
   if (!(FILE_ROOTS as readonly string[]).includes(root)) return null;
   const base = path.resolve(rootDir(root, config));
   const absPath = path.resolve(base, ...segments.slice(1));
   return absPath.startsWith(base + path.sep) ? absPath : null;
+}
+
+/** uploads/{userId}/... 且无越界时返回规范化相对路径，否则 null */
+export function parseOwnedUploadRelPath(
+  userId: string,
+  imagePath: unknown,
+  config: GenerationConfig = getGenerationConfig(),
+): string | null {
+  const rel = String(imagePath || '').replace(/^\/api\/files\//, '').replace(/^\/+/, '').slice(0, 300);
+  const segments = rel.split('/').filter(Boolean).map(decodePathSegment);
+  if (segments.length < 3 || segments[0] !== 'uploads' || segments[1] !== userId) return null;
+  const normalized = segments.join('/');
+  return absPathForRelPath(normalized, config) ? normalized : null;
 }
 
 /** 读取站内文件（/api/files/... 或裸相对路径）为 Buffer；不存在返回 null */
@@ -154,4 +172,39 @@ export async function readSiteFile(
   } catch {
     return null;
   }
+}
+
+/** 删除 uploads/{userId}/{kind}/ 中早于 cutoff 且不在保留名单的文件（复刻壳图懒清理）。 */
+export async function purgeExpiredKindUploads(
+  userId: string,
+  kind: string,
+  keepRelPaths: Iterable<string>,
+  cutoffMs: number,
+  config: GenerationConfig = getGenerationConfig(),
+): Promise<number> {
+  const uid = cleanSegment(userId, '用户标识');
+  const kindSeg = cleanSegment(kind, 'kind');
+  const dir = path.join(rootDir('uploads', config), uid, kindSeg);
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return 0;
+  }
+  const keep = new Set(keepRelPaths);
+  let removed = 0;
+  for (const name of names) {
+    const rel = `uploads/${uid}/${kindSeg}/${name}`;
+    if (keep.has(rel)) continue;
+    const absPath = path.join(dir, name);
+    try {
+      const info = await stat(absPath);
+      if (!info.isFile() || info.mtimeMs >= cutoffMs) continue;
+      await rm(absPath, { force: true });
+      removed += 1;
+    } catch {
+      /* ignore */
+    }
+  }
+  return removed;
 }

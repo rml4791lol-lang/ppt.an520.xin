@@ -6,7 +6,7 @@
 // 改用 ANPPT_V2_LLM_* 直连 OpenAI 兼容 /chat/completions 本地实现。
 // ⚠️ 引擎就绪后此兜底仅作灾备，正式链路以引擎为准（契约 §1 分工）。
 import { ApiError } from './http';
-import { getGenerationConfig, type GenerationConfig } from './generation/config';
+import { getGenerationConfig, type GenerationConfig, type LlmReasoningEffort } from './generation/config';
 import { DSL_TAG_SET_TEXT, validateTaggedDsl } from './generation/dsl';
 import { cleanString, normalizeOutlineSlide, type OutlineSlide } from './generation/types';
 import { recordUpstreamUsage } from './usage-meter';
@@ -172,6 +172,32 @@ interface LlmCandidate {
   model: string;
 }
 
+function usesDeepSeekChatExtensions(candidate: LlmCandidate): boolean {
+  return candidate.model.toLowerCase().startsWith('deepseek')
+    || /deepseek\.com/i.test(candidate.baseUrl);
+}
+
+function llmChatBody(
+  candidate: LlmCandidate,
+  messages: { role: string; content: ChatMessageContent }[],
+  effort: LlmReasoningEffort,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model: candidate.model,
+    messages,
+    stream: false,
+    temperature: 0.3,
+  };
+  if (!usesDeepSeekChatExtensions(candidate)) return body;
+  if (effort === 'off') {
+    body.thinking = { type: 'disabled' };
+  } else {
+    body.thinking = { type: 'enabled' };
+    body.reasoning_effort = effort;
+  }
+  return body;
+}
+
 /** 候选 = 主站（主模型 + 回退模型链）→ 跨站备份（BACKUP_* 三项齐备才挂上） */
 function llmCandidates(config: GenerationConfig): LlmCandidate[] {
   const candidates: LlmCandidate[] = [];
@@ -210,7 +236,7 @@ export async function chatCompletion(
     try {
       const payload = await postJson(
         `${candidate.baseUrl}/chat/completions`,
-        { model: candidate.model, messages, stream: false, temperature: 0.3 },
+        llmChatBody(candidate, messages, config.llmReasoningEffort ?? 'low'),
         { Authorization: `Bearer ${candidate.apiKey}` },
         timeoutMs,
         fetchImpl,

@@ -30,6 +30,7 @@ import {
   getCreditBalance,
   renameProject,
 } from "@/lib/client/deck-api";
+import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
 import {
   createPage,
   loadDraft,
@@ -49,7 +50,7 @@ import {
   type VersionCount,
 } from "@/components/single-page/sp-panels";
 import { Modal, Spinner, ToastStack, useToasts } from "@/components/deck/ui";
-import { useEditableExport } from "@/components/exports/use-editable-export";
+import { useEditableExport } from "@/modules/editable-export/client/use-editable-export";
 
 const FLOW_STEPS = ["添加内容", "选择风格", "生成结果", "下载可编辑版本"] as const;
 
@@ -68,6 +69,7 @@ export function SinglePageClient() {
   const [addOpen, setAddOpen] = useState(false);
   const [insufficient, setInsufficient] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [replicateOrigin, setReplicateOrigin] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState(false);
   // ---------- 转可编辑 PPTX（Codia 链，按页计费） ----------
@@ -184,6 +186,7 @@ export function SinglePageClient() {
         }));
         setProjectId(detail.project.id);
         setTitle(detail.project.title || "未命名单页项目");
+        setReplicateOrigin(detail.project.source === "replicate");
         if (restored.length > 0) {
           setPages(restored);
           setActiveId((current) =>
@@ -200,6 +203,7 @@ export function SinglePageClient() {
         if (err?.status === 404) {
           toast("项目不存在或已删除");
           setProjectId(null);
+          setReplicateOrigin(false);
           router.replace("/single-page");
           return;
         }
@@ -277,6 +281,10 @@ export function SinglePageClient() {
   const [genProgress, setGenProgress] = useState<string>("");
 
   const generate = async (page: SpPage) => {
+    if (replicateOrigin) {
+      toast("这是美化作品，请到 PPT 美化继续生成");
+      return;
+    }
     if (!page.stylePackId || generatingIds.has(page.pageId)) return;
     setGeneratingIds((prev) => new Set(prev).add(page.pageId));
     setViewStep(null);
@@ -554,6 +562,14 @@ export function SinglePageClient() {
         </div>
       </header>
 
+      {replicateOrigin && projectId && (
+        <div className="border-b border-brand-line bg-brand-softer px-4 py-2 text-center text-xs text-brand">
+          这是美化作品，工作台生成会冲掉原画面。
+          <Link href={beautifyHref(projectId)} className="ml-2 underline">
+            打开 PPT 美化
+          </Link>
+        </div>
+      )}
       {banner && (
         <div className="border-b border-brand-line bg-brand-softer px-4 py-2 text-center text-xs text-brand">
           {banner}

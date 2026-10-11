@@ -1,5 +1,5 @@
 // 健康检查：供监控探针/负载均衡探测。无需登录、无副作用。
-// 监控脚本（anppt-health-monitor.py）契约：顶层 ok / llm.configured。
+// 监控脚本（anppt-health-monitor.py）契约：顶层 ok / llm.configured / image.configured / editable.configured。
 import { getDb } from '@/lib/server/db';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 

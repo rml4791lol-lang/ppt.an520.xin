@@ -16,12 +16,15 @@ import {
 } from "@/components/icons";
 import { ApiClientError } from "@/lib/client/api";
 import { createPagedCopyDeck, parseDeckDocument } from "@/lib/client/deck-api";
+import { useFeatureFlag } from "@/components/use-feature-flag";
 import { useGatedStylePacks } from "@/components/use-gated-style-packs";
+import { stashBeautifyFiles } from "@/modules/ppt-replicate/client/beautify-handoff";
 import type { StylePack } from "@/data/style-packs";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
 const DOC_ACCEPT = [".txt", ".md", ".pdf", ".docx"];
 const PPT_ACCEPT = [".ppt", ".pptx"];
+const BEAUTIFY_ACCEPT = [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".ppt", ".pptx"];
 const MAX_PAGE_CHARS = 1500;
 
 const CUSTOM_PAGE_MIN = 4;
@@ -303,7 +306,11 @@ function StylePicker({
 
 export function UploadCard({ packs }: { packs: StylePack[] }) {
   const router = useRouter();
-  const [tab, setTab] = useState<TabKey>("import");
+  const [tab, setTab] = useState<TabKey>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "beautify"
+      ? "beautify"
+      : "import",
+  );
   const [style, setStyle] = useState<StylePack | null>(null);
   const [duration, setDuration] = useState("15");
   const [customPages, setCustomPages] = useState("20");
@@ -313,6 +320,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
   const [pages, setPages] = useState<string[]>([""]);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<null | "import" | "paged">(null);
+  const beautifyOpen = useFeatureFlag("ppt_replicate");
   const gatedPacks = useGatedStylePacks();
   const allPacks = useMemo(
     () => (gatedPacks.length > 0 ? [...packs, ...gatedPacks] : packs),
@@ -417,13 +425,17 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
     }
   };
 
-  // PPT 美化：后端未上线，保持占位
   const submitBeautify = () => {
-    if (!pptFile) {
-      flash("请先选择或拖入 PPT 文件");
+    if (!beautifyOpen) {
+      flash("PPT 美化即将上线，敬请期待");
       return;
     }
-    flash("PPT 美化即将上线，敬请期待");
+    if (pptFile && /\.pptx?$/i.test(pptFile.name)) {
+      flash("PPTX 请先另存为 PDF 再上传");
+      return;
+    }
+    stashBeautifyFiles(pptFile ? [pptFile] : []);
+    router.push("/beautify");
   };
 
   return (
@@ -598,26 +610,40 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-1">
                 <p className="text-sm text-ink-3">
-                  上传已有 PPT，AI 按所选风格逐页翻新美化
+                  {beautifyOpen
+                    ? "上传参考稿，画面跟原页，文案换成新主题或大纲"
+                    : "上传已有 PPT，AI 按所选风格逐页翻新美化"}
                 </p>
-                <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />
+                {!beautifyOpen && <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />}
               </div>
               <div className="mt-4">
                 <Dropzone
-                  accept={PPT_ACCEPT}
+                  accept={beautifyOpen ? BEAUTIFY_ACCEPT : PPT_ACCEPT}
                   file={pptFile}
-                  onFile={setPptFile}
-                  title="拖入旧 PPT，一键美化翻新"
-                  hint="PPT · PPTX · 单文件最大 30MB"
+                  onFile={(file) => {
+                    if (beautifyOpen && file && /\.pptx?$/i.test(file.name)) {
+                      flash("PPTX 请先另存为 PDF 再上传");
+                      return;
+                    }
+                    setPptFile(file);
+                  }}
+                  title={beautifyOpen ? "拖入 PDF 或图片，开始美化" : "拖入旧 PPT，一键美化翻新"}
+                  hint={
+                    beautifyOpen
+                      ? "PDF · PNG · JPG · WebP · 单文件最大 30MB · PPTX 请先另存 PDF"
+                      : "PPT · PPTX · 单文件最大 30MB"
+                  }
                 />
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Dropdown
-                  value={quality}
-                  options={QUALITY_OPTIONS}
-                  onChange={setQuality}
-                  className="min-w-60"
-                />
+                {!beautifyOpen && (
+                  <Dropdown
+                    value={quality}
+                    options={QUALITY_OPTIONS}
+                    onChange={setQuality}
+                    className="min-w-60"
+                  />
+                )}
                 <button
                   type="button"
                   onClick={submitBeautify}
@@ -627,6 +653,11 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                   开始美化
                 </button>
               </div>
+              {beautifyOpen && (
+                <p className="mt-2 px-1 text-xs text-ink-4">
+                  不选文件也可进入工作台。生成 10🌟/页，转可编辑另计 20🌟/页。
+                </p>
+              )}
             </div>
           )}
 

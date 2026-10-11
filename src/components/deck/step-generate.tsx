@@ -17,7 +17,7 @@ import { useGatedStylePacks } from "@/components/use-gated-style-packs";
 import type { DeckCtx } from "@/components/deck/deck-workbench";
 import { DownloadIcon, Modal, RefreshIcon, Spinner, WarnIcon } from "@/components/deck/ui";
 import { notifyCreditsRefresh } from "@/components/deck/use-deck-state";
-import { useEditableExport } from "@/components/exports/use-editable-export";
+import { useEditableExport } from "@/modules/editable-export/client/use-editable-export";
 
 const GEN_LABEL: Record<string, string> = {
   idle: "待生成",

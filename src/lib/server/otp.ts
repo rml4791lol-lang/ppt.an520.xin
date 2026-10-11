@@ -108,7 +108,7 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
   if (!env.smtpReady) throw new ApiError('OTP_DELIVERY_UNAVAILABLE', '邮件验证码暂不可用，请稍后重试', 503, true);
   const transporter = await getTransporter();
   await transporter.sendMail({
-    from: env.smtp.from,
+    from: { name: 'AnPPT', address: env.smtp.user },
     to: email,
     subject: 'AnPPT 登录验证码',
     html: emailHtml(code),

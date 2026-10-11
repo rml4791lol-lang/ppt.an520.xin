@@ -53,6 +53,18 @@ export const FEATURE_FLAG_DEFS: FeatureFlagDef[] = [
     description: '2025 国赛金奖版式提炼的真模板测试包（版式锁死灌内容），验收采纳前仅测试用户可见可用。',
     defaultState: 'beta',
   },
+  {
+    key: 'ppt_replicate',
+    label: 'PPT 美化（复刻）',
+    description: '首页美化页与模板库「自己的 PPT」：上传参考稿保画面换文案。不进大纲工作台。',
+    defaultState: 'beta',
+  },
+  {
+    key: 'ppt_to_base',
+    label: 'PPT 转模版底座',
+    description: '上传 PPTX 本地程序化擦除文字，导出 1536×864 通用模版底座图与槽位 JSON。纯前端，零成本。',
+    defaultState: 'beta',
+  },
 ];
 
 const VALID_STATES = new Set<FeatureFlagState>(['off', 'beta', 'public']);

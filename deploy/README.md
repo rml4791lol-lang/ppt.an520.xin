@@ -7,8 +7,8 @@
                         ├─ sqlite（ANPPT_V2_DB_PATH，默认 shared/data/anppt-v2.db）
                         ├─ 文件存储（ANPPT_V2_DATA_DIR：uploads/generated/exports）
                         ├─ 大纲/梳理 → PPT 引擎 127.0.0.1:3002（Bearer PPT_ENGINE_INTERNAL_TOKEN）
-                        │     └─ 引擎不可达时本地直连 LLM 兜底（127.0.0.1:6800 中转）
-                        └─ 生图 → 127.0.0.1:6800（gpt-image-2，OpenAI 兼容 images API）
+                        │     └─ 引擎不可达时 LLM 兜底 → DeepSeek 官方 /v1（deepseek-v4-flash，低思考）
+                        └─ 生图 → sqface（gpt-image-2，OpenAI 兼容 images API；与 LLM 密钥分开）
 ```
 
 ## 首次初始化（只做一次）
@@ -32,7 +32,8 @@ ANPPT_OTP_HMAC_SECRET=<openssl rand -hex 32>
 SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM   # QQ 邮箱授权码
 WECHAT_PAY_ENABLED=true 及全部 WECHAT_PAY_*                  # 正式商户号参数
 EPAY_ENABLED=true 及全部 EPAY_*
-ANPPT_V2_LLM_API_KEY / ANPPT_V2_IMAGE_API_KEY               # = IMAGE_CHANNELS 里 6800 中转的 key
+ANPPT_V2_LLM_API_KEY                                        # DeepSeek 官方，与生图密钥分开
+ANPPT_V2_IMAGE_API_KEY                                      # sqface 生图
 
 PPT_ENGINE_BASE_URL=http://127.0.0.1:3002
 PPT_ENGINE_INTERNAL_TOKEN=<与引擎侧一致的内部 token>
@@ -65,6 +66,7 @@ curl -sf https://ppt.an520.xin/api/me   # 期望 401（未登录）
 
 - 日志：`journalctl -u anppt-v2 -f`
 - 数据备份：打包 `/opt/anppt-v2/shared/data/`（sqlite + 上传/生成图/导出）
+- 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy`，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile` 再手动跑一次；恢复时会发一封「服务已恢复」。
 - 引擎联调细节：`../image2-studio-v2/docs/ANPPT-V2-INTEGRATION-CONTRACT.md`
 
 ## 禁区（勿动）

@@ -16,16 +16,20 @@ Next.js 16 全栈单体（App Router + Route Handlers + node:sqlite），无外�
 
 ```
 src/
-  app/                    页面（(main) 布局组：首页/风格库/充值/积分/项目/工作台/单页）
-  app/api/                Route Handlers（auth/credits/recharge/deck/single-page/projects/exports）
-  components/             客户端组件
+  app/                    页面（(main) 布局组：首页/风格库/充值/积分/项目/工作台/单页/美化）
+  app/api/                Route Handlers（auth/credits/recharge/deck/single-page/projects/exports/tools）
+  modules/                功能模块（自包含目录：server/+client/+README）：ppt-replicate / editable-export
+  plugins/                插件（plugin.ts+README，ctx 服务协作）：pricing / models + default-profile.ts
+  components/             平台级共享客户端组件
   data/                   风格包/套餐/规则等静态数据
-  lib/server/             服务端核心：auth(OTP+会话) credits(台账幂等) recharge(订单履约)
+  lib/plugin/             插件运行时三件：types(契约) / ctx(服务注册表) / profile(配置单 boot)
+  lib/server/             服务端平台件：auth(OTP+会话) credits(台账幂等) recharge(订单履约)
                           payments/(wechat native + epay) documents(解析) exports(pptx)
-                          generation/(deck 状态机/DSL/生图/单页/项目)
+                          generation/(deck 状态机/DSL/生图/单页运行时/项目)
 scripts/
-  test-backend.mjs        B 层：124 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限）
-  test-generation.mjs     C 层：294 项（解析/DSL/引擎+兜底/状态机/扣费退还/导出/轻量文字档/图片级编辑工具/幂等重放/LLM频控）
+  tests/                  模块测试（由两套主套件注入 ctx 调用）
+  test-backend.mjs        B 层：126 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限）
+  test-generation.mjs     C 层：401 项（解析/DSL/引擎+兜底/状态机/扣费退还/导出/轻量文字档/图片级编辑工具/复刻PPT/幂等重放/LLM频控/插件运行时）
   ts-hooks.mjs            node 直跑 TS 的 resolve 钩子（含 @/ 别名）
 docs/                     DEBUG-HANDBOOK（系统全貌）/ DEVELOPMENT（架构与流程）
 deploy/                   systemd 单元 / 部署脚本 / Caddy 切换块 / Runbook
@@ -51,7 +55,7 @@ node scripts/test-backend.mjs && node scripts/test-generation.mjs
 
 本地联调常用 env（见 `.env.example` 全量注释）：
 `OTP_DEV_ECHO=true`（验证码回显）、`WECHAT_PAY_MOCK=true`（假码+mock 回调）、
-`ANPPT_V2_LLM_BASE_URL` / `ANPPT_V2_IMAGE_*`（指向 6800 中转隧道）。
+`ANPPT_V2_LLM_*`（DeepSeek 官方）、`ANPPT_V2_IMAGE_*`（sqface 生图，与 LLM 密钥分开）。
 
 ## 部署
 

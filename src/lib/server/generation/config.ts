@@ -4,6 +4,10 @@
 import path from 'node:path';
 import { getEffectiveGenerationEnv } from '../admin-config';
 
+export type LlmReasoningEffort = 'low' | 'high' | 'max' | 'off';
+
+const LLM_REASONING_EFFORTS: readonly LlmReasoningEffort[] = ['low', 'high', 'max', 'off'];
+
 export interface GenerationConfig {
   /** 数据根目录：uploads/generated/exports 都在其下（默认 <cwd>/data，与 env.ts 的 dbPath 同级） */
   dataDir: string;
@@ -23,6 +27,8 @@ export interface GenerationConfig {
   llmModel: string;
   /** 主模型失败（超时/HTTP 错误/空响应）时的回退模型链，按序尝试 */
   llmFallbackModels: string[];
+  /** DeepSeek V4 思考强度。默认 low；off = 关闭思考。其它 OpenAI 兼容上游忽略此字段。 */
+  llmReasoningEffort: LlmReasoningEffort;
   /** LLM 跨站备份：主站全部模型失败后才尝试（如官方 API）。三项同时配置才生效。 */
   llmBackupBaseUrl: string;
   llmBackupApiKey: string;
@@ -90,6 +96,13 @@ function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
 }
 
+function llmReasoningEffortFrom(value: unknown): LlmReasoningEffort {
+  const effort = trim(value).toLowerCase();
+  return (LLM_REASONING_EFFORTS as readonly string[]).includes(effort)
+    ? (effort as LlmReasoningEffort)
+    : 'low';
+}
+
 export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): GenerationConfig {
   // 管理端保存的运行时覆盖只作用于后续新请求；显式传入 env 的测试与调用仍保持纯函数。
   const effectiveEnv = env === process.env ? getEffectiveGenerationEnv(env) : env;
@@ -105,14 +118,15 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     sourceTextMaxChars: intFrom(effectiveEnv.ANPPT_V2_SOURCE_TEXT_MAX_CHARS, 100_000),
     engineBaseUrl: stripTrailingSlash(trim(effectiveEnv.PPT_ENGINE_BASE_URL) || 'http://127.0.0.1:3002'),
     engineInternalToken: trim(effectiveEnv.PPT_ENGINE_INTERNAL_TOKEN),
-    llmBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_LLM_BASE_URL) || 'http://127.0.0.1:6800/v1'),
+    llmBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_LLM_BASE_URL) || 'https://api.deepseek.com/v1'),
     llmApiKey: trim(effectiveEnv.ANPPT_V2_LLM_API_KEY),
-    llmModel: trim(effectiveEnv.ANPPT_V2_LLM_MODEL) || 'gemini-3.1-flash-lite',
-    llmFallbackModels: (trim(effectiveEnv.ANPPT_V2_LLM_FALLBACK_MODELS) || 'gpt-5.6-luna,deepseek-v4-flash')
+    llmModel: trim(effectiveEnv.ANPPT_V2_LLM_MODEL) || 'deepseek-v4-flash',
+    llmFallbackModels: trim(effectiveEnv.ANPPT_V2_LLM_FALLBACK_MODELS)
       .split(',')
       .map((m) => m.trim())
       .filter(Boolean)
       .slice(0, 3),
+    llmReasoningEffort: llmReasoningEffortFrom(effectiveEnv.ANPPT_V2_LLM_REASONING_EFFORT),
     llmBackupBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_LLM_BACKUP_BASE_URL)),
     llmBackupApiKey: trim(effectiveEnv.ANPPT_V2_LLM_BACKUP_API_KEY),
     llmBackupModel: trim(effectiveEnv.ANPPT_V2_LLM_BACKUP_MODEL),

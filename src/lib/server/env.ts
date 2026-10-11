@@ -76,6 +76,8 @@ const DEFAULT_ACTION_PRICES: Record<string, number> = {
   export_editable: 20,
   // 轻量文字可编辑导出（VLM 提取文字层 + 文本框覆盖，无上游转换成本）：5🌟/页
   export_editable_text: 5,
+  // PPT 转模版底座（截图去风格化 + 文字中性词替换，一次 VLM + 一次图生图编辑）：对齐改图档 5🌟/张
+  ppt_to_base: 5,
 };
 
 function trim(value: unknown): string {

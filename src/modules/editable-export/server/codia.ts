@@ -5,10 +5,10 @@
 //                                 Header Idempotency-Key（同 key 同输入幂等；不同输入 409）
 //   查状态 GET  /v2/open/tasks/{task_id} → data:{status,result:{ppt_url,page_count},error}
 // 全部走依赖注入 fetcher（deps.fetchImpl），测试 mock 上游，禁止真实调用付费上游。
-import { ApiError } from './http';
-import { getGenerationConfig, type GenerationConfig } from './generation/config';
-import { cleanString } from './generation/types';
-import { recordUpstreamUsage } from './usage-meter';
+import { ApiError } from '@/lib/server/http';
+import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
+import { cleanString } from '@/lib/server/generation/types';
+import { recordUpstreamUsage } from '@/lib/server/usage-meter';
 
 export interface CodiaDeps {
   fetchImpl?: typeof fetch;

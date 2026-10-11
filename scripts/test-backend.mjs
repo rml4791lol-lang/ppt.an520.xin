@@ -515,15 +515,17 @@ console.log('\n[11] 功能开关板 + 测试用户角色');
   const featuresRoute = await import('../src/app/api/features/route.ts');
   const roleRoute = await import('../src/app/api/admin/users/[id]/role/route.ts');
 
-  check('开关默认状态：editable_text_overlay=beta、4 个图片编辑工具=off、gold_layouts_beta=beta',
+  check('开关默认状态：editable_text_overlay=beta、4 个图片编辑工具=off、gold_layouts_beta=beta、ppt_replicate=beta、ppt_to_base=beta',
     flags.getFeatureFlagState('editable_text_overlay') === 'beta'
       && flags.getFeatureFlagState('magic_erase') === 'off'
       && flags.getFeatureFlagState('image_text_edit') === 'off'
       && flags.getFeatureFlagState('template_fusion') === 'off'
       && flags.getFeatureFlagState('set_as_reference') === 'off'
-      && flags.getFeatureFlagState('gold_layouts_beta') === 'beta');
-  check('listFeatureFlags 返回 6 个登记项且带默认状态',
-    flags.listFeatureFlags().length === 6
+      && flags.getFeatureFlagState('gold_layouts_beta') === 'beta'
+      && flags.getFeatureFlagState('ppt_replicate') === 'beta'
+      && flags.getFeatureFlagState('ppt_to_base') === 'beta');
+  check('listFeatureFlags 返回 8 个登记项且带默认状态',
+    flags.listFeatureFlags().length === 8
       && flags.listFeatureFlags().every((flag) => flag.state === flag.defaultState));
 
   const betaTester = await auth.registerWithPassword(
@@ -583,14 +585,33 @@ console.log('\n[11] 功能开关板 + 测试用户角色');
 
   const anonFeatures = await (await featuresRoute.GET(new Request('http://localhost/api/features'))).json();
   check('匿名 /api/features：public 可见 beta 不可见',
-    anonFeatures?.data?.flags?.magic_erase === true && anonFeatures?.data?.flags?.editable_text_overlay === false);
+    anonFeatures?.data?.flags?.magic_erase === true
+      && anonFeatures?.data?.flags?.editable_text_overlay === false
+      && anonFeatures?.data?.flags?.ppt_replicate === false);
   const testerFeatures = await (await featuresRoute.GET(new Request('http://localhost/api/features', {
     headers: { cookie: flagCookie(betaTester.sessionToken) },
   }))).json();
   check('测试用户 /api/features：beta+public 可见、off 不可见',
     testerFeatures?.data?.flags?.editable_text_overlay === true
+      && testerFeatures?.data?.flags?.ppt_replicate === true
       && testerFeatures?.data?.flags?.magic_erase === true
       && testerFeatures?.data?.flags?.image_text_edit === false);
+
+  const genRoute = await import('../src/app/api/single-page/generate/route.ts');
+  const replicateBlocked = await genRoute.POST(new Request('http://localhost/api/single-page/generate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1', cookie: flagCookie(reg.sessionToken) },
+    body: JSON.stringify({ pageId: 'rpblock', content: '新内容', mode: 'replicate', imagePath: 'uploads/x/a.png' }),
+  }), { params: Promise.resolve({}) });
+  check('普通用户 POST 复刻 mode 返回 404', replicateBlocked.status === 404);
+
+  const planRoute = await import('../src/app/api/tools/replicate/plan/route.ts');
+  const planBlocked = await planRoute.POST(new Request('http://localhost/api/tools/replicate/plan', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1', cookie: flagCookie(reg.sessionToken) },
+    body: JSON.stringify({ topic: '妇科培训', pageCount: 2 }),
+  }), { params: Promise.resolve({}) });
+  check('普通用户 POST 复刻拆文案 404', planBlocked.status === 404);
 
   const roleTarget = await auth.registerWithPassword(
     { account: 'roleuser01', password: 'password123', confirmPassword: 'password123' },

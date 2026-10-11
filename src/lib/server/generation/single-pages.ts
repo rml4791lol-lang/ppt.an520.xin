@@ -2,11 +2,13 @@
 // 与 deck 共用生图上游与扣费语义：每张 singlePageCredits（默认 10🌟），失败自动退还。
 import { ApiError, validationError } from '../http';
 import { debitCredits, refundCredits } from '../credits';
+import { findUserById } from '../auth';
+import { assertFeatureVisible } from '../feature-flags';
 import { getGenerationConfig } from './config';
 import { genId, getGenDb, nowMs } from './db';
 import { markSinglePageActive, markSinglePageDone, reconcileSinglePage } from './recovery';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
-import { readSiteFile, saveFile } from './storage';
+import { parseOwnedUploadRelPath, readSiteFile, saveFile } from './storage';
 import {
   buildSlideImagePrompt,
   loadStyleReferenceDataUrl,
@@ -15,6 +17,14 @@ import {
   type SlidePromptInput,
 } from './style-packs';
 import { cleanString } from './types';
+import {
+  buildReplicateCopyPrompt,
+  buildReplicateInstruction,
+  parseIncomingStructure,
+  resolveReplicateColorMode,
+  type ReplicateColorMode,
+  type SlideStructureCard,
+} from '@/modules/ppt-replicate/server/replicate';
 
 export type SinglePageDeps = ImageDeps;
 
@@ -28,6 +38,7 @@ export interface SinglePageRow {
   title: string;
   content: string;
   stylePackId: string;
+  shellPath: string;
   status: 'idle' | 'queued' | 'running' | 'succeeded' | 'failed';
   error: string;
   activeVersionId: string;
@@ -44,6 +55,7 @@ function toPageRow(row: Row): SinglePageRow {
     title: String(row.title || ''),
     content: String(row.content || ''),
     stylePackId: String(row.style_pack_id || ''),
+    shellPath: String(row.shell_path || ''),
     status: String(row.status || 'idle') as SinglePageRow['status'],
     error: String(row.error || ''),
     activeVersionId: String(row.active_version_id || ''),
@@ -66,27 +78,58 @@ export function getOwnedPage(userId: string, pageId: string): SinglePageRow {
   return toPageRow(row);
 }
 
-function getOrCreateProject(userId: string, projectId: string | undefined, title?: string): string {
+export type SingleProjectSource = 'single' | 'replicate';
+
+function resolveProjectSource(value: unknown): SingleProjectSource {
+  return cleanString(value, 20) === 'replicate' ? 'replicate' : 'single';
+}
+
+function readProjectSource(userId: string, projectId: string): SingleProjectSource {
+  const row = getGenDb()
+    .prepare('SELECT source FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+    .get(cleanString(projectId, 80), userId) as Row | undefined;
+  if (!row) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
+  return resolveProjectSource(row.source);
+}
+
+function getOrCreateProject(
+  userId: string,
+  projectId: string | undefined,
+  title: string | undefined,
+  source: SingleProjectSource,
+): string {
   const db = getGenDb();
   if (projectId) {
     const row = db
-      .prepare('SELECT id FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+      .prepare('SELECT id, source FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
       .get(cleanString(projectId, 80), userId) as Row | undefined;
     if (!row) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
-    return String(row.id);
+    const id = String(row.id);
+    if (source === 'replicate' && resolveProjectSource(row.source) !== 'replicate') {
+      db.prepare('UPDATE single_page_projects SET source = ?, updated_at = ? WHERE id = ?').run('replicate', nowMs(), id);
+    }
+    return id;
   }
   const id = genId('spp');
   const ts = nowMs();
   db.prepare(
-    `INSERT INTO single_page_projects (id, user_id, title, created_at, updated_at, deleted_at)
-     VALUES (?, ?, ?, ?, ?, NULL)`,
-  ).run(id, userId, cleanString(title, 120) || '未命名单页项目', ts, ts);
+    `INSERT INTO single_page_projects (id, user_id, title, source, created_at, updated_at, deleted_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+  ).run(id, userId, cleanString(title, 120) || '未命名单页项目', source, ts, ts);
   return id;
 }
 
 function upsertPage(
   userId: string,
-  input: { pageId: string; projectId?: string; title?: string; content: string; stylePackId?: string },
+  input: {
+    pageId: string;
+    projectId?: string;
+    title?: string;
+    content: string;
+    stylePackId?: string;
+    projectSource: SingleProjectSource;
+    shellPath?: string;
+  },
 ): SinglePageRow {
   const db = getGenDb();
   const existing = db.prepare('SELECT * FROM single_pages WHERE id = ? AND user_id = ?').get(input.pageId, userId) as
@@ -98,22 +141,23 @@ function upsertPage(
       throw new ApiError('GENERATION_RUNNING', '该页正在生成中，请稍候', 409, true);
     }
     db.prepare(
-      `UPDATE single_pages SET title = ?, content = ?, style_pack_id = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE single_pages SET title = ?, content = ?, style_pack_id = ?, shell_path = ?, updated_at = ? WHERE id = ?`,
     ).run(
       cleanString(input.title, 120) || String(existing.title || ''),
       input.content,
       cleanString(input.stylePackId, 80) || String(existing.style_pack_id || ''),
+      cleanString(input.shellPath, 300) || String(existing.shell_path || ''),
       ts,
       input.pageId,
     );
     return getOwnedPage(userId, input.pageId);
   }
-  const projectId = getOrCreateProject(userId, input.projectId, input.title);
+  const projectId = getOrCreateProject(userId, input.projectId, input.title, input.projectSource);
   const count = Number(db.prepare('SELECT COUNT(*) AS c FROM single_pages WHERE project_id = ?').get(projectId)?.c || 0);
   db.prepare(
     `INSERT INTO single_pages
-      (id, project_id, user_id, page_index, title, content, style_pack_id, status, error, active_version_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'idle', '', '', ?, ?)`,
+      (id, project_id, user_id, page_index, title, content, style_pack_id, shell_path, status, error, active_version_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'idle', '', '', ?, ?)`,
   ).run(
     input.pageId,
     projectId,
@@ -122,6 +166,7 @@ function upsertPage(
     cleanString(input.title, 120) || `Page ${count + 1}`,
     input.content,
     cleanString(input.stylePackId, 80),
+    cleanString(input.shellPath, 300),
     ts,
     ts,
   );
@@ -165,17 +210,21 @@ export interface SingleGenerateInput {
   stylePackId?: string;
   /** 原稿图（/api/assets/upload 返回的 path）：提供后走 i2i 重设计而非纯文生图 */
   imagePath?: string;
+  /** replicate = 结构参考 + 真设计；缺省保持原稿重设计 */
+  mode?: string;
+  /** 仅 mode=replicate：follow-shell（默认）| new-theme */
+  colorMode?: string;
   /** 客户端幂等键（可选）；缺省用服务端 jobId */
   requestId?: string;
+  /** 为 true 时用 structure（可空）当结构卡，不再抽 VLM */
+  structureProvided?: boolean;
+  structure?: unknown;
 }
 
 /** 校验原稿图路径归属当前用户（uploads/{userId}/...），返回规范化相对路径 */
 function assertOwnedUpload(userId: string, imagePath: unknown): string {
-  const rel = cleanString(imagePath, 300).replace(/^\/api\/files\//, '').replace(/^\/+/, '');
-  const segments = rel.split('/').filter(Boolean);
-  if (segments.length < 3 || segments[0] !== 'uploads' || segments[1] !== userId) {
-    throw new ApiError('FILE_FORBIDDEN', '原稿图不存在或不属于当前账号', 403, false);
-  }
+  const rel = parseOwnedUploadRelPath(userId, cleanString(imagePath, 300));
+  if (!rel) throw new ApiError('FILE_FORBIDDEN', '原稿图不存在或不属于当前账号', 403, false);
   return rel;
 }
 
@@ -191,7 +240,15 @@ export interface SingleRunResult {
 
 async function runSinglePageJob(
   page: SinglePageRow,
-  opts: { kind: 'single-generate' | 'single-refine'; refineInstruction?: string; sourceImagePath?: string; requestId?: string },
+  opts: {
+    kind: 'single-generate' | 'single-refine';
+    refineInstruction?: string;
+    sourceImagePath?: string;
+    requestId?: string;
+    replicate?: boolean;
+    colorMode?: ReplicateColorMode;
+    structureHint?: SlideStructureCard | null;
+  },
   deps: SinglePageDeps,
 ): Promise<SingleRunResult> {
   const config = deps.config ?? getGenerationConfig();
@@ -201,7 +258,9 @@ async function runSinglePageJob(
   // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费
   const chargeKey = `single-page:${page.pageId}:${opts.requestId || jobId}`.trim().slice(0, 128);
   const refundKey = `${chargeKey}:refund`;
-  const { prompt, referencePath } = buildPagePrompt(page, opts.refineInstruction);
+  const { prompt, referencePath } = opts.replicate
+    ? { prompt: buildReplicateCopyPrompt({ title: page.title, content: page.content }), referencePath: null }
+    : buildPagePrompt(page, opts.refineInstruction);
 
   const versionId = genId('ver');
   const ts = nowMs();
@@ -275,13 +334,18 @@ async function runSinglePageJob(
         if (!source) throw new Error('原图不存在，无法改图');
         image = await editImage({ image: source, instruction: opts.refineInstruction || '' }, runDeps);
       } else if (opts.sourceImagePath) {
-        // i2i 原稿重设计：以上传图为底，按风格化 prompt 全面重绘
         const source = await readSiteFile(opts.sourceImagePath, config);
         if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
-        image = await editImage(
-          { image: source, instruction: `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。` },
-          runDeps,
-        );
+        let instruction: string;
+        if (opts.replicate) {
+          instruction = `${prompt}\n\n${buildReplicateInstruction({
+            structure: opts.structureHint ?? null,
+            colorMode: opts.colorMode || 'follow-shell',
+          })}`;
+        } else {
+          instruction = `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
+        }
+        image = await editImage({ image: source, instruction }, runDeps);
       } else {
         const pack = resolveStylePack(page.stylePackId);
         const referenceImages = referencePath
@@ -336,11 +400,38 @@ export async function generateSinglePage(
 ): Promise<SingleRunResult> {
   const content = cleanString(input.content, 8000);
   if (!content) throw validationError('页面内容不能为空');
+  const replicate = cleanString(input.mode, 20) === 'replicate';
+  const colorMode = resolveReplicateColorMode(input.colorMode);
+  const sourceImagePath = input.imagePath ? assertOwnedUpload(userId, input.imagePath) : undefined;
+  if (replicate && !sourceImagePath) throw validationError('复刻需要上传壳页图');
+  const existing = getGenDb()
+    .prepare('SELECT project_id FROM single_pages WHERE id = ? AND user_id = ?')
+    .get(cleanPageId(input.pageId), userId) as Row | undefined;
+  const projectIdToCheck = input.projectId || (existing ? String(existing.project_id) : '');
+  if (projectIdToCheck && !replicate && readProjectSource(userId, projectIdToCheck) === 'replicate') {
+    throw new ApiError('REPLICATE_PROJECT', '这是美化作品，请到 PPT 美化继续生成', 409, false);
+  }
   // 先收敛历史中断（否则卡 running 的页会永远 409），upsertPage 内部再做运行中检查
   reconcileSinglePage(userId, cleanPageId(input.pageId));
-  const page = upsertPage(userId, { ...input, pageId: cleanPageId(input.pageId), content });
-  const sourceImagePath = input.imagePath ? assertOwnedUpload(userId, input.imagePath) : undefined;
-  return runSinglePageJob(page, { kind: 'single-generate', sourceImagePath, requestId: input.requestId }, deps);
+  const page = upsertPage(userId, {
+    ...input,
+    pageId: cleanPageId(input.pageId),
+    content,
+    projectSource: replicate ? 'replicate' : 'single',
+    shellPath: replicate ? sourceImagePath : undefined,
+  });
+  return runSinglePageJob(
+    page,
+    {
+      kind: 'single-generate',
+      sourceImagePath,
+      requestId: input.requestId,
+      replicate,
+      colorMode,
+      structureHint: input.structureProvided ? parseIncomingStructure(input.structure) : null,
+    },
+    deps,
+  );
 }
 
 export async function refineSinglePage(
@@ -350,6 +441,9 @@ export async function refineSinglePage(
 ): Promise<SingleRunResult> {
   reconcileSinglePage(userId, cleanPageId(input.pageId));
   const page = getOwnedPage(userId, input.pageId);
+  if (readProjectSource(userId, page.projectId) === 'replicate') {
+    assertFeatureVisible('ppt_replicate', findUserById(userId));
+  }
   const editInstruction = cleanString(input.editInstruction, 1000);
   if (!editInstruction) throw validationError('缺少 editInstruction');
   if (page.status !== 'succeeded' || !page.activeVersionId) {
@@ -421,6 +515,7 @@ export function getSingleProjectDetail(userId: string, projectId: string) {
     project: {
       id: String(project.id),
       title: String(project.title || ''),
+      source: resolveProjectSource(project.source),
       createdAt: Number(project.created_at),
       updatedAt: Number(project.updated_at),
     },

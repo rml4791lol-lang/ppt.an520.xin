@@ -1,7 +1,7 @@
 import { jsonOk, validationError } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
-import { startSinglePageEditableExport } from '@/lib/server/exports';
+import { startSinglePageEditableExport } from '@/modules/editable-export/server/editable';
 import { cleanString } from '@/lib/server/generation/types';
 
 export const runtime = 'nodejs';

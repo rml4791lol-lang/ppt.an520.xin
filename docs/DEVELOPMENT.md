@@ -9,22 +9,28 @@
 
 ```
 src/app/            页面与 Route Handlers —— 只做鉴权、参数校验、调用业务层、 shaping 响应
-src/components/     客户端组件 —— 只通过 src/lib/client-api.ts 访问后端，不直拼 fetch 逻辑
-src/lib/server/     业务层（全部领域逻辑）—— auth / credits / recharge / payments /
-                    documents / exports / generation/*(状态机/DSL/引擎/生图/调度/恢复)
+src/modules/<key>/  功能模块（2026-09-06 起）：整块自包含目录——server/ 服务端逻辑、
+                    client/ 组件与前端规则、README.md 边界说明、scripts/tests/<key>.test.mjs 模块测试。
+                    对外只暴露少量函数；路由/页面只是模块的薄壳（Next 硬约束，壳留在 src/app）
+src/components/     平台级共享客户端组件（图标/布局/通用 hook）—— 只通过 src/lib/client-api.ts 访问后端
+src/lib/server/     平台件 —— auth / credits / recharge / payments / documents / exports /
+                    generation/*(状态机/DSL/引擎/生图/调度/恢复/单页运行时)
 src/lib/client-api.ts  前端唯一 API 入口
 src/data/           静态数据 —— 风格包/套餐/页型等，纯数据无逻辑
 src/lib/server/db.ts   持久层 —— node:sqlite（WAL），业务层不手写 SQL 之外的存储细节
 ```
 
 - 新功能先问"属于哪一层"，代码只放那一层；路由里出现业务判断 = 分层错误。
+- **模块纪律**：模块可依赖平台件与共享组件，平台件不得 import 模块；模块之间不交叉 import（交叉需求下沉平台层）。模块的开关/计价/测试/文档是模块四件套，缺一不可。
+- **边界由 lint 强制执行**（2026-09-06）：`eslint.config.mjs` 的 `import/no-restricted-paths` 拦「`src/lib` → `src/modules`」；合法例外（如 single-pages.ts 承载复刻分支）以 overrides 逐个登记，新增例外必须同步注释原因。`src/components/` 里既有纯共享件（icons/layout），也有页面级编排件（upload-card/template-library 等）——编排件允许接线模块入口（import 模块 client），纯共享件不得依赖模块。
+- 存量归拢（裁定 2026-09-06）：新功能一律进 `src/modules/`；老代码按样板（ppt-replicate）逐步归拢，顺序 ~~editable-export~~（已成）→ image-edit-tools → single-page → deck → payments → admin → auth，每次只搬一块、搬完全量门必须绿。
 - 静态数据优先：能写死在 `src/data/` 的不建表；必须运行时可改（管理员要调）才进 DB 或加密运行时配置。
 
 ## 2. 改动原则
 
 - **最小改动**：只动任务直接要求的文件；不顺手重构、不改无关格式、不批量清理注释。
 - **不大重构**：结构演进靠"新代码进正确分层"，老代码只有在被任务触碰时才归位。
-- **模块化**：新能力独立成 `lib/server/` 下的单文件/单目录，对外只暴露少量函数（参照 `feature-flags.ts`、`usage-meter.ts`）。
+- **模块化**：新能力独立成 `src/modules/<key>/` 自包含目录（样板 `ppt-replicate`），对外只暴露少量函数；纯平台能力才放 `lib/server/` 单文件（参照 `feature-flags.ts`、`usage-meter.ts`）。
 - **不重复造轮子**：动手前 grep 现有实现；扣费/退星/幂等键/懒恢复/配置快照都有成例，照抄模式不另发明。
 - **二阶思维**：每个改动回答两个问题——"失败时用户看到什么、钱是否安全"和"重启/崩溃后这行数据谁收拾"（参照 exports/generation 的懒恢复模式）。
 

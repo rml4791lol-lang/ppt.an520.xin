@@ -1,11 +1,12 @@
 // 项目列表（整套 deck + 单页项目）。删除软删；超过保留期后在列表访问时物理清理
-// （行级联删除 + 生成图文件删除；导出文件与 uploads 不动）。
+// （行级联删除 + 生成图文件删除；复刻壳图随项目过期清理；导出文件不清）。
 import path from 'node:path';
+import { rmSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { ApiError } from '../http';
 import { getGenerationConfig } from './config';
 import { getGenDb, nowMs } from './db';
-import { absPathForRelPath } from './storage';
+import { absPathForRelPath, purgeExpiredKindUploads } from './storage';
 import { cleanString } from './types';
 
 type Row = Record<string, string | number | null>;
@@ -13,6 +14,8 @@ type Row = Record<string, string | number | null>;
 export interface ProjectItem {
   id: string;
   projectType: 'deck' | 'single-page';
+  /** 单页项目来源：single=创意单页，replicate=美化复刻；整套 deck 无此字段 */
+  source?: 'single' | 'replicate';
   title: string;
   status: string;
   pageCount: number;
@@ -69,6 +72,7 @@ function singleProjectToItem(row: Row): ProjectItem {
   return {
     id: projectId,
     projectType: 'single-page',
+    source: String(row.source || '') === 'replicate' ? 'replicate' : 'single',
     title: String(row.title || '未命名单页项目'),
     status: pageCount > 0 ? 'active' : 'empty',
     pageCount,
@@ -81,7 +85,8 @@ function singleProjectToItem(row: Row): ProjectItem {
 /**
  * 物理清理软删超过保留期的项目：删行（FK 级联 slides/pages/versions）+ 删生成图。
  * deck 图在 generated/{userId}/{deckId}/ 整目录删除；单页图按 version.image_path
- * 逐个删（共用 single/ 目录）。导出文件与 uploads 不在清理范围。失败只忽略。
+ * 逐个删。复刻壳图（shell_path / uploads/{userId}/replicate/）随项目过期删；
+ * 导出文件仍不清。失败只忽略。
  */
 function purgeExpiredProjects(userId: string): void {
   const db = getGenDb();
@@ -106,12 +111,35 @@ function purgeExpiredProjects(userId: string): void {
         "SELECT image_path FROM single_page_versions WHERE image_path != '' AND page_id IN (SELECT id FROM single_pages WHERE project_id = ?)",
       )
       .all(row.id) as Array<{ image_path: string }>;
+    const shells = db
+      .prepare("SELECT shell_path FROM single_pages WHERE project_id = ? AND shell_path != ''")
+      .all(row.id) as Array<{ shell_path: string }>;
     db.prepare('DELETE FROM single_page_projects WHERE id = ?').run(row.id);
     for (const file of files) {
       const absPath = absPathForRelPath(String(file.image_path), config);
       if (absPath) void rm(absPath, { force: true }).catch(() => {});
     }
+    for (const shell of shells) {
+      const absPath = absPathForRelPath(String(shell.shell_path), config);
+      if (!absPath) continue;
+      try {
+        rmSync(absPath, { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
   }
+
+  const liveShells = (
+    db
+      .prepare(
+        `SELECT shell_path FROM single_pages
+         WHERE user_id = ? AND shell_path != ''
+           AND project_id IN (SELECT id FROM single_page_projects WHERE user_id = ? AND deleted_at IS NULL)`,
+      )
+      .all(userId, userId) as Array<{ shell_path: string }>
+  ).map((row) => String(row.shell_path));
+  void purgeExpiredKindUploads(userId, 'replicate', liveShells, cutoff, config).catch(() => {});
 }
 
 export function listProjects(

@@ -195,6 +195,14 @@ export function getFeatureFlags(): Promise<{ flags: Record<string, boolean> }> {
   return apiFetch<{ flags: Record<string, boolean> }>("/api/features");
 }
 
+export function getAuthSession(): Promise<{ authenticated: boolean }> {
+  return apiFetch<{ authenticated: boolean }>("/api/auth/session");
+}
+
+export function getMe(): Promise<{ user: { id: string; username: string }; balance: number }> {
+  return apiFetch<{ user: { id: string; username: string }; balance: number }>("/api/me");
+}
+
 export interface ExportRecord {
   exportId: string;
   refType: string;

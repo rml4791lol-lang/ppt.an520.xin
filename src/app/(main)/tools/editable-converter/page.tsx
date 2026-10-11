@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { EditableConverterClient } from "@/components/tools/editable-converter-client";
+import { EditableConverterClient } from "@/modules/editable-export/client/editable-converter-client";
 
 export const metadata: Metadata = {
   title: "文件转可编辑 PPT",

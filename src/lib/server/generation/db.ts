@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS single_page_projects (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title TEXT NOT NULL DEFAULT '未命名单页项目',
+  source TEXT NOT NULL DEFAULT 'single',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS single_pages (
   title TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL DEFAULT '',
   style_pack_id TEXT NOT NULL DEFAULT '',
+  shell_path TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'idle',
   error TEXT NOT NULL DEFAULT '',
   active_version_id TEXT NOT NULL DEFAULT '',
@@ -189,6 +191,14 @@ export function getGenDb(): DatabaseSync {
     const singleVerCols = db.prepare("SELECT name FROM pragma_table_info('single_page_versions')").all() as Array<{ name: string }>;
     if (!singleVerCols.some((c) => c.name === 'charge_key')) {
       db.exec("ALTER TABLE single_page_versions ADD COLUMN charge_key TEXT NOT NULL DEFAULT ''");
+    }
+    const projectCols = db.prepare("SELECT name FROM pragma_table_info('single_page_projects')").all() as Array<{ name: string }>;
+    if (!projectCols.some((c) => c.name === 'source')) {
+      db.exec("ALTER TABLE single_page_projects ADD COLUMN source TEXT NOT NULL DEFAULT 'single'");
+    }
+    const singlePageCols = db.prepare("SELECT name FROM pragma_table_info('single_pages')").all() as Array<{ name: string }>;
+    if (!singlePageCols.some((c) => c.name === 'shell_path')) {
+      db.exec("ALTER TABLE single_pages ADD COLUMN shell_path TEXT NOT NULL DEFAULT ''");
     }
     migrated.add(db);
   }

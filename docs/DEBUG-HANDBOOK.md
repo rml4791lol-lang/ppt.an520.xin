@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-08-22（功能开关板与测试用户、轻量文字可编辑导出、上游消耗计量）
+> 最后更新：2026-09-08（美化对抗审查修补：幂等键/改图失败/再规划脏页/refine 硬门/PDF worker）
 
 ## 1. 系统是什么
 
@@ -39,9 +39,11 @@ NODE
 
 ## 3. 监控告警（邮件来源）
 
-- root cron 每 5 分钟：`/usr/local/sbin/anppt-health-monitor.py`（日志 `/var/log/anppt-monitor.log`，状态 `/var/lib/anppt-monitor/state.json`）。
-- 检查项：slideflow-studio/caddy 服务存活 + `https://ppt.an520.xin/api/health` + 磁盘 + **anppt-v2 备份新鲜度（26h 无新备份即告警）**。（img2pptx-v4-node 已于 2026-08-22 退役下线，见 §17。）
-- **health 契约**：顶层 `ok`、`llm.configured`、`image.configured`、`editable.configured`——缺了任何一项监控就误报。连续失败 2 次起每 5 分钟发邮件到 366150820@qq.com，恢复后发一封恢复通知。
+- root cron 每 5 分钟：`/usr/local/sbin/anppt-health-monitor.py`（仓库副本 `deploy/anppt-health-monitor.py`；日志 `/var/log/anppt-monitor.log`，状态 `/var/lib/anppt-monitor/state.json`）。SMTP 读 **`/opt/anppt-v2/shared/.env`**，不要读 slideflow 的 `.env`。
+- 检查项：`anppt-v2.service` + `caddy.service` 存活 + `https://ppt.an520.xin/api/health` + 磁盘 + **anppt-v2 备份新鲜度（26h 无新备份即告警）**。
+- **不要**把 `slideflow-studio.service` 列为存活条件：老站已 disable、Caddy 不再代理 3300。禁区仍是不杀、不重新代理；监控盯它会导致每 5 分钟刷邮箱（2026-09-07 修：`fail_count` 曾卡在 33）。img2pptx-v4-node 已于 2026-08-22 退役，见 §17。
+- **health 契约**：顶层 `ok`、`llm.configured`、`image.configured`、`editable.configured`——缺了任何一项监控就误报。连续失败 2 次起发一封到 366150820@qq.com；持续异常最多每小时再提醒一次；恢复后发一封恢复通知。
+- **QQ From**：告警信 `From` 必须是 SMTP 登录邮箱；中文显示名走 `email.utils.formataddr`（RFC2047）。不要把 `.env` 里带中文、未编码的 `SMTP_FROM` 原文塞进邮件头——QQ 会 550 拒信，监控看起来像“发了”其实没发出去。用户 OTP 走 nodemailer，一般会自动编码，不受这条影响。
 
 ## 4. 业务主链路（整套 PPT）
 
@@ -54,7 +56,7 @@ NODE
 - 生成管线：`src/lib/server/generation/generate.ts`（估价→整单 402 预检→建 job→单套逐页并发 6；`images.ts` 再统一约束全站在途 20 / 每分钟启动 24→debit 幂等键 `deck-generate:{deckId}:{jobId}:{slideId}`→失败 refund）。每个已启动任务固定一次配置快照，管理员中途改模型、并发或密钥只影响后续任务。
 - 状态机：decks.ts（parsed→outlined→structured→confirmed→generating→generated/partial；stale 作废机制）。
 - **崩溃恢复（2026-08-20 上线）**：`src/lib/server/generation/recovery.ts`。重启/崩溃打断生成后，deck 卡 generating（409 死锁）、页卡 queued/running、已扣费页无退款的问题由懒恢复解决：`getDeckState`/`startDeckGeneration`/单页读写入口触发 `reconcile*`，把中断页收敛为 failed、deck 收敛为 partial/confirmed，并按 ledger **实扣金额**补退款（refund 幂等键与正常失败退款同格式，不双退）。判定依据 = job 心跳（每页完成刷新 `generation_jobs.updated_at`）超过 `ANPPT_V2_JOB_STALE_MS`（默认生图超时+2min，下限 5min）或 job 已终态；本进程活跃任务有注册表守卫不会误伤。**整批在途守卫（2026-08-24 修）**：deck 有活跃 job 时整体跳过收敛——页先置 queued、`slide_versions` 行要等蓝图/调度后才逐页落库，此前按「页最新版本所属旧 job 已死」判收敛会把在途页误置 failed，并对 refine/重生成页按旧版本误退原始扣费。单页扣费键存 `single_page_versions.charge_key`（老库懒迁移补列）。
-- **软删清理（同日上线）**：`projects.ts` `listProjects` 时懒清理软删超 `ANPPT_V2_PROJECT_RETENTION_DAYS`（默认 7 天）的项目——行级联删除（FK ON）+ 生成图删除（deck 整目录、单页按 version.image_path）；导出文件与 uploads 不清；**credit_ledger 永不删除**。
+- **软删清理（同日上线）**：`projects.ts` `listProjects` 时懒清理软删超 `ANPPT_V2_PROJECT_RETENTION_DAYS`（默认 7 天）的项目——行级联删除（FK ON）+ 生成图删除（deck 整目录、单页按 version.image_path）；**复刻壳图**（`single_pages.shell_path` 与 `uploads/{userId}/replicate/` 中超期且未被在用页引用的文件）一并清；导出文件仍不清；**credit_ledger 永不删除**。
 
 ## 5. 计费与支付
 
@@ -69,13 +71,13 @@ NODE
     - `.env`：`WECHAT_PAY_ENABLED=true`，`WECHAT_PAY_*_PATH`/`_FILE` 指向上述 secrets；商户号 `1747212050`、APP `wxeb7e1885c25df663`、证书序列与 APIv3 已为真值（值本身勿入手册）。
     - 回调：`POST /api/recharge/notify/wechat`（平台公钥验签 → 幂等入账）。
     - **mock 硬拒（2026-08-24）**：`NODE_ENV=production` 时 `WECHAT_PAY_MOCK`/`EPAY_MOCK` 被强制关闭（加载期大字告警），免验签回调只存在于非生产，误开不会变免费充值。
-- 频控（进程内固定窗）：登录/注册按 IP+账号；下单/兑换按用户+IP 20/h；**免费 LLM 动作（outline 重生成/structure/拆页）按用户 30 次/10min**（复用路径不计）；**上传按用户 60 次/h**（2026-08-24 加，防零成本刷上游与磁盘）。
+- 频控（进程内固定窗）：登录/注册按 IP+账号；下单/兑换按用户+IP 20/h；**免费 LLM 动作（outline 重生成/structure/拆页）按用户 30 次/10min**（`llm-free`，复用路径不计）；**复刻拆文案**单独走 `replicate-plan` 30 次/10min，不占用大纲桶；**上传按用户 60 次/h**（2026-08-24 加，防零成本刷上游与磁盘）。
     - **坑**：下单 `description` 不可含 emoji/非 BMP。微信报「请求内容传入了非UTF8参数」。`sanitizeWechatDescription` 必须用 `/[^\u0000-\uFFFF]/gu`（**带 `u` 旗**）；无 `u` 时代理对各自落在 BMP 内，过滤失效。建单文案用「星」不用「🌟」。
     - 验收：先只建单（`codeUrl` 以 `weixin://` 开头）不付款；真实小额扫码由人工核对回调验签 + 星星入账 + 订单 `paid`。
 
 ## 6. 转可编辑 PPTX（Codia 链，20🌟/页）
 
-- 代码：`src/lib/server/codia.ts`（客户端）、`src/lib/server/exports.ts`（deck / single-page / upload 共用 `launchEditableExport` + 管线 + 懒恢复）、路由 `POST /api/deck/[id]/export-editable`、`POST /api/single-page/export-editable-pptx`、`POST /api/editable-conversions`，状态 `GET /api/pptx-exports/[id]`。
+- 代码（2026-09-06 归拢进模块）：`src/modules/editable-export/server/codia.ts`（客户端）、`src/modules/editable-export/server/editable.ts`（deck / single-page / upload 共用 `launchEditableExport` + 管线 + 懒恢复），路由 `POST /api/deck/[id]/export-editable`、`POST /api/single-page/export-editable-pptx`、`POST /api/editable-conversions`，状态 `GET /api/pptx-exports/[id]`。
 - 流程：站内作品读页图，外部入口接受单份 PDF 或最多 20 张 PNG/JPG；图片先用 pdf-lib 合成 image-only PDF → Codia 上传（multipart `file`）→ 建任务（`Idempotency-Key: anppt-editable-{exportId}`）→ 4s 轮询真实进度 → PPTX 流式写临时文件并原子落盘。上传源 PDF 在所有终态安全删除。
 - 幂等：同项目进行中任务直接复用；同一来源指纹已有成功结果默认复用；只有显式 `force=true` 才重新建任务、重新扣星。查重、建行、扣费在同一 `BEGIN IMMEDIATE` 事务中。
 - 请求恢复：GET 最多 3 次；上传与带固定 `Idempotency-Key` 的建任务最多 2 次；仅网络错误、429、5xx 与非 JSON 临时响应短退避恢复。401/402/403 与业务参数错误不盲目重试。建任务重试始终复用同一幂等键。
@@ -97,8 +99,8 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 294 断言，Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 124 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE
+node scripts/test-generation.mjs  # 当前 401 断言，Codia/生图/VLM 全部 mock
+node scripts/test-backend.mjs     # 当前 126 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
 npm run build
@@ -123,16 +125,17 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 注册仅需用户名+密码即送 100🌟，可换 IP 刷号薅生图成本（产品决策）。
 - 当前 140 张风格样张路径完整，但仍是迁移期素材；禁止将它们误称为原创资产，需按 `docs/ORIGINAL-TEMPLATE-REGEN.md` 分批原创重制并原子替换。
 
-## 10.1 LLM 模型链与回退（2026-08-21 上线）
+## 10.1 LLM 模型链与回退（2026-09-07：DeepSeek 官方 flash）
 
 - 大纲/内容梳理的 LLM 兜底走「模型链」：`ANPPT_V2_LLM_MODEL`（主）+ `ANPPT_V2_LLM_FALLBACK_MODELS`（回退，逗号分隔，最多 3 个）。
-- 当前线上：主 `gemini-3.1-flash-lite`（快：20 页大纲 ~10s，原 deepseek-v4-flash 要 31s，kel 真实文档 123s），回退 `gpt-5.6-luna` → `deepseek-v4-flash`（末位兜底）。
-- 切换策略：主模型失败（超时/HTTP 错/空响应）自动换下一个；超时梯度 45s/90s/末位 120s。切模型会打日志 `[anppt-v2][engine] LLM 模型 X 失败，切换 Y`——看到即说明主模型有问题。
-- **回退操作**（改 env 两行 + `systemctl restart anppt-v2`，改前备份 .env、查在途任务）：
-  - 换回 deepseek：`ANPPT_V2_LLM_MODEL=deepseek-v4-flash`、`ANPPT_V2_LLM_FALLBACK_MODELS=`
-  - 换主模型：改 `ANPPT_V2_LLM_MODEL`（可用模型见中转 `/v1/models`）
-  - 上次备份：`/opt/anppt-v2/shared/.env.bak-20260821-llm`
-- 背景：deepseek-v4-flash 是推理模型，出 20 页结构化大纲思考极慢（kel 两单 101s/123s，贴 120s 硬超时悬崖）；gemini-3.1-flash-lite 同任务 9.5s 且输出结构合法。
+- 当前线上：直连 `https://api.deepseek.com/v1`，主模型 `deepseek-v4-flash`，**回退链为空、不用 PRO**。密钥与生图（sqface）分离，禁止把 LLM 指回 6800 或 sqface 文本分组。
+- DeepSeek V4 默认思考强度是 high，20 页结构化大纲会贴 120s 超时。请求体对 DeepSeek 候选显式带 `thinking: {type:enabled}` + `reasoning_effort`（默认 `low`）。`ANPPT_V2_LLM_REASONING_EFFORT` 可选 `low` / `high` / `max` / `off`（off=关闭思考）。其它 OpenAI 兼容上游不附这些字段。
+- 切换策略：主模型失败（超时/HTTP 错/空响应）自动换下一个；超时梯度 45s/90s/末位 120s。切模型会打日志 `[anppt-v2][engine] LLM 模型 X 失败，切换 Y`。当前无回退模型，失败即失败。
+- **回退操作**（改 env + `systemctl restart anppt-v2`，改前备份 .env、查在途任务）：
+  - 关思考：`ANPPT_V2_LLM_REASONING_EFFORT=off`
+  - 加回退：`ANPPT_V2_LLM_FALLBACK_MODELS=` 逗号分隔（须是当前 BASE_URL 能跑的模型；跨站用 `ANPPT_V2_LLM_BACKUP_*`）
+  - 可用模型：DeepSeek 官方 `GET /v1/models`（不要再用中转 `/v1/models`）
+- 背景：2026-09 本机 6800 中转无进程；`api.an520.xin` / `console.an520.xin` 中转 503。原 `gemini-3.1-flash-lite` → `gpt-5.6-luna` → `deepseek-v4-flash` 链依赖该中转，已废弃。
 
 ## 11. 禁区与注意事项
 
@@ -141,7 +144,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 客户端 IP：`getClientIp` 只信 `X-Real-IP`（Caddy 显式 `header_up` 覆写），XFF 仅作无代理兜底——Caddy 对 XFF 是追加链，首值客户端可伪造，限流曾因此可绕（2026-08-24 修）。
 - 大纲与页型契约可继续优化，但必须保持 DSL、历史项目和 `legacySlugs` 兼容，并通过完整生成测试；不得直接照搬第三方模板序列或编造原文没有的页面。
 - commit 用英文祈使句；部署前跑齐 generation/backend/lint/typecheck/build 与 `git diff --check`；部署会重启服务。
-- 竞品调研资料库：`/Users/an/ZCodeProject/anppt-v2-recon/`（旁门/花卷/抖研三站报告 + 可编辑路线调研 RESEARCH-image-to-editable-pptx-2026.md）。
+- 竞品调研资料库：`/Users/an/Archive/2026-08-28-项目清理/anppt-v2-recon/`（旁门/花卷/抖研三站报告 + 可编辑路线调研 RESEARCH-image-to-editable-pptx-2026.md）。
 - 调研资料和已授权前端源码只用于学习机制与交互，不得复制第三方 CDN 图片、PPTX、Logo、品牌文案或远程模板地址进入产品。
 
 ## 12. 2026-08-21 全站工具与并发升级
@@ -182,7 +185,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 ## 16. 轻量文字可编辑导出（editable_text_overlay，beta，5🌟/页）
 
 - 定位：对标花卷「导出编辑文字PPT」的自研轻量档——成本近零（不调擦除/重建 API），与 Codia 重转换档（20🌟/页）并存；`export_jobs.kind='editable_text'` 与 `'editable'` 分账互不串扰。
-- 链路（`src/lib/server/exports.ts` `runTextEditablePipeline`）：读页图 → **主 LLM 链 VLM** 提取文字块（bbox/字号/颜色/字重/对齐，`TEXT_EXTRACT_PROMPT` 自写提示词，未抄竞品）→ sharp 采样文字区外围底色 → pptxgenjs 整页图垫底 + 纯色底文本框覆盖。
+- 链路（`src/modules/editable-export/server/editable.ts` `runTextEditablePipeline`）：读页图 → **主 LLM 链 VLM** 提取文字块（bbox/字号/颜色/字重/对齐，`TEXT_EXTRACT_PROMPT` 自写提示词，未抄竞品）→ sharp 采样文字区外围底色 → pptxgenjs 整页图垫底 + 纯色底文本框覆盖。
 - 路由：`POST /api/deck/[id]/export-editable-text`（挂 `assertFeatureVisible('editable_text_overlay')` 硬门）；状态/下载复用 `GET /api/pptx-exports/[id]`；下载中心列表 `kind` 过滤，标签「文字可编辑」。
 - 失败语义：**单页提取失败只记日志降级**（该页无文本框，整页图仍在，不中断）；全部页失败才整单 failed + 幂等退星（ledger 前缀 `export-editable-text`，与 Codia 档 `export-editable` 分开）。用户文案：「文字层提取服务暂时不可用，星星已退回；稍后可重新转换。」upload 来源暂不支持（发起即校验）。
 - 计价：独立动作 `export_editable_text`（5🌟/页），估价/预检/幂等键/退星与 Codia 档同套机制；VLM 消耗照常落 `upstream_usage_records`（provider `llm-primary`，kind `chat`）。
@@ -199,11 +202,11 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 ## 18. 金奖版式测试包（gold_layouts_beta，beta，2026-08-24）
 
-- 定位：从 2025 国赛金奖路演 PPT（14 份已脱敏研究，产物在 anppt-v2-recon/award-samples/）提炼的 6 页真模板——封面/痛点卡片列/单字锚点对比/竞品整行高亮表/数据大字页/对仗封底。用户裁定「版式锁死、只能改内容」→ kind=template 真模板路线（灌内容，非借风格）。
+- 定位：从 2025 国赛金奖路演 PPT（14 份已脱敏研究，产物在 Archive/2026-08-28-项目清理/anppt-v2-recon/award-samples/）提炼的 6 页真模板——封面/痛点卡片列/单字锚点对比/竞品整行高亮表/数据大字页/对仗封底。用户裁定「版式锁死、只能改内容」→ kind=template 真模板路线（灌内容，非借风格）。
 - 门控机制（测试资产挂开关板的成例）：包登记在 `src/data/style-packs.ts` 的 **`GATED_STYLE_PACKS`（不进 STYLE_PACKS 公开数组**，客户端 bundle 天然不含）；`StylePack.featureFlag='gold_layouts_beta'`。服务端全集出口 `ALL_STYLE_PACKS` 供 findStylePack/getTemplate 解析；`templates.ts` 的 `visibleStylePacks(user)` 是列表注入唯一入口，`assertStylePackUsable(stylePackId, user)` 是生成硬门（不可见 404）。
 - 挂接点：`/api/style-packs`、`/api/templates`（listTemplates 第二参带 user）、`/api/templates/[id]`（不可见 404）、建 deck 两路由（parse/paged-copy-v2）、actions `style` 动作，全部走同一硬门。前端三组件（UploadCard/step-style/TemplateLibrary）用 `src/components/use-gated-style-packs.ts` 按 `/api/features` 并入列表——只决定「列不列出来」，兜底在服务端。
 - 载体：`public/assets/style-packs/gold-tianxun/01..06.png`（虚构项目「天巡」，AI 直出已验收，见 award-samples/samples/VERDICT.md）；`templatePages` 逐页标注逻辑页型，mapping 精确命中，未覆盖页型兜底内容桶。DNA 用 COMPETITION_ACADEMIC 预设。
-- 单页工作室（sp-panels）**未接入**门控包（beta 期只走 deck 主流线）；核心技术页框图/证据墙页维持「需程序化底座」判断，未进本期。
+- 单页工作室（sp-panels）**未接入**门控包（beta 期只走 deck 主流线）；核心技术页框图/证据墙页的「程序化底座」已由 §23 落地（`/tools/ppt-to-base`）。
 - 转正式路径：测试用户实测 → 用户说「采纳」→ 包从 GATED 移入 STYLE_PACKS + 摘 featureFlag + 开关转 public 后移除登记。
 - 转正式路径：测试用户实测 → 用户说「采纳」→ 包从 GATED 移入 STYLE_PACKS + 摘 featureFlag + 开关转 public 后移除登记。
 
@@ -226,3 +229,49 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 密码哈希与老站完全同构（`scrypt:v1:…`，107 字符），直接搬即可登录；role 保留（admin/an 仍是 admin）。
 - 脚本：`scripts/migrate-slideflow-users.mjs --from <老库> --to <v2库> [--dry-run]`，幂等可重复执行（username 冲突跳过 + ledger 键防重）；服务器上需 `sudo -n node`（库属 root）。老站项目/PPT 数据不迁（轻量化决策），老 slideflow 3300 服务保留可查。
 - 同批轻量化：移除「重点用户监控」功能（`admin_user_watches` 表本地+线上均已 DROP，代码/路由/前端/测试全清）。
+
+## 21. PPT 美化 / 复刻（ppt_replicate，beta，2026-09-05）
+
+- 定位：上传参考稿保画面、换文案。不进大纲→风格包工作台。开关仍是 `ppt_replicate`（beta=测试用户+管理员）。
+- **模块目录（2026-09-06 归拢，首个自包含模块样板）**：`src/modules/ppt-replicate/`——`server/replicate.ts` 唯一服务端出口，`client/` 全部前端（工作台/ui/规则/请求/交接/拆页/URL/入口卡），边界与四件套见模块 README；薄壳留在 `src/app/(main)/beautify/page.tsx` 与 `src/app/api/tools/replicate/plan/route.ts`。
+- 入口：首页「PPT美化」、模板库「自己的 PPT」、侧栏「PPT 美化」、`/beautify`。旧地址 `/tools/replicate-ppt.html` 跳到 `/beautify`。未登录去 `/login?next=...`；开关不可见显示「功能尚未开放」。`robots` disallow `/beautify` 与 `/tools/`。
+- 前端拆分（均在模块 `client/` 下）：规则在 `beautify-pages.ts`（扣费名单/失败横幅/草稿/计划回写）；请求在 `beautify-api.ts`；UI 零件在 `beautify-ui.tsx`；`BeautifyClient` 只编排。内部 source 仍是 `replicate`。
+- 链路：参考稿（浏览器拆页）→ 上传壳图 → VLM 读每页画面结构（仅计划阶段）→ LLM 按主题/大纲/材料拆文案 → 逐页 `/images/edits` 换字保画面（10🌟）→ 可选 Codia 转可编辑（20🌟，20 页一批）。
+- 文案：`POST /api/tools/replicate/plan` 只做鉴权/开关/读入，业务在 `runReplicatePlan`。`copyMode` 默认 `improve`。壳图写入 `single_pages.shell_path`，美化页可用 `?projectId=` 恢复。
+- 生成：`mode:'replicate'` + `colorMode` 缺省 `follow-shell`。生图 **不再抽 VLM**（结构卡计划回传；不带则空卡 + 保画面）。硬门 `ppt_replicate`。
+- 二阶（钱/失败/恢复）：
+  - 整批生成**跳过已有成品图的页**，不重复扣 10🌟；要重做只点「重试本页」。
+  - 中途 402 停住，横幅保持失败语义，已生成页保留，未生成页未扣成图星。
+  - 转可编辑后一批失败：已排队批次仍在下载中心，已扣星不因后面失败退回。
+  - 换新参考稿**不沿用旧文案**（避免画面和文字对不上）。
+  - 打开旧项目：结构卡需再点完善文案；壳图过期则提示重传。草稿键仍是 `anppt-replicate-draft-v1`。
+  - **2026-09-08 对抗审查修补**：生成/改图 `requestId` 改为每次 UUID（刷新后再点「重试本页」不再撞 `DUPLICATE_REQUEST`）；改图失败保留旧成品图；再完善文案若字变了会清成品图并提示重新扣星；`refine` 对 `source=replicate` 项目也走 `ppt_replicate` 硬门；PDF worker 改走同站打包资源，不再拉 unpkg。
+- 视觉预算：单次最多 24 页结构；10 分钟 48 次 VLM。文案 LLM 走 `replicate-plan:{userId}` 30/10min，**不占**大纲 `llm-free`。
+- 项目身份：`source='replicate'`。列表「美化 ·」链到 `/beautify`；工作台缺省生成 409 `REPLICATE_PROJECT`（文案「请到 PPT 美化」）。
+- `/api/me` 的 `features.beautify` 跟开关走，不再写死 true。
+- 页数：与整套解析对齐 **1–40**，超出在拆页/拆文案拒绝，不先扣星。仍受单文件 30MB、上传 60 次/小时。
+- 路径：拒绝 `.` / `..` / 编码穿越。预览图只允许 `/api/files/` 与 `data:image`。
+- 壳图清理：软删过期后删 `shell_path`；`uploads/{userId}/replicate/` 中超保留期且未被在用页引用的文件懒清理。导出文件仍不清。
+- 转可编辑：20 页一批；可编辑是位图转 PPTX，不是原槽位（产品边界）。
+- 计费：10🌟/页生成、失败退星；可编辑 20🌟/页。
+- 测试：`scripts/tests/ppt-replicate.test.mjs`（套件内段名 [7c]）含结构卡/路径/项目 source/llm-free 隔离/40 页上限/壳图过期清理/美化 URL 白名单/已生成不扣星/402 横幅/409 文案；开关门控在 test-backend.mjs [11]。**禁止真实 VLM/生图/Codia。**
+
+## 22. 插件运行时三件与先锋插件（pricing / models，2026-09-06）
+
+- 定位：插件化路线（`docs/PLUGIN-ARCHITECTURE.md`）第一步。Phase 1 纯增量；**Phase 2（2026-09-06 下午）起生产读价接通**：`credits.estimateCredits` 经 `ctx.pricing` 读价（插件内部仍读同一 env 覆盖链，数字与报错语义不变；未映射插件动作键的自定义 env 键回退直读）。
+- **机制**：运行时三件在 `src/lib/plugin/`——`types.ts`（`AnPlugin` 接口 + 冻结数据契约 Ref/Page/Result 的唯一定义处）、`ctx.ts`（服务注册表 `register/use/has/reset`，`createCtx()` 造实例）、`profile.ts`（`boot(profile)` 异步 / `bootSync(profile)` 同步、遇异步 register 即 fail fast）、`default.ts`（组合根：懒同步 boot `defaultProfile`、全进程单例，生产高频同步读点从这里取服务）。系统 = 一张配置单：默认 profile 在 `src/plugins/default-profile.ts`，按 pricing → models 顺序 boot。
+- **契约层**：`src/lib/plugin/contracts/pricing.ts` 是动作 key ↔ env 键映射与 `PricingService` 类型的唯一定义处——平台（credits.ts）与插件（plugins/pricing）都只依赖契约，互不 import 实现。
+- **边界（lint 强制）**：`eslint.config.mjs` 的 `import/no-restricted-paths`——`src/plugins/*` 之间禁止直接 import（成对 zone）；`src/lib` 不得 import `src/plugins` / `src/modules`。登记例外仅两处：组合根 `src/lib/plugin/default.ts`、复刻分支 `single-pages.ts`。
+- **pricing 插件**（`src/plugins/pricing/`）：暴露 `ctx.pricing` = `{ quote(actionKey), table() }`。动作 key（`generate.page`/`edit.page`/`export.editable`/`export.editable-text`/`export.image`/`outline`）映射到 env.ts 的 `creditActionPrices` 键；价格数字不写进插件，调用时现读 `getEnv()`，`CREDIT_ACTION_PRICES` 覆盖自动生效。**未定价动作 quote 返回 0 且不在表内——免费是合法形态，不许 throw。**
+- **models 插件**（`src/plugins/models/`）：暴露 `ctx.models` = `{ text(), image(), fallback(model) }`。只读包装 `generation/config.ts`（含管理端覆盖）：文本链 = 主模型→fallbacks→跨站备份；图像按用途成对（文生图/改图各有灾备）。`fallback` 链尾或未知模型返回 null。
+- **失败语义**：`use` 未注册键启动期即 throw（信息含已注册键清单）；同键重复注册 / profile 内插件键重复即冲突报错——fail fast，不许运行期 undefined 漂移。**与 dsh 的有意偏离**：dsh inject 是持续跟踪（服务缺失则消费方 PENDING 等待），营收系统选启动期 fail fast。dsh 的 effect/disposer、`cordis.patch.yml` 三层格式（`{id, name, disabled, config}`、同 id 后写赢、config 整行替换）列入运行时下一版迭代。
+- **测试约束**：`scripts/tests/plugin-runtime.test.mjs`（套件内段名 [20]，18 断言）含**插拔实证**——同一消费函数 `c.use('pricing').quote('generate.page')` 在默认 profile 与替换 fake pricing 的测试 profile 上分别得 10 与 99，调用方代码零改动；Phase 2 起含生产读价路径（estimateCredits 经服务键 3 页=30）与 bootSync fail fast。全 mock，无真实上游。
+
+## 23. PPT 转模版底座（ppt_to_base，beta，2026-09-15）
+
+- 定位：§18 留下「需程序化底座」缺口的落地。工具页 `/tools/ppt-to-base`（侧栏入口按开关 `ppt_to_base` 门控，beta 期带「试验」标）。**输入是截图/PPT 图片，输出两样：①主标题原文（可复制）②去风格化通用模版底图**——版式栅格/区域位置大小/元素数量形状全保留，具体文字全部替换为中性角色词（"标题/副标题/正文/要点/标签/编号/图片/数据"），配色归一为中性浅色系（白底、浅灰分区、中灰线条、无 Logo/水印）。产物定位 = `templatePages` 真模板位图的通用化来源：拿到手填内容、换风格即可。
+- **主路线·截图 AI 通用化（5🌟/张）**：`POST /api/tools/ppt-to-base`（multipart：file=PNG ≤10MB + requestId；mutation 带 CSRF）。服务端 `src/modules/ppt-to-base/server/base-image.ts`：`assertFeatureVisible('ppt_to_base')` 硬门（开关外用户 404）→ 限流 `ppt-to-base:{uid}` 30 次/时 → `estimateCredits({action:'ppt_to_base'})` 取价（插件动作键 `tool.ppt-to-base`，§22 pricing 契约已映射）→ chargeKey `ppt-to-base:{uid}:{requestId}` 幂等扣费（duplicate→409，不重复扣）→ VLM 抽主标题（带图 vision 分段，**失败降级空串不阻塞主流程**）→ `editImage` 精准编辑 → `saveFile('generated',…,{kind:'ppt-to-base'})` 落盘；任一步失败经 `{chargeKey}:refund` 键全退星星后抛 `toPublicImageError` 公开码。客户端先把任意截图 letterbox 成 1536×864 白底 PNG 再传（`client/image-prepare.ts`）。
+- 生图规范：编辑档默认走 `ANPPT_V2_IMAGE_EDIT_MODEL`（管理端运行时配置可热切换），image2.5 时代档名 `gpt-image-2.5-sunburst`（精准编辑）/ `gpt-image-2.5-flare`（快速）。编辑指令 `BASE_IMAGE_INSTRUCTION` 按 GPT Image 精准编辑最佳实践固化：点名参考图角色 → 改变项/保留项分离 → 不变量重复声明（构图/栅格/区域位置大小/元素数量/栏数/边距/16:9）→ 中性词逐字加引号 → 约束词频与原页面同类文字块数量一致、禁原文字与品牌残留。改提示词先改常量再跑 [7f] 契约断言。
+- image2.5 渠道实况（2026-09-15 校准记录）：an520 中转站已退役（503）；atlascloud 已上架 `openai/gpt-image-2.5-sunburst/edit`（IMAGE-TO-IMAGE，≤16 参考图），但**入参与现网 gpt-image-2/edit 不同**：图字段是 `images` 数组（现网灾备调用体用 `image` 单数），size 枚举无 1536x864，16:9 选 `2048x1152`，quality 新增 xhigh/max。主站恢复后切 2.5 只改 `ANPPT_V2_IMAGE_EDIT_MODEL`；若要灾备也上 2.5，需同步改 `images.ts` atlas 分支调用体。校准脚本 `output/ppt-to-base-e2e/calibrate-prompt.mjs`（主站默认 / 加 `atlas:` 前缀走灾备）。
+- **次路线·pptx 本地擦除（免费）**：页面底部折叠入口。上传 `.pptx`，浏览器本地 jszip + DOMParser 解析 OOXML 并重绘——不画任何文字，保留版式/配色/图片/装饰形状——导出 1536×864 底座 PNG + 槽位 JSON。无任何服务端路由、无计价；文件不出浏览器。渲染划界（有意为之）：文字一律不画只收槽位；graphicFrame（表格/图表/SmartArt）跳过并计数提示；未识别 prstGeom 回退 rect；渐变只近似线性、组旋转/flip 忽略。**文字已烧进位图的页面擦不掉**——那类页正由主路线覆盖，两路互补。
+- 测试：`scripts/tests/ppt-to-base.test.mjs`——[7e]（17 断言）钉 pptx 纯函数层契约（EMU 换算、Office 基准色值 tint 0.2≈#d9e2f3 / shade 0.5≈#203864、槽位角色启发式）；[7f]（13 断言）截图 AI 路线服务端全 mock：成功链路（标题+落盘+扣 5🌟）、提示词契约（点名参考图/改变项不变量分离/中性词加引号）、VLM vision 分段、requestId 重放 409 且不重复扣费、VLM 失败降级、edits 400→`IMAGE_REQUEST_INVALID` 且全退、开关外 404、余额不足 402、缺 requestId 400、估价 5🌟。真实 image2.5 校准（付费）走 `output/ppt-to-base-e2e/calibrate-prompt.mjs` 手测，不进套件。

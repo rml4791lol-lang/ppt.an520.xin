@@ -25,6 +25,9 @@ export function generateSinglePage(input: {
   requestId?: string;
   /** 原稿图路径（i2i 原稿重设计，正式契约）：来自 /api/assets/upload 的 path；服务端校验归属当前用户，否则报 FILE_FORBIDDEN/原稿不存在 */
   imagePath?: string;
+  mode?: string;
+  colorMode?: string;
+  structure?: unknown;
 }): Promise<SingleRunResponse> {
   return apiFetch<SingleRunResponse>("/api/single-page/generate", { body: input });
 }
@@ -76,6 +79,7 @@ export function startSingleEditableExport(projectId: string, force = false): Pro
 export interface ProjectItem {
   id: string;
   projectType: "deck" | "single-page";
+  source?: "single" | "replicate";
   title: string;
   status: string;
   pageCount: number;
@@ -128,6 +132,7 @@ export interface SinglePageDetailPage {
   title: string;
   content: string;
   stylePackId: string;
+  shellPath?: string;
   status: "idle" | "queued" | "running" | "succeeded" | "failed";
   error: string;
   activeVersionId: string;
@@ -138,7 +143,7 @@ export interface SinglePageDetailPage {
 }
 
 export interface SinglePageProjectDetail {
-  project: { id: string; title: string; createdAt: number; updatedAt: number };
+  project: { id: string; title: string; source?: "single" | "replicate"; createdAt: number; updatedAt: number };
   pages: SinglePageDetailPage[];
 }
 
