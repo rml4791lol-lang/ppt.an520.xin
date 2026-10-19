@@ -54,6 +54,7 @@ export function BeautifyClient() {
   const pagesRef = useRef<BeautifyPage[]>([]);
   const projectIdRef = useRef("");
   const draftReady = useRef(false);
+  const draftTimerRef = useRef<number | null>(null);
 
   const [gate, setGate] = useState<"loading" | "login" | "closed" | "ready">("loading");
   const [username, setUsername] = useState("");
@@ -107,6 +108,18 @@ export function BeautifyClient() {
     }
     return result;
   }, []);
+
+  // 文案编辑自动保存：停止输入约 1.2s 后写草稿；生成/规划期间跳过，避免撞 running 状态。
+  useEffect(() => {
+    if (gate !== "ready" || !projectIdRef.current || pages.length === 0 || running || planning) return;
+    if (draftTimerRef.current) window.clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = window.setTimeout(() => {
+      void persistDraft().catch(() => {});
+    }, 1200);
+    return () => {
+      if (draftTimerRef.current) window.clearTimeout(draftTimerRef.current);
+    };
+  }, [gate, pages, persistDraft, planning, running]);
 
   useEffect(() => {
     if (gate !== "ready") return;
