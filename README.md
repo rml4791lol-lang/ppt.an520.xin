@@ -59,4 +59,4 @@ node scripts/test-backend.mjs && node scripts/test-generation.mjs
 
 ## 部署
 
-见 `deploy/README.md`（systemd + rsync 产物 + Caddy 切换/回滚）。
+见 `deploy/README.md`（Git production 分支 + 不可变 release 发布 + Caddy 切换/回滚）。

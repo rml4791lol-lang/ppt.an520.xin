@@ -22,8 +22,8 @@
 ```
 
 `production` 是线上分支，GitHub 仓库同分支是唯一代码事实源。服务器源码、发布目录和本地
-`/Users/an/ZCodeProject/anppt-v2` 使用同一个提交；本地 launchd 每 5 分钟
-`fetch + merge --ff-only`，脏工作区或分叉时只记日志、不覆盖本地改动。
+clean worktree `/Users/an/ZCodeProject/anppt-v2.production` 使用同一个提交；主开发工作区可以有
+未合并 WIP。launchd 每 5 分钟 `fetch + merge --ff-only`，脏工作区或分叉时只记日志、不覆盖本地改动。
 
 ## 首次初始化（只做一次）
 
@@ -70,12 +70,20 @@ bash deploy/deploy.sh
 
 服务端脚本会 `git fetch` → `npm ci` → `npm run build` → 生成不可变 release →
 检查生成/导出双队列 → 原子切换 `/opt/anppt-v2/current` → 重启 → 自检。队列非 0 时
-只暂存 release、不切换、不重启。回滚时把 `current` 软链指回上一个 release 并重启即可。
+只暂存 release、不切换、不重启。
+
+回滚：
+
+```bash
+ssh hk-hermes 'ls -1dt /opt/anppt-v2/releases/* | sed -n "1,5p"'
+# 选定上一个 release 后
+ssh hk-hermes 'sudo -n ln -sfn /opt/anppt-v2/releases/<previous> /opt/anppt-v2/current && sudo -n systemctl restart anppt-v2'
+```
 
 ## 团队访问
 
 - 独立账号 `anppt-dev`（禁止密码登录，仅 SSH key），属于 `anppt-devs`；
-- 可写 `/opt/anppt-v2/source`，可执行受限的 `sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production`；
+- 可写 `/opt/anppt-v2/source`，可执行受限的 `sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production` 与 `publish-production`；
 - 不授予 root、不直改 `/opt/anppt-v2/shared`、不直改 `current`；
 - 新增成员必须各自提交公钥，不要共用私钥。交接包只用于首次应急交接，拿到后应尽快换成个人 key。
 
