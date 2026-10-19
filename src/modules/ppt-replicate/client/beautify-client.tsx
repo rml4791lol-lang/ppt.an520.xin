@@ -12,6 +12,7 @@ import {
   getSinglePageProject,
   planBeautifyCopy,
   refineSinglePage,
+  saveBeautifyDraft,
   startUploadedEditableExport,
   uploadAsset,
 } from "./beautify-api";
@@ -87,6 +88,26 @@ export function BeautifyClient() {
     setPages(next);
   }, []);
 
+  const persistDraft = useCallback(async () => {
+    const snapshot = pagesRef.current;
+    if (snapshot.length === 0) return null;
+    const result = await saveBeautifyDraft({
+      projectId: projectIdRef.current || undefined,
+      title: firstCopyLine(snapshot[0]?.copy || "") || "PPT 美化",
+      pages: snapshot.map((page, index) => ({
+        pageId: page.pageId,
+        title: firstCopyLine(page.copy) || `第 ${index + 1} 页`,
+        content: page.copy,
+        imagePath: page.imagePath || undefined,
+      })),
+    });
+    if (result.projectId && result.projectId !== projectIdRef.current) {
+      projectIdRef.current = result.projectId;
+      window.history.replaceState(null, "", beautifyHref(result.projectId));
+    }
+    return result;
+  }, []);
+
   useEffect(() => {
     if (gate !== "ready") return;
     if (!draftReady.current) {
@@ -114,22 +135,51 @@ export function BeautifyClient() {
         sessionRef.current = newBeautifySession();
         projectIdRef.current = "";
         window.history.replaceState(null, "", "/beautify");
-        replacePages(
-          canvases.map((canvas, i) =>
-            emptyBeautifyPage(`${sessionRef.current}p${i}`, {
-              shellUrl: canvas.toDataURL("image/png"),
-              canvas,
-            }),
-          ),
+        const next = canvases.map((canvas, i) =>
+          emptyBeautifyPage(`${sessionRef.current}p${i}`, {
+            shellUrl: canvas.toDataURL("image/png"),
+            canvas,
+          }),
         );
-        setUploadStatus(`已读入 ${canvases.length} 页。换参考稿不会带上一次的文案，避免画面和文字对不上。`);
+        replacePages(next);
+        setUploadStatus(`已读入 ${next.length} 页，正在保存参考稿…`);
+        let uploaded = 0;
+        let uploadError = "";
+        try {
+          await mapPool(next, 3, async (page, index) => {
+            const current = pagesRef.current[index];
+            if (!current?.canvas) return;
+            const blob = await canvasToBlob(current.canvas, "image/jpeg", 0.86);
+            const file = new File([blob], `${current.pageId}.jpg`, { type: "image/jpeg" });
+            const saved = await uploadAsset(file, "replicate");
+            patchPage(index, { imagePath: saved.path });
+            uploaded += 1;
+            setUploadStatus(`正在保存参考稿 ${uploaded}/${next.length}…`);
+          });
+        } catch (error) {
+          uploadError = error instanceof Error ? error.message : "参考稿上传失败";
+        }
+        try {
+          await persistDraft();
+          setUploadStatus(
+            uploadError
+              ? `已读入 ${next.length} 页，草稿已保存；${uploaded}/${next.length} 页参考稿上传成功，其余可在生成时补传。`
+              : `已读入并保存 ${next.length} 页。刷新后可从当前项目继续，换参考稿不会带上一次的文案。`,
+          );
+        } catch {
+          setUploadStatus(
+            uploadError
+              ? `已读入 ${next.length} 页，但参考稿上传/草稿保存失败：${uploadError}。可直接生成，生成时仍会尝试保存。`
+              : `已读入 ${next.length} 页，但草稿保存失败；可以直接生成，生成时仍会保存。`,
+          );
+        }
       } catch (error) {
         setUploadStatus(error instanceof Error ? error.message : "读取失败");
       } finally {
         ingesting.current = false;
       }
     },
-    [replacePages],
+    [patchPage, persistDraft, replacePages],
   );
 
   const restoreProject = useCallback(
@@ -274,6 +324,7 @@ export function BeautifyClient() {
       throw new Error(result.error || "本页生成失败");
     }
     patchPage(index, { imageUrl: safeReplicateFileUrl(result.imageUrl), status: "已生成", error: "" });
+    void persistDraft().catch(() => {});
   }
 
   async function planCopy() {
@@ -311,6 +362,11 @@ export function BeautifyClient() {
       const extracted = Number(result.structureExtracted) || 0;
       const previouslyDone = new Set(pagesRef.current.filter((page) => page.imageUrl).map((page) => page.pageId));
       replacePages(applyPlanToPages(pagesRef.current, slides, structures));
+      try {
+        await persistDraft();
+      } catch {
+        // 草稿保存失败不阻塞文案生成；页面内仍是当前内容。
+      }
       const stale = pagesRef.current.filter(
         (page) => previouslyDone.has(page.pageId) && page.copy.trim() && !page.imageUrl,
       ).length;
@@ -398,6 +454,11 @@ export function BeautifyClient() {
     } catch (error) {
       setRunBanner({ kind: "err", text: error instanceof Error ? error.message : "生成失败" });
     } finally {
+      try {
+        await persistDraft();
+      } catch {
+        // 生成结果已在服务端；草稿补存失败不影响本次结果。
+      }
       setRunning(false);
     }
   }

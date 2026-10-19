@@ -255,6 +255,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
   - 打开旧项目：结构卡需再点完善文案；壳图过期则提示重传。草稿键仍是 `anppt-replicate-draft-v1`。
   - **2026-09-08 对抗审查修补**：生成/改图 `requestId` 改为每次 UUID（刷新后再点「重试本页」不再撞 `DUPLICATE_REQUEST`）；改图失败保留旧成品图；再完善文案若字变了会清成品图并提示重新扣星；`refine` 对 `source=replicate` 项目也走 `ppt_replicate` 硬门；PDF worker 改走同站打包资源，不再拉 unpkg。
   - **2026-10-19 导出入口补齐**：PPT 美化第 4 步新增「导出图片版 PPTX」（免费，走 `/api/single-page/export-image-pptx`），生成成功后自动下载并写入导出中心；同时常驻「打开下载中心」入口。生成/恢复项目后把 `projectId` 写回 URL（`/beautify?projectId=...`），刷新不会丢项目。
+  - **2026-10-19 草稿持久化**：上传参考稿后立即并发上传壳图并 `POST /api/single-page/draft`（不生成、不扣星），保存项目/页面/文案/参考稿路径；完善文案和整批生成结束后补存。刷新或换设备可通过 `?projectId=` 恢复；服务端校验参考稿路径必须属于当前用户。
   - **2026-10-19 PDF 解析修复**：浏览器端 worker 由 `scripts/sync-pdf-worker.mjs` 在 predev/prebuild 复制到 `public/pdf.worker.min.mjs`，固定走同站 URL，避免 Next/Turbopack 的 `?url` 导入返回非字符串触发 `Invalid 'workerSrc' type`；服务端 `documents.ts` 显式把 pdfjs `workerSrc` 指到 node_modules 真实文件，并配置本地 `cmaps/`、`standard_fonts/`、`wasm/`，避免服务端 chunk 相对路径去找 `.next/server/chunks/pdf.worker.mjs`，也避免中文 CID 字体因缺 CMap 解析为空。回归：`scripts/test-generation.mjs` 新增中文 CID PDF 断言（424 项）。
 - 视觉预算：单次最多 24 页结构；10 分钟 48 次 VLM。文案 LLM 走 `replicate-plan:{userId}` 30/10min，**不占**大纲 `llm-free`。
 - 项目身份：`source='replicate'`。列表「美化 ·」链到 `/beautify`；工作台缺省生成 409 `REPLICATE_PROJECT`（文案「请到 PPT 美化」）。
