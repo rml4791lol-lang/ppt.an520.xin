@@ -37,7 +37,13 @@ RELEASE="$RELEASES/${SHORT}-${STAMP}"
 
 echo "== source commit $SHORT =="
 npm ci --no-audit --no-fund
-npm run build
+# `.next` must not be reused across machines/build roots: Turbopack can keep stale
+# module-resolution state that makes @tailwindcss/postcss look missing on Linux.
+if [[ -d .next ]]; then
+  find .next -mindepth 1 -delete
+  rmdir .next
+fi
+NEXT_TELEMETRY_DISABLED=1 npm run build
 
 echo "== stage release $RELEASE =="
 mkdir -p "$RELEASE"
