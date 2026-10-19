@@ -29,7 +29,7 @@ echo "== 2/3 server pull, build, stage, restart =="
 ssh "$SERVER" "sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production '$BRANCH'"
 
 echo "== 3/3 verify deployed commit and public health =="
-LOCAL_COMMIT="$(git rev-parse --short=12 HEAD)"
+LOCAL_COMMIT="$(git rev-parse HEAD)"
 REMOTE_COMMIT="$(ssh "$SERVER" 'cat /opt/anppt-v2/current/.deploy-commit')"
 if [[ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]]; then
   echo "deployed commit mismatch: local=$LOCAL_COMMIT server=$REMOTE_COMMIT" >&2
