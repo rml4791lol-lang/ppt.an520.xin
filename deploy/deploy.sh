@@ -14,8 +14,16 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+if ! GIT_TERMINAL_PROMPT=0 git ls-remote --heads origin "$BRANCH" >/dev/null 2>&1; then
+  echo "origin/$BRANCH unavailable; using local atomic release deploy"
+  exec bash deploy/deploy-local.sh
+fi
+
 echo "== 1/3 push HEAD to origin/$BRANCH =="
-git push origin "HEAD:refs/heads/$BRANCH"
+if ! git push origin "HEAD:refs/heads/$BRANCH"; then
+  echo "push failed; using local atomic release deploy"
+  exec bash deploy/deploy-local.sh
+fi
 
 echo "== 2/3 server pull, build, stage, restart =="
 ssh "$SERVER" "sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production '$BRANCH'"
