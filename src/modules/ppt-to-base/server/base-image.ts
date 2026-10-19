@@ -166,7 +166,10 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
 
     try {
       const title = await extractTitleText(input.image, runDeps);
-      const edited = await editImage({ image: input.image, instruction: BASE_IMAGE_INSTRUCTION }, runDeps);
+      const edited = await editImage(
+        { image: input.image, instruction: BASE_IMAGE_INSTRUCTION, userKey: userId },
+        runDeps,
+      );
       const saved = await saveFile('generated', userId, edited, { kind: 'ppt-to-base', ext: '.png', id: genId('base') }, config);
       finishJob(jobId, 'succeeded');
       return { title, imageUrl: saved.url, balance: debit.balance };

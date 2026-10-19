@@ -205,6 +205,12 @@ const PDF_BUFFER = Buffer.from(
   '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 60>>stream\nBT /F1 24 Tf 100 700 Td (Hello PDF World) Tj ET\nendstream\nendobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n',
 );
 
+// 中文 CID 字体（STSong-Light，未嵌入），用于验证服务端 CMap 资源路径。
+const PDF_CMAP_BUFFER = Buffer.from(
+  'JVBERi0xLjMKJZOMi54gUmVwb3J0TGFiIEdlbmVyYXRlZCBQREYgZG9jdW1lbnQgKG9wZW5zb3VyY2UpCjEgMCBvYmoKPDwKL0YxIDIgMCBSIC9GMiAzIDAgUgo+PgplbmRvYmoKMiAwIG9iago8PAovQmFzZUZvbnQgL0hlbHZldGljYSAvRW5jb2RpbmcgL1dpbkFuc2lFbmNvZGluZyAvTmFtZSAvRjEgL1N1YnR5cGUgL1R5cGUxIC9UeXBlIC9Gb250Cj4+CmVuZG9iagozIDAgb2JqCjw8Ci9CYXNlRm9udCAvU1RTb25nLUxpZ2h0IC9EZXNjZW5kYW50Rm9udHMgWyA8PAovQmFzZUZvbnQgL1NUU29uZy1MaWdodCAvQ0lEU3lzdGVtSW5mbyA8PAovT3JkZXJpbmcgKEdCMSkgL1JlZ2lzdHJ5IChBZG9iZSkgL1N1cHBsZW1lbnQgMAo+PiAvRFcgMTAwMCAvRm9udERlc2NyaXB0b3IgPDwKL0FzY2VudCA3NTIgL0NhcEhlaWdodCA3MzcgL0Rlc2NlbnQgLTI3MSAvRmxhZ3MgNiAvRm9udEJCb3ggWyAtMjUgLTI1NCAxMDAwIDg4MCBdIC9Gb250TmFtZSAvU1RTb25nU3RkLUxpZ2h0IAogIC9JdGFsaWNBbmdsZSAwIC9MZWFkaW5nIDE0OCAvTWF4V2lkdGggMTAwMCAvTWlzc2luZ1dpZHRoIDUwMCAvU3RlbUggOTEgL1N0ZW1WIDU4IAogIC9UeXBlIC9Gb250RGVzY3JpcHRvciAvWEhlaWdodCA1NTMKPj4gL1N1YnR5cGUgL0NJREZvbnRUeXBlMCAvVHlwZSAvRm9udCAKICAvVyBbIDEgWyAyMDcgMjcwIDM0MiA0NjcgNDYyIDc5NyA3MTAgMjM5IDM3NCBdIDEwIFsgMzc0IDQyMyA2MDUgMjM4IDM3NSAyMzggMzM0IDQ2MiBdIDE4IDI2IDQ2MiAyNyAyOCAyMzggCiAgMjkgMzEgNjA1IDMyIFsgMzQ0IDc0OCA2ODQgNTYwIDY5NSA3MzkgNTYzIDUxMSA3MjkgNzkzIAogIDMxOCAzMTIgNjY2IDUyNiA4OTYgNzU4IDc3MiA1NDQgNzcyIDYyOCAKICA0NjUgNjA3IDc1MyA3MTEgOTcyIDY0NyA2MjAgNjA3IDM3NCAzMzMgCiAgMzc0IDYwNiA1MDAgMjM5IDQxNyA1MDMgNDI3IDUyOSA0MTUgMjY0IAogIDQ0NCA1MTggMjQxIDIzMCA0OTUgMjI4IDc5MyA1MjcgNTI0IF0gODEgWyA1MjQgNTA0IDMzOCAzMzYgMjc3IDUxNyA0NTAgNjUyIDQ2NiA0NTIgCiAgNDA3IDM3MCAyNTggMzcwIDYwNSBdIF0KPj4gXSAvRW5jb2RpbmcgL1VuaUdCLVVDUzItSCAvTmFtZSAvRjIgL1N1YnR5cGUgL1R5cGUwIC9UeXBlIC9Gb250Cj4+CmVuZG9iago0IDAgb2JqCjw8Ci9Db250ZW50cyA4IDAgUiAvTWVkaWFCb3ggWyAwIDAgNTk1LjI3NTYgODQxLjg4OTggXSAvUGFyZW50IDcgMCBSIC9SZXNvdXJjZXMgPDwKL0ZvbnQgMSAwIFIgL1Byb2NTZXQgWyAvUERGIC9UZXh0IC9JbWFnZUIgL0ltYWdlQyAvSW1hZ2VJIF0KPj4gL1JvdGF0ZSAwIC9UcmFucyA8PAoKPj4gCiAgL1R5cGUgL1BhZ2UKPj4KZW5kb2JqCjUgMCBvYmoKPDwKL1BhZ2VNb2RlIC9Vc2VOb25lIC9QYWdlcyA3IDAgUiAvVHlwZSAvQ2F0YWxvZwo+PgplbmRvYmoKNiAwIG9iago8PAovQXV0aG9yIChhbm9ueW1vdXMpIC9DcmVhdGlvbkRhdGUgKEQ6MjAyNjEwMTkxMTQ2NTgrMDgnMDAnKSAvQ3JlYXRvciAoYW5vbnltb3VzKSAvS2V5d29yZHMgKCkgL01vZERhdGUgKEQ6MjAyNjEwMTkxMTQ2NTgrMDgnMDAnKSAvUHJvZHVjZXIgKFJlcG9ydExhYiBQREYgTGlicmFyeSAtIFwob3BlbnNvdXJjZVwpKSAKICAvU3ViamVjdCAodW5zcGVjaWZpZWQpIC9UaXRsZSAodW50aXRsZWQpIC9UcmFwcGVkIC9GYWxzZQo+PgplbmRvYmoKNyAwIG9iago8PAovQ291bnQgMSAvS2lkcyBbIDQgMCBSIF0gL1R5cGUgL1BhZ2VzCj4+CmVuZG9iago4IDAgb2JqCjw8Ci9GaWx0ZXIgWyAvQVNDSUk4NURlY29kZSAvRmxhdGVEZWNvZGUgXSAvTGVuZ3RoIDI2Ngo+PgpzdHJlYW0KR2Fybk9ZdGRZQCUsQ15wW2lkdGxMT0lIcEJjMDJqZEEhQUIrQ1REYyFYLEdAKWFCQXM6Xl4vdVBkPkVrVDItVk1bLEdVKVMvN10lLj9sNyxkKnNBK0NMITAmaXNEVSpGNCplVl1gKSJBSmZNNzklaypKXFM9NWE9OFQ6ckFFXGoyRz9kPFBFcVgtO2Y/Oidlb24nJDBMaDc3KiZJLDZqLVNCTlN1JmtaK21lXy9FWWRdWSNIRF5hV0pDJXUmKEM7Z09jbGhVcmpJdFZCS1FYL3M7SUozVjo2MnVzJl5jWDsoL2c+JzZlNVJwMV0uci1ebSpPTkVrRktZQnI5LjQiTjRvOWc7Y3FOfj5lbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA5CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDA2MSAwMDAwMCBuIAowMDAwMDAwMTAyIDAwMDAwIG4gCjAwMDAwMDAyMDkgMDAwMDAgbiAKMDAwMDAwMTE0MiAwMDAwMCBuIAowMDAwMDAxMzQ1IDAwMDAwIG4gCjAwMDAwMDE0MTMgMDAwMDAgbiAKMDAwMDAwMTY3NCAwMDAwMCBuIAowMDAwMDAxNzMzIDAwMDAwIG4gCnRyYWlsZXIKPDwKL0lEIApbPGEyNzJlMWZmM2E4MGE4ZDRjN2I2ZWM2N2Y2MjI0ZWEzPjxhMjcyZTFmZjNhODBhOGQ0YzdiNmVjNjdmNjIyNGVhMz5dCiUgUmVwb3J0TGFiIGdlbmVyYXRlZCBQREYgZG9jdW1lbnQgLS0gZGlnZXN0IChvcGVuc291cmNlKQoKL0luZm8gNiAwIFIKL1Jvb3QgNSAwIFIKL1NpemUgOQo+PgpzdGFydHhyZWYKMjA4OQolJUVPRgo=',
+  'base64',
+);
+
 // ---------- 开始 ----------
 const auth = await import('../src/lib/server/auth.ts');
 const credits = await import('../src/lib/server/credits.ts');
@@ -237,6 +243,8 @@ const imageConfig = {
   imageApiKey: 'sk-mock',
   imageGlobalConcurrency: 100,
   imageStartsPerMinute: 10000,
+  imagePerUserConcurrency: 100,
+  imageStartsPerUserPerMinute: 10000,
   imageMaxRetries: 0,
   imageRetryBaseMs: 1,
 };
@@ -268,6 +276,8 @@ console.log('\n[1] 文档解析（txt/md/docx/pdf 真实解析）');
   check('docx 走 mammoth 解析出文字', docx.text.includes('1200 万元'), `实际: ${docx.text.slice(0, 40)}`);
   const pdf = await documents.parseDocument(PDF_BUFFER, 'report.pdf');
   check('pdf 走 pdfjs 解析出文字', pdf.text.includes('Hello PDF World'), `实际: ${pdf.text.slice(0, 40)}`);
+  const cnPdf = await documents.parseDocument(PDF_CMAP_BUFFER, 'chinese.pdf');
+  check('中文 CID PDF 走本地 CMap 解析出文字', cnPdf.text.includes('四个机制') && cnPdf.text.includes('1200 万元'), `实际: ${cnPdf.text.slice(0, 40)}`);
   const truncated = documents.truncateSourceText('x'.repeat(100001), 100000);
   check('10 万字截断', truncated.truncated && truncated.text.length === 100000);
   await expectThrows('不支持的格式被拒', () => documents.parseDocument(Buffer.from('x'), 'a.exe'), 'UNSUPPORTED_FILE_TYPE');
@@ -445,6 +455,26 @@ console.log('\n[2b] 页型归一 + 场景推断 + 原创风格 DNA + 逐页参�
   check('参考图提示与 visualNote 页型约束共存', p4.includes('随附一张同风格参考样张') && p4.includes('只能在上述信息任务与页型框架内执行'));
   check('参考图提示明确禁止复制参考文字/Logo/数字',
     p4.includes('不得复制参考图的文字、Logo、数字') && p4.includes('不得把封面布局硬套到内容页'));
+
+  const stageDefs = stylePacks.SLIDE_PROMPT_STAGE_DEFS;
+  check('生图提示词钉死为八段式结构（段序与职责键不可增删）',
+    stageDefs.length === 8
+      && stageDefs.map((def) => def.key).join('/') === 'context-task/deck-consistency/page-role-protocol/page-copy/layout-imagery/style-dna/content-fidelity/editable-friendly'
+      && stageDefs.every((def, index) => def.order === index + 1 && Boolean(def.label) && Boolean(def.focus)));
+  const fullDeckContext = { totalPages: 10, pageIndex: 2, chapter: '背景', blueprint: 'BP 规范正文' };
+  const fullSlide = { ...slide, visualNote: '放柱状图' };
+  const fullStages = stylePacks.buildSlideImagePromptStages(fullSlide, pack, {
+    deckContext: fullDeckContext,
+    withStyleReferenceHint: true,
+  });
+  check('满配上下文（全套+规范+参考样张+版式建议）八段全部参与拼接',
+    fullStages.length === 8 && fullStages.every((stage) => stage.text.length > 0));
+  check('八段拼装结果与生图提示词逐字一致（段序即拼接序）',
+    fullStages.map((stage) => stage.text).filter(Boolean).join('\n\n')
+      === stylePacks.buildSlideImagePrompt(fullSlide, pack, { deckContext: fullDeckContext, withStyleReferenceHint: true }));
+  const bareStages = stylePacks.buildSlideImagePromptStages(slide, pack);
+  check('缺省上下文只跳过不适用段，段位仍固定为八段',
+    bareStages.length === 8 && bareStages.filter((stage) => stage.text.length > 0).length === 6);
   check('styleDirective 注入视觉关键词行', stylePacks.styleDirective(pack).includes('现有样张视觉关键词：'));
   check('resolveStylePack 透出包数据视觉关键词', Array.isArray(pack.visualKeywords) && pack.visualKeywords.length >= 6);
   check('每个公开风格包都有原创设计 DNA 和有效封面样张', STYLE_PACKS.every((item) => {
@@ -557,6 +587,31 @@ console.log('\n[2c] 生图全站调度：并发上限 + 瞬态后台恢复');
   await Promise.all(Array.from({ length: 6 }, (_, index) =>
     images.generateImage({ prompt: `调度测试 ${index}` }, { fetchImpl: concurrencyFetcher, config: schedulerConfig })));
   check('全站在途生图不超过配置上限 2', maxActive === 2, `实际 ${maxActive}`);
+
+  images.resetImageSchedulerForTests();
+  const fairnessStarted = [];
+  const fairnessFetcher = async (url, init) => {
+    const body = JSON.parse(init.body || '{}');
+    fairnessStarted.push(String(body.prompt || ''));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] });
+  };
+  const fairnessConfig = {
+    ...schedulerConfig,
+    imageGlobalConcurrency: 2,
+    imageStartsPerMinute: 10000,
+    imagePerUserConcurrency: 1,
+    imageStartsPerUserPerMinute: 10000,
+  };
+  await Promise.all([
+    images.generateImage({ prompt: 'A1', userKey: 'user-A' }, { fetchImpl: fairnessFetcher, config: fairnessConfig }),
+    images.generateImage({ prompt: 'A2', userKey: 'user-A' }, { fetchImpl: fairnessFetcher, config: fairnessConfig }),
+    images.generateImage({ prompt: 'B1', userKey: 'user-B' }, { fetchImpl: fairnessFetcher, config: fairnessConfig }),
+    images.generateImage({ prompt: 'B2', userKey: 'user-B' }, { fetchImpl: fairnessFetcher, config: fairnessConfig }),
+  ]);
+  check('单用户不会占满全站生图槽位（A1/B1 先启动）',
+    fairnessStarted.slice(0, 2).sort().join(',') === 'A1,B1',
+    `实际 ${fairnessStarted.join(',')}`);
 
   images.resetImageSchedulerForTests();
   let retryCalls = 0;
@@ -1471,6 +1526,57 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
       && atlasBody.prompt.includes('第二图意图文字说明'));
 
   for (const key of EDIT_FLAG_KEYS) flagsMod.setFeatureFlag(key, 'off', uid18);
+}
+
+// 生图回退（2026-10-04 真实故障：主站 402 余额不足拖垮整站生成）——
+// 可切站的错误必须真的切到灾备站出图；400/413 是请求本身的问题，切站也必败，不浪费灾备费用。
+{
+  const imagesMod = await import('../src/lib/server/generation/images.ts');
+  const failoverFetcher = makeMockFetcher([
+    { match: 'mock-image-primary', payload: jsonResponse({ error: { message: 'insufficient balance; add credit to continue', code: 'upstream_error' } }, 402) },
+    { match: 'mock-image-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  const failoverConfig = {
+    ...imageConfig,
+    imageBaseUrl: 'http://mock-image-primary',
+    imageBackupBaseUrl: 'http://mock-image-backup',
+    imageBackupApiKey: 'sk-backup',
+    imageBackupModel: 'gpt-image-2',
+  };
+  const failedOver = await imagesMod.generateImage(
+    { prompt: '主站 402 时应切灾备' }, { fetchImpl: failoverFetcher, config: failoverConfig });
+  check('生图回退：主站 402 → 切灾备站出图', failedOver.length > 0);
+  check('生图回退：灾备站确实被调用', failoverFetcher.calls.some((c) => c.url.includes('mock-image-backup')));
+
+  const noFailoverFetcher = makeMockFetcher([
+    { match: 'mock-image-primary', payload: jsonResponse({ error: { message: 'bad request' } }, 400) },
+    { match: 'mock-image-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  let noFailoverThrew = false;
+  try {
+    await imagesMod.generateImage(
+      { prompt: '主站 400 不应切站' }, { fetchImpl: noFailoverFetcher, config: failoverConfig });
+  } catch {
+    noFailoverThrew = true;
+  }
+  check('生图回退：主站 400 不切灾备（省灾备费用）',
+    noFailoverThrew && !noFailoverFetcher.calls.some((c) => c.url.includes('mock-image-backup')));
+
+  const singleSiteFetcher = makeMockFetcher([
+    { match: 'mock-image-primary', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-image-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  let singleSiteThrew = false;
+  try {
+    await imagesMod.generateImage({ prompt: '未配灾备' }, {
+      fetchImpl: singleSiteFetcher,
+      config: { ...failoverConfig, imageBackupBaseUrl: '', imageBackupApiKey: '', imageBackupModel: '' },
+    });
+  } catch {
+    singleSiteThrew = true;
+  }
+  check('生图回退：灾备三项不全按单站处理（不静默成功）',
+    singleSiteThrew && !singleSiteFetcher.calls.some((c) => c.url.includes('mock-image-backup')));
 }
 
 console.log('\n[19] 免费 LLM 动作频控（30 次/10 分钟/用户，共享桶）+ 限流器单元');

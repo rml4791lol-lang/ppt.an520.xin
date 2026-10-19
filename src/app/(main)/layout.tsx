@@ -17,6 +17,8 @@ export default function MainLayout({
         <SiteFooter
           serviceEmail={config.serviceEmail}
           tutorialUrl={config.beginnerTutorialUrl}
+          companyName={config.companyName}
+          icpNumber={config.icpNumber}
         />
       }
     >

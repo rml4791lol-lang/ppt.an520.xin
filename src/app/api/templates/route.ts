@@ -3,6 +3,11 @@ import { listTemplates } from "@/lib/server/templates";
 
 export const dynamic = "force-dynamic";
 
+const CACHE_HEADERS = {
+  'Cache-Control': 'private, max-age=60',
+  Vary: 'Cookie',
+};
+
 export function GET(request: Request) {
   const session = getSessionFromRequest(request);
   const { searchParams } = new URL(request.url);
@@ -15,5 +20,5 @@ export function GET(request: Request) {
     kind: searchParams.get("kind") ?? undefined,
     sort: searchParams.get("sort") ?? undefined,
   }, session?.user ?? null);
-  return Response.json({ ok: true, data: { templates } });
+  return Response.json({ ok: true, data: { templates } }, { headers: CACHE_HEADERS });
 }

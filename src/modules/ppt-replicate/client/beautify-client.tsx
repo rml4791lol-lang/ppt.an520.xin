@@ -7,6 +7,7 @@ import { BeautifyBannerView, BeautifyPageCard, BeautifySegmented } from "./beaut
 import { UploadIcon } from "@/components/icons";
 import { ApiClientError } from "@/lib/client/api";
 import {
+  exportSinglePagesImagePptx,
   generateSinglePage,
   getSinglePageProject,
   planBeautifyCopy,
@@ -71,6 +72,7 @@ export function BeautifyClient() {
   const [planning, setPlanning] = useState(false);
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [imageExporting, setImageExporting] = useState(false);
   const [exportJobs, setExportJobs] = useState<{ pageCount: number; status: string }[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
@@ -111,6 +113,7 @@ export function BeautifyClient() {
         const canvases = await filesToShellCanvases(files);
         sessionRef.current = newBeautifySession();
         projectIdRef.current = "";
+        window.history.replaceState(null, "", "/beautify");
         replacePages(
           canvases.map((canvas, i) =>
             emptyBeautifyPage(`${sessionRef.current}p${i}`, {
@@ -134,6 +137,7 @@ export function BeautifyClient() {
       const detail = await getSinglePageProject(id);
       if (!detail?.project?.id) throw new Error("项目不存在");
       projectIdRef.current = detail.project.id;
+      window.history.replaceState(null, "", beautifyHref(detail.project.id));
       const restored = (detail.pages ?? []).map((page, i) => {
         const versions = page.versions ?? [];
         // 优先当前生效版本（单页工作台可切版本），找不到再回落最新成功版本
@@ -261,7 +265,10 @@ export function BeautifyClient() {
       requestId: newBeautifyRequestId(latest.pageId),
       ...(latest.structureReady ? { structure: latest.structure ?? null } : {}),
     });
-    if (result.projectId) projectIdRef.current = result.projectId;
+    if (result.projectId) {
+      projectIdRef.current = result.projectId;
+      window.history.replaceState(null, "", beautifyHref(result.projectId));
+    }
     if (typeof result.balance === "number") setBalance(result.balance);
     if (result.status !== "succeeded" || !result.imageUrl) {
       throw new Error(result.error || "本页生成失败");
@@ -437,6 +444,37 @@ export function BeautifyClient() {
     }
   }
 
+  async function downloadImagePptx() {
+    if (imageExporting || running || planning || exporting) return;
+    const projectId = projectIdRef.current;
+    if (!projectId) {
+      setRunBanner({ kind: "err", text: "请先生成至少一页，再导出图片版 PPTX" });
+      return;
+    }
+    setImageExporting(true);
+    try {
+      const title = firstCopyLine(pagesRef.current[0]?.copy || "") || "PPT美化";
+      const result = await exportSinglePagesImagePptx({ projectId, title });
+      const a = document.createElement("a");
+      a.href = result.url;
+      a.download = `${title}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setRunBanner({
+        kind: "ok",
+        text: `图片版 PPTX 已开始下载（${result.pageCount} 页），文件也已保存到下载中心。`,
+      });
+    } catch (error) {
+      setRunBanner({
+        kind: "err",
+        text: error instanceof ApiClientError ? error.message : "导出图片版 PPTX 失败",
+      });
+    } finally {
+      setImageExporting(false);
+    }
+  }
+
   async function queueEditable() {
     if (exporting || running) return;
     const ready = pagesRef.current.filter((page) => page.imageUrl);
@@ -477,7 +515,7 @@ export function BeautifyClient() {
     }
   }
 
-  const locked = planning || running || exporting;
+  const locked = planning || running || exporting || imageExporting;
   const canExport = pages.some((page) => page.imageUrl);
   const generateCredits = remainingGenerateCredits(pages, unitPrices?.generate ?? 0);
   const editableCredits = remainingEditableCredits(pages, unitPrices?.editable ?? 0);
@@ -703,11 +741,25 @@ export function BeautifyClient() {
           <button
             type="button"
             disabled={locked || !canExport}
+            onClick={() => void downloadImagePptx()}
+            className="rounded-full bg-page px-5 py-2.5 text-sm font-medium text-ink transition hover:bg-brand-soft hover:text-brand disabled:opacity-50"
+          >
+            {imageExporting ? "导出中…" : "导出图片版 PPTX"}
+          </button>
+          <button
+            type="button"
+            disabled={locked || !canExport}
             onClick={() => void queueEditable()}
             className="rounded-full bg-page px-5 py-2.5 text-sm font-medium text-ink transition hover:bg-brand-soft hover:text-brand disabled:opacity-50"
           >
             {exporting ? "排队中…" : "转可编辑 PPTX"}
           </button>
+          <Link
+            href="/exports"
+            className="text-sm font-medium text-brand transition hover:text-brand-strong"
+          >
+            打开下载中心
+          </Link>
           <span className="text-sm text-ink-3">
             {pages.length && unitPrices
               ? `待生成约 ${generateCredits} 星 · 转可编辑约 ${editableCredits} 星 · 余额 ${balance}`
@@ -719,6 +771,9 @@ export function BeautifyClient() {
             <BeautifyBannerView kind={runBanner.kind} text={runBanner.text} />
           </div>
         )}
+        <p className="mt-3 text-xs leading-5 text-ink-4">
+          图片版 PPTX 免费，生成完成后可直接下载；可编辑版按页计费，转换完成后在下载中心获取。
+        </p>
         {exportJobs.length > 0 && (
           <ul className="mt-3 space-y-1 text-sm text-ink-2">
             {exportJobs.map((job, i) => (

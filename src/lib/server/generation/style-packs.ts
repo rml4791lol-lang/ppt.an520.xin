@@ -383,44 +383,113 @@ export function loadStyleReferenceDataUrl(
   }
 }
 
-/** 生图 prompt = 语境任务 + 整套一致性 + 页型任务/版式 + 页面文案 + 风格 DNA + 保真硬约束。 */
-export function buildSlideImagePrompt(
+/**
+ * 八段式提示词：AnPPT 生图提示词的固定段落契约。
+ * 段数、段序与每段职责都是对外创新点的组成口径，不得随意增删；上下文不适用的段拼接时跳过，
+ * 但段位始终存在——契约测试与排查“提示词为什么这样写”都以这八段为准。
+ */
+export type SlidePromptStageKey =
+  | 'context-task'
+  | 'deck-consistency'
+  | 'page-role-protocol'
+  | 'page-copy'
+  | 'layout-imagery'
+  | 'style-dna'
+  | 'content-fidelity'
+  | 'editable-friendly'
+
+export interface SlidePromptStageDef {
+  key: SlidePromptStageKey
+  /** 段序（1 起），与拼接顺序一致。 */
+  order: number
+  /** 对外展示名。 */
+  label: string
+  /** 这一段负责解决的问题。 */
+  focus: string
+}
+
+export interface SlidePromptStage extends SlidePromptStageDef {
+  /** 该段文本；当前上下文不适用时为空串（拼接时跳过）。 */
+  text: string
+}
+
+export const SLIDE_PROMPT_STAGE_DEFS: readonly SlidePromptStageDef[] = [
+  { key: 'context-task', order: 1, label: '任务与语境', focus: '整页成图任务 + 真实受众、行业与证据口径' },
+  { key: 'deck-consistency', order: 2, label: '整套一致性', focus: '全套页码章节、统一栅格与全局视觉规范' },
+  { key: 'page-role-protocol', order: 3, label: '页面角色与页型协议', focus: '该页型的信息任务、构图版式、配图基因与禁忌' },
+  { key: 'page-copy', order: 4, label: '页面文案与防幻觉', focus: '标题、表达目标与逐字文案，且只允许出现给定文字' },
+  { key: 'layout-imagery', order: 5, label: '版式与配图建议', focus: '用户版式意图，只能在前四段框架内执行' },
+  { key: 'style-dna', order: 6, label: '风格 DNA 与参考样张', focus: '色板、栅格与图形母题；样张只取风格不取内容' },
+  { key: 'content-fidelity', order: 7, label: '内容真实性硬约束', focus: '配图、数据、机构与品牌一律不得虚构' },
+  { key: 'editable-friendly', order: 8, label: '易转可编辑条款', focus: '分区与字形干净，能被下游转可编辑链路还原' },
+]
+
+export interface SlidePromptOptions {
+  withStyleReferenceHint?: boolean
+  deckContext?: DeckContext
+  referenceMode?: 'style' | 'template'
+}
+
+/** 按八段式契约组装生图提示词（段序即拼接序，空段跳过）。 */
+export function buildSlideImagePromptStages(
   slide: SlidePromptInput,
   pack: ResolvedStylePack | null,
-  opts: { withStyleReferenceHint?: boolean; deckContext?: DeckContext; referenceMode?: 'style' | 'template' } = {},
-): string {
+  opts: SlidePromptOptions = {},
+): SlidePromptStage[] {
   const copy = slide.copyLines.map((line) => cleanString(line, 1000)).filter(Boolean)
   const pageSpec = pageSpecForSlide(slide)
   const deck = opts.deckContext
   const context = inferPresentationContext(slide, pack, deck)
-  const parts = [
-    '为一张 16:9 专业演示 PPT 幻灯片生成完整的最终视觉图（整页一张图，含全部排版与文字）。目标不是“好看的通用海报”，而是让真实学校、企业或工作单位可以直接用于汇报与评审。',
-    `主题语境：${context.audienceLabel} · ${context.domainLabel}\n${context.audienceDirective}\n${context.imageryDirective}\n${context.evidenceDirective}`,
-    deck && deck.totalPages > 1
-      ? `整套一致性要求：本页是全套 ${deck.totalPages} 页中的第 ${deck.pageIndex + 1} 页${deck.chapter ? `，属于「${deck.chapter}」章节` : ''}；全套页面必须保持完全一致的栅格系统、字号层级、配色方案、页眉页脚与页码位置、装饰元素语言，仅按页型变化版式。内容页页眉必须使用较小字号、固定高度且不得抢过正文标题；未上传真实 Logo 时页眉标识区保持空白，禁止从参考图复制或重新生成 Logo。`
-      : '',
-    deck?.blueprint
-      ? `全套全局视觉规范（每一页都必须严格遵守，仅按页型分工调整版式）：\n${deck.blueprint}`
-      : '',
-    `页面角色：${slide.role || 'content'}${slide.pageType ? `（大纲标注页型：${slide.pageType}）` : ''}`,
-    getPageProtocol(pageSpec),
-    slide.title ? `页面标题：${slide.title}` : '',
-    slide.goal ? `本页表达目标：${slide.goal}` : '',
-    copy.length > 0
-      ? `页面文案（必须逐字完整呈现，不得增删、不得改写；同一句只出现一次）：\n${copy.map((line) => `- ${line}`).join('\n')}`
-      : '',
-    copy.length > 0
-      ? '防幻觉约束：本页只允许出现上方「页面标题」与「页面文案」给出的文字；参考样张中的任何文字块、数字、Logo 一律视为版式占位，严禁带入本页；严禁虚构标语、单位、注释或任何装饰性字符。'
-      : '',
-    slide.visualNote ? `版式/配图建议（只能在上述信息任务与页型框架内执行）：${slide.visualNote}` : '',
-    `风格要求：\n${styleDirective(pack)}`,
-    opts.withStyleReferenceHint
-      ? opts.referenceMode === 'template'
-        ? '随附一张真模板参考页：尽量复刻它的版式骨架——大色块划分、标题区位置、分栏比例、卡片与容器形态、装饰密度——并把本页文案准确填入对应区域；参考页中的人物、场景、数字、Logo 与具体文字一律视为版式占位，严禁带入本页。'
-        : '随附一张同风格参考样张。只提取它的色板、栅格、卡片边界、标题层级和装饰母题；必须按本页角色重新组织版式，不得把封面布局硬套到内容页，也不得复制参考图的文字、Logo、数字、人物、图表数据、品牌和具体主题。'
-      : '',
-    `内容真实性与相关性硬约束（必须严格遵守）：${CONTENT_RELEVANCE_CLAUSE}`,
-    `易转可编辑排版条款（必须严格遵守）：${EDITABLE_FRIENDLY_CLAUSE}`,
-  ]
-  return parts.filter(Boolean).join('\n\n')
+  const texts: Record<SlidePromptStageKey, string> = {
+    'context-task': [
+      '为一张 16:9 专业演示 PPT 幻灯片生成完整的最终视觉图（整页一张图，含全部排版与文字）。目标不是“好看的通用海报”，而是让真实学校、企业或工作单位可以直接用于汇报与评审。',
+      `主题语境：${context.audienceLabel} · ${context.domainLabel}\n${context.audienceDirective}\n${context.imageryDirective}\n${context.evidenceDirective}`,
+    ].join('\n\n'),
+    'deck-consistency': [
+      deck && deck.totalPages > 1
+        ? `整套一致性要求：本页是全套 ${deck.totalPages} 页中的第 ${deck.pageIndex + 1} 页${deck.chapter ? `，属于「${deck.chapter}」章节` : ''}；全套页面必须保持完全一致的栅格系统、字号层级、配色方案、页眉页脚与页码位置、装饰元素语言，仅按页型变化版式。内容页页眉必须使用较小字号、固定高度且不得抢过正文标题；未上传真实 Logo 时页眉标识区保持空白，禁止从参考图复制或重新生成 Logo。`
+        : '',
+      deck?.blueprint
+        ? `全套全局视觉规范（每一页都必须严格遵守，仅按页型分工调整版式）：\n${deck.blueprint}`
+        : '',
+    ].filter(Boolean).join('\n\n'),
+    'page-role-protocol': [
+      `页面角色：${slide.role || 'content'}${slide.pageType ? `（大纲标注页型：${slide.pageType}）` : ''}`,
+      getPageProtocol(pageSpec),
+    ].filter(Boolean).join('\n\n'),
+    'page-copy': [
+      slide.title ? `页面标题：${slide.title}` : '',
+      slide.goal ? `本页表达目标：${slide.goal}` : '',
+      copy.length > 0
+        ? `页面文案（必须逐字完整呈现，不得增删、不得改写；同一句只出现一次）：\n${copy.map((line) => `- ${line}`).join('\n')}`
+        : '',
+      copy.length > 0
+        ? '防幻觉约束：本页只允许出现上方「页面标题」与「页面文案」给出的文字；参考样张中的任何文字块、数字、Logo 一律视为版式占位，严禁带入本页；严禁虚构标语、单位、注释或任何装饰性字符。'
+        : '',
+    ].filter(Boolean).join('\n\n'),
+    'layout-imagery': slide.visualNote ? `版式/配图建议（只能在上述信息任务与页型框架内执行）：${slide.visualNote}` : '',
+    'style-dna': [
+      `风格要求：\n${styleDirective(pack)}`,
+      opts.withStyleReferenceHint
+        ? opts.referenceMode === 'template'
+          ? '随附一张真模板参考页：尽量复刻它的版式骨架——大色块划分、标题区位置、分栏比例、卡片与容器形态、装饰密度——并把本页文案准确填入对应区域；参考页中的人物、场景、数字、Logo 与具体文字一律视为版式占位，严禁带入本页。'
+          : '随附一张同风格参考样张。只提取它的色板、栅格、卡片边界、标题层级和装饰母题；必须按本页角色重新组织版式，不得把封面布局硬套到内容页，也不得复制参考图的文字、Logo、数字、人物、图表数据、品牌和具体主题。'
+        : '',
+    ].filter(Boolean).join('\n\n'),
+    'content-fidelity': `内容真实性与相关性硬约束（必须严格遵守）：${CONTENT_RELEVANCE_CLAUSE}`,
+    'editable-friendly': `易转可编辑排版条款（必须严格遵守）：${EDITABLE_FRIENDLY_CLAUSE}`,
+  }
+  return SLIDE_PROMPT_STAGE_DEFS.map((def) => ({ ...def, text: texts[def.key] }))
+}
+
+/** 生图 prompt 文本 = 八段式结构按段序拼接（空段跳过）。 */
+export function buildSlideImagePrompt(
+  slide: SlidePromptInput,
+  pack: ResolvedStylePack | null,
+  opts: SlidePromptOptions = {},
+): string {
+  return buildSlideImagePromptStages(slide, pack, opts)
+    .map((stage) => stage.text)
+    .filter(Boolean)
+    .join('\n\n')
 }

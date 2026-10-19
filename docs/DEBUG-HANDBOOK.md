@@ -12,15 +12,16 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
 
 ## 2. 服务器与部署
 
-- SSH：`ssh hk-hermes`（ubuntu，`sudo -n` 免密可用）。
-- 应用目录 `/opt/anppt-v2/current`，systemd 服务 `anppt-v2.service`，监听 `127.0.0.1:3100`。
+- SSH：`ssh hk-hermes`（ubuntu，`sudo -n` 免密可用）。团队账号 `anppt-dev` 使用独立 SSH key，仅能写源码目录并执行受限部署命令。
+- 源码：`/opt/anppt-v2/source`（Git，分支 `production`，GitHub 同分支为唯一事实源）。发布目录 `/opt/anppt-v2/releases/<commit>-<timestamp>`，`/opt/anppt-v2/current` 是指向当前 release 的软链。
+- systemd 服务 `anppt-v2.service`，监听 `127.0.0.1:3100`。本地 `production` 通过 launchd 每 5 分钟 fast-forward 同步；脏工作区分叉时只告警不覆盖。
 - 环境变量：`/opt/anppt-v2/shared/.env`（SMTP / epay / 微信 / LLM / IMAGE / ALIYUN_SMS_* / ANPPT_V2_CODIA_API_KEY / `ANPPT_V2_ADMIN_CONFIG_KEY` 等）。**密钥绝不打印进会话/日志/仓库**。
 - DB：`/opt/anppt-v2/shared/data/anppt-v2.db`（env `ANPPT_V2_DB_PATH`）；上传/生成/导出文件在 `/opt/anppt-v2/shared/data/` 下。
 - **每日备份**：root cron `25 3 * * * /usr/local/sbin/anppt-v2-backup.sh`（日志 `/var/log/anppt-v2-backup.log`）。
   内容 = `VACUUM INTO` 在线备份 DB（WAL 一致，勿用 cp）+ `.env`（600）+ 数据清单 + `data-assets.tar.gz`（uploads/generated/exports 三目录打包，~50M），保留 7 天于 `/opt/anppt-v2/backups/daily/`。
   ⚠️ 老的 `anppt-daily-backup.sh`（03:15）备份的是 **slideflow 老系统**，与 anppt-v2 无关，别看错。
 - Caddy 反代：`ppt.an520.xin → 127.0.0.1:3100`（Caddyfile 备份 `/etc/caddy/Caddyfile.bak-anppt-20260819-205014`）。
-- 部署：仓库根 `bash deploy/deploy.sh`（本地 build → rsync → 服务器 npm ci → **脚本再次检查双队列** → restart → 自检）。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时脚本会拒绝重启。
+- 部署：本地工作区干净并已提交后运行 `bash deploy/deploy.sh`。脚本把 HEAD 推到 `production`，服务器从 `/opt/anppt-v2/source` 拉取、构建、生成不可变 release，**再次检查双队列**后原子切换 `current` 并 restart。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时只暂存 release，不切换、不重启。
 - **部署前必须同时检查生成与导出队列**（可编辑转换也可能在后台下载结果）：
 
 ```bash
@@ -51,7 +52,7 @@ NODE
 
 关键代码：
 - 大纲/引擎：`src/lib/server/engine.ts`（**引擎 3002 的 internal/ppt 契约端点未上线，无 PPT_ENGINE_INTERNAL_TOKEN 时走 LLM 兜底——这是定案**）。LLM 提示按创新创业/挑战杯、技能教学/世校赛、职业规划、企业经营、政企行政、科研学术六类场景选择叙事骨架；页数不足时合并、原文无依据的任务省略，禁止机械套模板和补造事实。改动必须同步更新契约测试。
-- 生图 prompt 组装：`src/lib/server/generation/style-packs.ts`（整套标题 + 有限原文语义用于场景/受众推断，不直接泄露进提示词；逐页注入同风格参考、页型任务、原创设计 DNA、文案与易转可编辑约束）。页型归一：`src/lib/server/generation/page-types.ts`（35 页型，覆盖赛事、企业、政企、科研、教学与技能展示；role 优先 + 关键词最长匹配）。
+- 生图 prompt 组装（**八段式**，2026-10-13 定契约）：`src/lib/server/generation/style-packs.ts` —— `SLIDE_PROMPT_STAGE_DEFS` 钉死八段（1 任务与语境 / 2 整套一致性 / 3 页面角色与页型协议 / 4 页面文案与防幻觉 / 5 版式与配图建议 / 6 风格 DNA 与参考样张 / 7 内容真实性硬约束 / 8 易转可编辑条款），`buildSlideImagePromptStages()` 输出结构、`buildSlideImagePrompt()` 按段序拼接（空段跳过、段位不消失）。段数与职责键是对外口径，改段必须同步 `scripts/test-generation.mjs` 的 4 条八段契约断言。整套标题 + 有限原文语义只用于场景/受众推断，不直接泄露进提示词。页型归一：`src/lib/server/generation/page-types.ts`（40 页型，覆盖赛事、企业、政企、科研、教学与技能展示；role 优先 + 关键词最长匹配）。
 - 风格数据：`src/data/style-packs.ts` 保留 30 个稳定 id，公开过滤 2 个测试目录后展示 28 包；公开名称/slug 已整理，`legacySlugs` 兼容历史链接。`src/data/style-design-dna.ts` 为每包维护色板、栅格、装饰母题、场景和逐页参考类别。
 - 生成管线：`src/lib/server/generation/generate.ts`（估价→整单 402 预检→建 job→单套逐页并发 6；`images.ts` 再统一约束全站在途 20 / 每分钟启动 24→debit 幂等键 `deck-generate:{deckId}:{jobId}:{slideId}`→失败 refund）。每个已启动任务固定一次配置快照，管理员中途改模型、并发或密钥只影响后续任务。
 - 状态机：decks.ts（parsed→outlined→structured→confirmed→generating→generated/partial；stale 作废机制）。
@@ -95,12 +96,12 @@ NODE
 - 转可编辑按钮：`step-generate.tsx`（仅 deck.status==='generated' 可点）与 `single-page-client.tsx` 共用 `useEditableExport`；刷新/离开后恢复原任务，完成时明确提示已进入下载中心，成功结果可直接下载，显式“重新转换”才再次扣星。
 - 下载中心：`src/app/(main)/exports/page.tsx`（来源文件名、真实页数/进度、状态、反复下载；processing 自动刷新）。侧栏有「下载中心」入口。
 - 外部文件转可编辑：侧栏 `/tools/editable-converter` 已上线，支持 PDF 与图片排序；未登录先引导登录，不会误发受保护请求。
-- 本地编辑器：侧栏 `/tools/onlyoffice` 已上线；未充值不显示下载链接，三个 Windows 下载路由再次做服务端权益校验。
+- 本地编辑器：侧栏 `/tools/onlyoffice`（`src/components/tools/onlyoffice-client.tsx`）已上线；未充值不显示下载链接，三个 Windows 下载路由再次做服务端权益校验。页面口径固定为「第三方开源免费的 ONLYOFFICE Desktop Editors + AnPPT 的下载整理/校验/兼容服务」，2026-10-13 起首屏先讲清「装的是什么、拿来做什么、为什么用它」，再往下才是下载区与权益对比，避免读者误以为软件是自研产品或需付费购买。
 
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 415 断言，Codia/生图/VLM 全部 mock
+node scripts/test-generation.mjs  # 当前 425 断言，Codia/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 134 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
@@ -155,6 +156,9 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - ONLYOFFICE：`/tools/onlyoffice`。软件本身是第三方开源免费软件；AnPPT 的三个 Windows 一键下载入口、版本校验、兼容工具包与附带支持，仅在任意真实充值成功后永久解锁。权益判定为 `recharge_orders.status='paid'`，兑换码不算“充值一次”。
 - 项目导航：侧栏只保留一个「我的项目」，页面按 `updated_at DESC` 同时承担原“最近项目”视图。
 - 生图调度：单套默认并发 6、全站最大在途 20、滚动每分钟启动 24；429/5xx/网络抖动最多后台恢复 2 次，400/401/403/超时不盲目重试；单请求超时默认 8 分钟。
+- **生图回退（2026-10-13 落地）**：`src/lib/server/generation/images.ts` `imageEndpoints()` 在主站之后挂跨站灾备，**三项齐备才生效**：`ANPPT_V2_IMAGE_BACKUP_BASE_URL` + `_API_KEY` + `_MODEL`（改图另用 `_EDIT_MODEL`，缺省回落 `_MODEL`）。切站规则 `isFailoverWorthy()`：401/402/403/429/5xx/网络/超时都切，400/413 是请求本身的问题不切（省灾备费用）。atlascloud 走异步 `/model/generateImage` + `/model/prediction/{id}` 轮询，其余渠道按 OpenAI `/images/generations`。日志 `[anppt-v2][image-upstream] 主站生图失败，切换灾备站`。
+  - **历史缺口（2026-10-13 修复）**：代码一直支持灾备，但生产 `.env` 从未配 `ANPPT_V2_IMAGE_BACKUP_*`，灾备形同不存在——10-04 主站 402（insufficient balance）直接拖垮整站生成 6 个任务。**灾备必须与主站分账号/分额度**，否则同账号欠费一起挂；跨站灾备（atlascloud）还需账户有余额，2026-10-13 实测 atlascloud 与 KIE 均不可用（前者 402、后者无凭证）。
+  - 回归：`scripts/test-generation.mjs` 4 条断言（主站 402 切灾备出图 / 灾备确被调用 / 主站 400 不切 / 灾备三项不全按单站失败）。
 - 下载：`/api/files/...` 使用文件流，支持 `HEAD`、`Range`、206 和 416；Codia PPTX 结果也直接流式落盘，避免并发时整文件进入 Node 堆内存。
 - 原创模板生成链：已落地「整套场景识别 → 六类叙事骨架 → 35 页型任务 → 逐页同风格参考 → 25 包设计 DNA」。当前不调用付费生图批量重制；后续按高校赛事、企业商务、政企工作三套逐张验收并原子替换，详见 `docs/ORIGINAL-TEMPLATE-REGEN.md`。
 
@@ -232,9 +236,11 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 脚本：`scripts/migrate-slideflow-users.mjs --from <老库> --to <v2库> [--dry-run]`，幂等可重复执行（username 冲突跳过 + ledger 键防重）；服务器上需 `sudo -n node`（库属 root）。老站项目/PPT 数据不迁（轻量化决策），老 slideflow 3300 服务保留可查。
 - 同批轻量化：移除「重点用户监控」功能（`admin_user_watches` 表本地+线上均已 DROP，代码/路由/前端/测试全清）。
 
-## 21. PPT 美化 / 复刻（ppt_replicate，beta，2026-09-05）
+## 21. PPT 美化 / 复刻（ppt_replicate，public，2026-10-13 上线）
 
-- 定位：上传参考稿保画面、换文案。不进大纲→风格包工作台。开关仍是 `ppt_replicate`（beta=测试用户+管理员）。
+- 定位：上传参考稿保画面、换文案。不进大纲→风格包工作台。
+- **开关状态（2026-10-13）**：`ppt_replicate` 已由 beta 转 **public**，全员可见可用（侧栏「PPT 美化」、首页「PPT美化」页签、模板库「自己的 PPT」均按 `/api/features` 显隐；服务端硬门仍在）。上线前做了生产真机验收（admin 账号 1 页：结构卡 1/1、`/images/edits` 出图 1536×864、扣 10🌟、`source=replicate`、工作台缺省生成 409 `REPLICATE_PROJECT`），验收项目已删除。
+- **回滚**：管理端「功能开关板」把 `ppt_replicate` 转回 `beta`/`off` 即时生效（开关读库不缓存，无需发版重启）。
 - **模块目录（2026-09-06 归拢，首个自包含模块样板）**：`src/modules/ppt-replicate/`——`server/replicate.ts` 唯一服务端出口，`client/` 全部前端（工作台/ui/规则/请求/交接/拆页/URL/入口卡），边界与四件套见模块 README；薄壳留在 `src/app/(main)/beautify/page.tsx` 与 `src/app/api/tools/replicate/plan/route.ts`。
 - 入口：首页「PPT美化」、模板库「自己的 PPT」、侧栏「PPT 美化」、`/beautify`。旧地址 `/tools/replicate-ppt.html` 跳到 `/beautify`。未登录去 `/login?next=...`；开关不可见显示「功能尚未开放」。`robots` disallow `/beautify` 与 `/tools/`。
 - 前端拆分（均在模块 `client/` 下）：规则在 `beautify-pages.ts`（扣费名单/失败横幅/草稿/计划回写）；请求在 `beautify-api.ts`；UI 零件在 `beautify-ui.tsx`；`BeautifyClient` 只编排。内部 source 仍是 `replicate`。
@@ -248,6 +254,8 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
   - 换新参考稿**不沿用旧文案**（避免画面和文字对不上）。
   - 打开旧项目：结构卡需再点完善文案；壳图过期则提示重传。草稿键仍是 `anppt-replicate-draft-v1`。
   - **2026-09-08 对抗审查修补**：生成/改图 `requestId` 改为每次 UUID（刷新后再点「重试本页」不再撞 `DUPLICATE_REQUEST`）；改图失败保留旧成品图；再完善文案若字变了会清成品图并提示重新扣星；`refine` 对 `source=replicate` 项目也走 `ppt_replicate` 硬门；PDF worker 改走同站打包资源，不再拉 unpkg。
+  - **2026-10-19 导出入口补齐**：PPT 美化第 4 步新增「导出图片版 PPTX」（免费，走 `/api/single-page/export-image-pptx`），生成成功后自动下载并写入导出中心；同时常驻「打开下载中心」入口。生成/恢复项目后把 `projectId` 写回 URL（`/beautify?projectId=...`），刷新不会丢项目。
+  - **2026-10-19 PDF 解析修复**：浏览器端 worker 由 `scripts/sync-pdf-worker.mjs` 在 predev/prebuild 复制到 `public/pdf.worker.min.mjs`，固定走同站 URL，避免 Next/Turbopack 的 `?url` 导入返回非字符串触发 `Invalid 'workerSrc' type`；服务端 `documents.ts` 显式把 pdfjs `workerSrc` 指到 node_modules 真实文件，并配置本地 `cmaps/`、`standard_fonts/`、`wasm/`，避免服务端 chunk 相对路径去找 `.next/server/chunks/pdf.worker.mjs`，也避免中文 CID 字体因缺 CMap 解析为空。回归：`scripts/test-generation.mjs` 新增中文 CID PDF 断言（424 项）。
 - 视觉预算：单次最多 24 页结构；10 分钟 48 次 VLM。文案 LLM 走 `replicate-plan:{userId}` 30/10min，**不占**大纲 `llm-free`。
 - 项目身份：`source='replicate'`。列表「美化 ·」链到 `/beautify`；工作台缺省生成 409 `REPLICATE_PROJECT`（文案「请到 PPT 美化」）。
 - `/api/me` 的 `features.beautify` 跟开关走，不再写死 true。
@@ -289,3 +297,40 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 管理后台页 `/admin/problems`（`src/app/(main)/admin/problems/page.tsx` + `src/components/admin/problems-client.tsx`，与 /admin 相同的 cookie session + admin 角色守卫，非管理员 redirect）：默认读最近 200 条，筛选 category（下拉）/ level / 天数（1/3/7），列 = 时间 / 级别 / 类别 / 消息（含 detail 摘要）/ 用户（userId 前 8 位）/ 引用（`refType:refId`）；/admin 头部有「问题日志」入口。空态提示「该时间范围内没有匹配的问题记录」。
 - API：`GET /api/admin/problems?days=&category=&level=&limit=`（管理员会话才可访问；`days/limit` 越界自动钳制；响应为统一 envelope `{ ok, data: { items } }`，`Cache-Control: private, no-store`）。
 - 测试：`node scripts/test-backend.mjs` [12d]（落盘/回环/过滤/坏行跳过/超 14 天清理，mkdtemp 临时目录）与 [10]（未登录 401、普通用户 403、管理员 200）。
+
+## 25. 创新点口径（对外可用，逐条锚定实现与测试，2026-10-13）
+
+> 只列「能在本仓库指到实现、并指到测试或验证命令」的项；没有实现落点的说法不要写进对外材料。实现或数字变化时同步本节与 §8。
+
+1. **八段式提示词（生图）**——提示词不是一段自由文本，而是固定八段契约：任务与语境 / 整套一致性 / 页面角色与页型协议 / 页面文案与防幻觉 / 版式与配图建议 / 风格 DNA 与参考样张 / 内容真实性硬约束 / 易转可编辑条款。段序即拼接序；上下文不适用的段跳过，但段位保留——于是「这一页为什么这样画」可以逐段定位，改一段不会污染其他段。
+   - 实现：`style-packs.ts` 的 `SLIDE_PROMPT_STAGE_DEFS` / `buildSlideImagePromptStages()` / `buildSlideImagePrompt()`。整套（`generate.ts` `promptForSlide`）与单页（`single-pages.ts` `buildPagePrompt`）两条路径共用同一装配器；改图/微调指令只在八段之后追加，不新增段。
+   - 证据：`node scripts/test-generation.mjs` 4 条八段契约断言（段序与职责键固定、满配八段齐全、拼装结果与提示词逐字一致、缺省只跳段不减位）；2026-10-13 落地时以重构前实现为基准跑过 56 组输入逐字对比，全部一致（行为等价，出图不受影响）。
+2. **页型分层协议**——`protocols.ts` 把页型拆成固定 5 条（文字忠实 / 信息任务 / 构图版式 / 配图基因 / 禁忌），整体作为八段式第 3 段进入提示词；页型注册表 `page-types.ts` 当前 40 型（`PAGE_TYPES.length`），role 优先 + 关键词最长匹配。
+3. **全局视觉规范（deck 级 blueprint）**——`blueprint.ts` 每套 deck 只调一次 LLM 生成视觉总规范，缓存到 `data/blueprints/{deckId}.json`，风格包或大纲变化时指纹失效重算，失败降级为空串；逐页注入第八段的第 2 段，保证整册像同一位设计师做的。
+4. **原创设计 DNA + 确定性样张选择**——`src/data/style-design-dna.ts` 为每个公开风格包维护色板/栅格/图形母题/配图策略/禁区；`selectStyleReferencePath()` 按 `风格包:页型:页序:标题` 稳定散列选样张，提示词只取样张风格、明确禁止复制其文字与 Logo。测试断言每个公开包都有 DNA 且封面样张存在。
+5. **可编辑性前移到生图阶段**——`EDITABLE_FRIENDLY_CLAUSE`（八段式第 8 段）固化字体字形、分区、栅格与「每段文案只出现一次」，为下游 Codia 转可编辑链（§6）预先铺路，而不是事后补救。
+6. **崩溃懒恢复 + 定长退款幂等键**——`recovery.ts` 按 job 心跳把中断页收敛为 failed 并按 ledger 实扣金额补退；扣费/退款键由 `credits.chargeRefundKeys` 定长派生，避免超长键截断后退款静默失效（§4）。
+7. **结构化问题日志**——`problem-log.ts` 把关键失败落成 JSONL 并在 `/admin/problems` 可查（§24），日志侧可审计、可回放。
+
+## 26. 公开站点标准与合规页面（2026-10-19）
+
+- 站点配置 `src/data/site-config.ts` 新增 `publicBaseUrl` / `companyName` / `icpNumber` / `legalUpdatedAt`；`PUBLIC_BASE_URL`、`ANPPT_COMPANY_NAME`、`ANPPT_ICP_NUMBER` 可覆盖。页脚只在 `icpNumber` 非空时渲染备案链接，避免空占位。
+- 根布局 `src/app/layout.tsx`：`metadataBase`、canonical 基准、Open Graph / Twitter、robots、manifest、Apple Web App、viewport themeColor，以及 Organization / WebSite / SoftwareApplication JSON-LD；分享卡片由 `src/app/opengraph-image.tsx` 生成（1200×630）。
+- 公开内容页：`/help`（格式、流程、美化、可编辑、积分退款、FAQ）、`/about`、`/legal/privacy`、`/legal/terms`、`/legal/refund`。`/login` 增加条款与隐私入口；充值页「查看详细说明」改链 `/help#credits`。
+- 站点级状态：根 `not-found.tsx`、`error.tsx`、`global-error.tsx`、`loading.tsx`；`AppShell` 增加跳转主内容链接、移动抽屉 Escape 关闭与滚动锁定、侧栏 `aria-current`、`aria-expanded/controls`。
+- SEO：`robots.ts` 只放行公开内容页，应用页与 API 均禁止抓取；`sitemap.ts` 覆盖首页、模板库、帮助、关于与三份规则页；`public/.well-known/security.txt` 提供安全联系入口。
+- 规则页内容必须与实现保持一致：生成 10🌟/页、可编辑 20🌟/页且单次最多 20 页、失败未完成部分自动退回；改价或改退款规则时同步 `src/data/recharge.ts`、`/help` 与 `/legal/refund`。
+- 校验：`npm run lint -- --max-warnings=0`、`npx tsc --noEmit`、`node scripts/test-backend.mjs`、`node scripts/test-generation.mjs`（424）、`npm run build`；上线后检查 `/sitemap.xml`、`/robots.txt`、`/opengraph-image`、`/.well-known/security.txt` 与 `/help` 的 200 响应。
+
+## 27. 性能与多用户并发（2026-10-19）
+
+- SQLite：`src/lib/server/db.ts` 增加 `busy_timeout=5000`、`synchronous=NORMAL`、64MB cache、`temp_store=MEMORY`、128MB mmap；启动时清理 7 天前过期会话与 OTP，避免长期运行表膨胀。`recharge_orders(status, created_at)` 与生成/导出 active partial index 已补。
+- 生图公平调度：`images.ts` 在全局并发/每分钟启动之外增加单用户配额（默认 6 在途、16 次/分钟，`ANPPT_V2_IMAGE_PER_USER_CONCURRENCY` / `ANPPT_V2_IMAGE_STARTS_PER_USER_PER_MINUTE`）。队列不再只卡队首，单用户占满时其他用户可继续；测试 `[2c]` 断言 A1/B1 先启动。
+- 文档解析：PDF/DOCX 是 CPU 重活且 pdfjs 在 Node 下走 fake worker；`documents.ts` 增加进程内解析槽（默认 2，`ANPPT_V2_DOCUMENT_PARSE_CONCURRENCY`）与 20s 排队超时（`ANPPT_V2_DOCUMENT_PARSE_QUEUE_TIMEOUT_MS`），超出返回 `DOCUMENT_PARSE_BUSY` 503。
+- 请求侧：`/api/deck/parse` 在 `formData()` 前检查 content-length（防超限 body 整段进内存），并按用户限 60 次/小时；`/api/tools/replicate/plan` 按用户限 40 次/小时。
+- 查询：`getDeckState` 改为一次取整套 `slide_versions`（`listVersionsByDeck`），单页项目详情一次取项目版本（`listProjectVersions`），项目列表用相关子查询批量取页数与封面，避免逐项目/逐页 N+1。
+- 缓存：公开的 style-pack-categories / showcase-cases / site-config 加 `public` 缓存；style-packs / templates 加 `private, max-age=60` + `Vary: Cookie`。
+- 验证：`node scripts/test-generation.mjs` 425 断言、`node scripts/test-backend.mjs` 134 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
+
+- 备份：`deploy/backup-db.sh` + `deploy/anppt-backup.timer`（每日 03:30，`VACUUM INTO` → gzip，保留 14 天，目录 `/opt/anppt-v2/shared/backups`）。已做一次恢复校验：解压后 `PRAGMA integrity_check=ok`，用户/钱包/订单表可读。备份只含 SQLite；uploads/generated/exports 需另行归档。
+- 本机压测基线（2026-10-19，本地 `next start`，非生产 SLA）：20 用户、100 个 deck、600 次 `/api/me` + `/api/projects` + `/api/style-packs` 并发读，40 并发下 p50 18.4ms / p95 34.7ms / p99 115.2ms，0 失败；空库 600 请求 p95 24.7ms。生产进程常驻 RSS 约 195MB（峰值 246MB），远端可用内存 6.2GB。

@@ -4,6 +4,7 @@ import { ExportsClient } from "./exports-client";
 export const metadata: Metadata = {
   title: "下载中心",
   description: "AnPPT 下载中心：导出的图片版 / 可编辑 PPTX 都会出现在这里，可随时再次下载。",
+  robots: { index: false, follow: false },
 };
 
 export default function ExportsPage() {

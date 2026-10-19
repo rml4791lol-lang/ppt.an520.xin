@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS slide_versions (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_slide_versions_slide ON slide_versions(slide_id, version_no DESC);
+CREATE INDEX IF NOT EXISTS idx_slide_versions_deck ON slide_versions(deck_id, slide_id, version_no DESC);
 
 CREATE TABLE IF NOT EXISTS generation_jobs (
   id TEXT PRIMARY KEY,
@@ -82,6 +83,8 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_generation_jobs_deck ON generation_jobs(deck_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_generation_jobs_user ON generation_jobs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_generation_jobs_active ON generation_jobs(status, updated_at)
+  WHERE status IN ('queued', 'running');
 
 CREATE TABLE IF NOT EXISTS single_page_projects (
   id TEXT PRIMARY KEY,
@@ -154,6 +157,8 @@ CREATE TABLE IF NOT EXISTS export_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_export_jobs_user ON export_jobs(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_export_jobs_ref ON export_jobs(user_id, ref_type, ref_id, kind, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_export_jobs_active ON export_jobs(status, updated_at)
+  WHERE status IN ('pending', 'processing');
 
 CREATE TABLE IF NOT EXISTS ppt_to_base_jobs (
   id TEXT PRIMARY KEY,

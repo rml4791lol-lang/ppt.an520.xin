@@ -10,6 +10,8 @@ import { getSiteConfig } from "@/data/site-config";
 export const metadata: Metadata = {
   title: "登录",
   description: "登录 AnPPT，保存作品、查看项目和使用星星。",
+  alternates: { canonical: "/login" },
+  robots: { index: false, follow: true },
 };
 
 export default function LoginPage() {
@@ -48,6 +50,22 @@ export default function LoginPage() {
           </div>
         </div>
       </main>
+
+      <footer className="px-5 pb-6 text-center text-xs leading-6 text-ink-4 sm:px-8">
+        登录即表示你同意 AnPPT 的
+        <Link href="/legal/terms" className="mx-1 text-ink-3 underline-offset-2 hover:text-brand hover:underline">
+          服务条款
+        </Link>
+        和
+        <Link href="/legal/privacy" className="mx-1 text-ink-3 underline-offset-2 hover:text-brand hover:underline">
+          隐私政策
+        </Link>
+        。遇到问题可查看
+        <Link href="/help" className="mx-1 text-ink-3 underline-offset-2 hover:text-brand hover:underline">
+          帮助中心
+        </Link>
+        。
+      </footer>
     </div>
   );
 }

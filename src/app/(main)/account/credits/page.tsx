@@ -5,6 +5,7 @@ import { CreditsClient } from "@/components/account/credits-client";
 export const metadata: Metadata = {
   title: "积分明细",
   description: "查看每个项目的星星使用、生成中占用和退回记录。",
+  robots: { index: false, follow: false },
 };
 
 export default function CreditsPage() {

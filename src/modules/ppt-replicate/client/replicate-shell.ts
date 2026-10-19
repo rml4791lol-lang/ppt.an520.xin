@@ -30,8 +30,8 @@ export function canvasToBlob(canvas: HTMLCanvasElement, type = "image/png", qual
 
 async function loadPdfjs() {
   const pdfjs = await import("pdfjs-dist");
-  const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-  pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+  // public/pdf.worker.min.mjs 由 scripts/sync-pdf-worker.mjs 在 dev/build 前同步。
+  pdfjs.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs?v=${encodeURIComponent(pdfjs.version)}`;
   return pdfjs;
 }
 

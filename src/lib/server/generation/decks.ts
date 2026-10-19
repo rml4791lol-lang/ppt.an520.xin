@@ -206,6 +206,14 @@ export function listVersions(slideId: string): SlideVersionRow[] {
   return rows.map(toVersionRow);
 }
 
+/** 整套状态轮询用：一次取完整套版本，避免每页一次查询（N+1）。 */
+export function listVersionsByDeck(deckId: string): SlideVersionRow[] {
+  const rows = getGenDb()
+    .prepare('SELECT * FROM slide_versions WHERE deck_id = ? ORDER BY slide_id ASC, version_no DESC')
+    .all(deckId) as Row[];
+  return rows.map(toVersionRow);
+}
+
 export function latestJob(deckId: string): GenerationJobRow | null {
   const row = getGenDb()
     .prepare('SELECT * FROM generation_jobs WHERE deck_id = ? ORDER BY created_at DESC LIMIT 1')
@@ -670,6 +678,12 @@ export function getDeckState(userId: string, deckId: string) {
   if (reconcileDeckGeneration(deck)) deck = getOwnedDeck(userId, deck.id);
   const slides = listSlides(deck.id);
   const job = latestJob(deckId);
+  const versionsBySlide = new Map<string, SlideVersionRow[]>();
+  for (const version of listVersionsByDeck(deck.id)) {
+    const list = versionsBySlide.get(version.slideId) ?? [];
+    list.push(version);
+    versionsBySlide.set(version.slideId, list);
+  }
   const contentLocked = ['confirmed', 'generating', 'generated', 'partial'].includes(deck.status);
   const slideViews = slides.map((slide) => ({
     slideId: slide.slideId,
@@ -689,7 +703,7 @@ export function getDeckState(userId: string, deckId: string) {
     genStatus: slide.genStatus,
     genError: slide.genError,
     activeVersionId: slide.activeVersionId,
-    versions: listVersions(slide.slideId).map((version) => ({
+    versions: (versionsBySlide.get(slide.slideId) ?? []).map((version) => ({
       versionId: version.versionId,
       versionNo: version.versionNo,
       kind: version.kind,

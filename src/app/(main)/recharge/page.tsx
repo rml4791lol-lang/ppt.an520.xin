@@ -6,6 +6,8 @@ import { PRICING_RULES, RECHARGE_BENEFITS, RECHARGE_PLANS } from "@/data/recharg
 export const metadata: Metadata = {
   title: "购买与兑换",
   description: "AnPPT 积分套餐：不再为 PPT 加班，生成、样稿与图片版导出都从这里开始。",
+  alternates: { canonical: "/recharge" },
+  robots: { index: false, follow: true },
 };
 
 export default function RechargePage() {
@@ -91,7 +93,9 @@ export default function RechargePage() {
         </div>
         <p className="mt-8 text-center text-sm text-ink-3">
           积分规则 / 页面预估 / 常见问题
-          <span className="ml-1 cursor-pointer font-medium text-brand">查看详细说明 →</span>
+          <Link href="/help#credits" className="ml-1 font-medium text-brand hover:text-brand-strong">
+            查看详细说明 →
+          </Link>
         </p>
       </section>
     </div>

@@ -36,22 +36,26 @@ export interface ProjectListResult {
 function deckToItem(row: Row): ProjectItem {
   const deckId = String(row.id);
   const db = getGenDb();
-  const pageCount = Number(
-    db.prepare('SELECT COUNT(*) AS c FROM deck_slides WHERE deck_id = ?').get(deckId)?.c || 0,
-  );
-  const cover = db
-    .prepare(
-      `SELECT v.image_url FROM deck_slides s JOIN slide_versions v ON v.id = s.active_version_id
-       WHERE s.deck_id = ? AND s.gen_status IN ('succeeded','stale') ORDER BY s.page_index ASC LIMIT 1`,
-    )
-    .get(deckId);
+  const pageCount = row.page_count != null
+    ? Number(row.page_count)
+    : Number(db.prepare('SELECT COUNT(*) AS c FROM deck_slides WHERE deck_id = ?').get(deckId)?.c || 0);
+  const coverUrl = row.cover_url != null
+    ? String(row.cover_url)
+    : String(
+      db
+        .prepare(
+          `SELECT v.image_url FROM deck_slides s JOIN slide_versions v ON v.id = s.active_version_id
+           WHERE s.deck_id = ? AND s.gen_status IN ('succeeded','stale') ORDER BY s.page_index ASC LIMIT 1`,
+        )
+        .get(deckId)?.image_url || '',
+    );
   return {
     id: deckId,
     projectType: 'deck',
     title: String(row.title || '未命名项目'),
     status: String(row.status || 'parsed'),
     pageCount,
-    coverUrl: String(cover?.image_url || ''),
+    coverUrl,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   };
@@ -60,15 +64,19 @@ function deckToItem(row: Row): ProjectItem {
 function singleProjectToItem(row: Row): ProjectItem {
   const projectId = String(row.id);
   const db = getGenDb();
-  const pageCount = Number(
-    db.prepare('SELECT COUNT(*) AS c FROM single_pages WHERE project_id = ?').get(projectId)?.c || 0,
-  );
-  const cover = db
-    .prepare(
-      `SELECT v.image_url FROM single_pages p JOIN single_page_versions v ON v.id = p.active_version_id
-       WHERE p.project_id = ? AND p.status = 'succeeded' ORDER BY p.page_index ASC LIMIT 1`,
-    )
-    .get(projectId);
+  const pageCount = row.page_count != null
+    ? Number(row.page_count)
+    : Number(db.prepare('SELECT COUNT(*) AS c FROM single_pages WHERE project_id = ?').get(projectId)?.c || 0);
+  const coverUrl = row.cover_url != null
+    ? String(row.cover_url)
+    : String(
+      db
+        .prepare(
+          `SELECT v.image_url FROM single_pages p JOIN single_page_versions v ON v.id = p.active_version_id
+           WHERE p.project_id = ? AND p.status = 'succeeded' ORDER BY p.page_index ASC LIMIT 1`,
+        )
+        .get(projectId)?.image_url || '',
+    );
   return {
     id: projectId,
     projectType: 'single-page',
@@ -76,7 +84,7 @@ function singleProjectToItem(row: Row): ProjectItem {
     title: String(row.title || '未命名单页项目'),
     status: pageCount > 0 ? 'active' : 'empty',
     pageCount,
-    coverUrl: String(cover?.image_url || ''),
+    coverUrl,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   };
@@ -154,13 +162,31 @@ export function listProjects(
   let items: ProjectItem[] = [];
   if (!type || type === 'deck') {
     const rows = db
-      .prepare('SELECT * FROM decks WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC')
+      .prepare(
+        `SELECT d.id, d.title, d.status, d.created_at, d.updated_at,
+           (SELECT COUNT(*) FROM deck_slides s WHERE s.deck_id = d.id) AS page_count,
+           (SELECT v.image_url FROM deck_slides s JOIN slide_versions v ON v.id = s.active_version_id
+            WHERE s.deck_id = d.id AND s.gen_status IN ('succeeded','stale')
+            ORDER BY s.page_index ASC LIMIT 1) AS cover_url
+         FROM decks d
+         WHERE d.user_id = ? AND d.deleted_at IS NULL
+         ORDER BY d.updated_at DESC`,
+      )
       .all(userId) as Row[];
     items = items.concat(rows.map(deckToItem));
   }
   if (!type || type === 'single-page') {
     const rows = db
-      .prepare('SELECT * FROM single_page_projects WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC')
+      .prepare(
+        `SELECT p.id, p.title, p.source, p.created_at, p.updated_at,
+           (SELECT COUNT(*) FROM single_pages sp WHERE sp.project_id = p.id) AS page_count,
+           (SELECT v.image_url FROM single_pages sp JOIN single_page_versions v ON v.id = sp.active_version_id
+            WHERE sp.project_id = p.id AND sp.status = 'succeeded'
+            ORDER BY sp.page_index ASC LIMIT 1) AS cover_url
+         FROM single_page_projects p
+         WHERE p.user_id = ? AND p.deleted_at IS NULL
+         ORDER BY p.updated_at DESC`,
+      )
       .all(userId) as Row[];
     items = items.concat(rows.map(singleProjectToItem));
   }

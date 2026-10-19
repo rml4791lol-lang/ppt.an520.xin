@@ -8,6 +8,14 @@ export interface SiteAnnouncement {
 
 export interface SiteConfig {
   siteName: string
+  /** 对外公开站点地址，用于 canonical / sitemap / 分享卡片 */
+  publicBaseUrl: string
+  /** 页脚展示的运营主体名称 */
+  companyName: string
+  /** 中国 ICP 备案号；未配置时不渲染 */
+  icpNumber: string
+  /** 隐私政策 / 服务条款最后更新时间 */
+  legalUpdatedAt: string
   /** 注册赠送星星数 */
   signupBonusPoints: number
   /** 每页生成消耗（标准模式） */
@@ -28,6 +36,10 @@ export function getSiteConfig(): SiteConfig {
   const env = process.env
   return {
     siteName: 'AnPPT',
+    publicBaseUrl: (env.PUBLIC_BASE_URL ?? 'https://ppt.an520.xin').replace(/\/+$/, ''),
+    companyName: env.ANPPT_COMPANY_NAME ?? 'AnPPT',
+    icpNumber: env.ANPPT_ICP_NUMBER ?? '',
+    legalUpdatedAt: '2026-10-19',
     signupBonusPoints: Number(env.ANPPT_SIGNUP_BONUS_POINTS ?? 100),
     pointsPerPage: Number(env.ANPPT_POINTS_PER_PAGE ?? 10),
     beginnerTutorialUrl: env.ANPPT_TUTORIAL_URL ?? '',

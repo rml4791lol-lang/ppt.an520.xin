@@ -6,6 +6,7 @@ import { ProjectsClient } from "@/components/projects/projects-client";
 export const metadata: Metadata = {
   title: "项目中心",
   description: "AnPPT 项目中心：全部项目按最近更新时间统一展示。",
+  robots: { index: false, follow: false },
 };
 
 export default function ProjectsPage() {

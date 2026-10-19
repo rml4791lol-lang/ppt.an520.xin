@@ -5,6 +5,7 @@ import { parseDocument } from '@/lib/server/documents';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { runReplicatePlan } from '@/modules/ppt-replicate/server/replicate';
 import { defineApiRoute } from '@/lib/server/generation/route';
+import { hitRateLimit } from '@/lib/server/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,6 +75,10 @@ async function readPlanInput(request: Request): Promise<{
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   assertFeatureVisible('ppt_replicate', user);
+  const rate = hitRateLimit(`replicate-plan:${user.id}`, { windowMs: 60 * 60_000, max: 40 });
+  if (!rate.allowed) {
+    throw new ApiError('PLAN_RATE_LIMITED', '参考稿处理过于频繁，请稍后再试', 429, true);
+  }
   const input = await readPlanInput(request);
   const result = await runReplicatePlan(user.id, input);
   return jsonOk(result);

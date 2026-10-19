@@ -60,6 +60,8 @@ const eslintConfig = defineConfig([
     // Local generated previews and test artifacts are already gitignored.
     "output/**",
     "scripts/output/**",
+    // pdfjs worker is copied from node_modules before dev/build.
+    "public/pdf.worker.min.mjs",
   ]),
 ]);
 

@@ -1,46 +1,31 @@
 #!/usr/bin/env bash
-# AnPPT v2 部署到 hk-hermes。构建在本地（Mac），产物 rsync 到服务器。
-# 首次使用前按 deploy/README.md 完成服务器初始化（目录 / .env / systemd）。
-# 用法：deploy/deploy.sh
+# Git-first production deploy for ppt.an520.xin.
+# Local tree must be clean. This pushes HEAD to the production branch, then the server
+# pulls/builds/stages an immutable release and restarts the service after queue checks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SERVER="${DEPLOY_SERVER:-hk-hermes}"
-REMOTE_DIR=/opt/anppt-v2/current
+BRANCH="${DEPLOY_BRANCH:-production}"
 
-echo "== 1/5 本地构建 =="
-npm run build
-
-echo "== 2/5 同步产物到 $SERVER =="
-ssh "$SERVER" "mkdir -p $REMOTE_DIR"
-rsync -az --delete --exclude 'cache/' .next/ "$SERVER:$REMOTE_DIR/.next/"
-rsync -az package.json package-lock.json next.config.ts "$SERVER:$REMOTE_DIR/"
-rsync -az --delete public/ "$SERVER:$REMOTE_DIR/public/"
-
-echo "== 3/5 服务器安装生产依赖 =="
-ssh "$SERVER" "cd $REMOTE_DIR && npm ci --omit=dev --no-audit --no-fund"
-
-echo "== 4/5 重启前检查在途任务 =="
-active_counts="$({ ssh "$SERVER" 'sudo -n node' <<'NODE'
-const { DatabaseSync } = require('node:sqlite');
-const db = new DatabaseSync('/opt/anppt-v2/shared/data/anppt-v2.db', { readOnly: true });
-const generation = Number(db.prepare("SELECT count(*) c FROM generation_jobs WHERE status IN ('queued','running')").get().c);
-const exports = Number(db.prepare("SELECT count(*) c FROM export_jobs WHERE status IN ('pending','processing')").get().c);
-process.stdout.write(`${generation} ${exports}`);
-NODE
-} 2>/dev/null)"
-read -r generation_active export_active <<<"$active_counts"
-if [[ ! "$generation_active" =~ ^[0-9]+$ || ! "$export_active" =~ ^[0-9]+$ ]]; then
-  echo "无法确认在途任务数量，拒绝重启：$active_counts" >&2
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "refusing deploy: local Git tree is not clean" >&2
+  echo "commit the intended changes first; do not deploy uncommitted work" >&2
   exit 1
 fi
-echo "生成队列=${generation_active}，导出队列=${export_active}"
-if (( generation_active > 0 || export_active > 0 )); then
-  echo "检测到在途任务，已中止重启；等待任务完成后重新部署。" >&2
-  exit 2
-fi
 
-echo "== 5/5 重启并自检 =="
-ssh "$SERVER" "sudo -n systemctl restart anppt-v2 && sleep 2 && sudo -n systemctl is-active anppt-v2 \
-  && test \"\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/me)\" = 401 \
-  && echo 'local /api/me -> 401 OK'"
+echo "== 1/3 push HEAD to origin/$BRANCH =="
+git push origin "HEAD:refs/heads/$BRANCH"
+
+echo "== 2/3 server pull, build, stage, restart =="
+ssh "$SERVER" "sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production '$BRANCH'"
+
+echo "== 3/3 verify deployed commit and public health =="
+LOCAL_COMMIT="$(git rev-parse --short=12 HEAD)"
+REMOTE_COMMIT="$(ssh "$SERVER" 'cat /opt/anppt-v2/current/.deploy-commit')"
+if [[ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]]; then
+  echo "deployed commit mismatch: local=$LOCAL_COMMIT server=$REMOTE_COMMIT" >&2
+  exit 1
+fi
+curl -fsS https://ppt.an520.xin/api/health >/dev/null
+echo "deployed $LOCAL_COMMIT"

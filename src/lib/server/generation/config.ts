@@ -54,6 +54,10 @@ export interface GenerationConfig {
   imageGlobalConcurrency: number;
   /** 全站每分钟最多启动的生图请求数 */
   imageStartsPerMinute: number;
+  /** 单用户同时在途生图上限（多用户公平调度） */
+  imagePerUserConcurrency: number;
+  /** 单用户每分钟最多启动的生图请求数（多用户公平调度） */
+  imageStartsPerUserPerMinute: number;
   /** 429/5xx/网络抖动的后台自动重试次数 */
   imageMaxRetries: number;
   /** 自动重试基础退避毫秒数 */
@@ -144,6 +148,8 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     generateConcurrency: Math.min(12, intFrom(effectiveEnv.ANPPT_V2_GENERATE_CONCURRENCY, 6)),
     imageGlobalConcurrency: Math.min(40, intFrom(effectiveEnv.ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY, 20)),
     imageStartsPerMinute: Math.min(120, intFrom(effectiveEnv.ANPPT_V2_IMAGE_STARTS_PER_MINUTE, 24)),
+    imagePerUserConcurrency: Math.min(20, intFrom(effectiveEnv.ANPPT_V2_IMAGE_PER_USER_CONCURRENCY, 6)),
+    imageStartsPerUserPerMinute: Math.min(60, intFrom(effectiveEnv.ANPPT_V2_IMAGE_STARTS_PER_USER_PER_MINUTE, 16)),
     imageMaxRetries: Math.min(3, nonNegativeIntFrom(effectiveEnv.ANPPT_V2_IMAGE_MAX_RETRIES, 2)),
     imageRetryBaseMs: Math.min(30_000, intFrom(effectiveEnv.ANPPT_V2_IMAGE_RETRY_BASE_MS, 2_000)),
     jobStaleMs: intFrom(effectiveEnv.ANPPT_V2_JOB_STALE_MS, Math.max(5 * 60_000, imageTimeoutMs + 120_000)),

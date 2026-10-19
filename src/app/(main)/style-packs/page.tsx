@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   title: "模板库",
   description:
     "AnPPT 模板库：官方模板灌内容，风格包借感觉；也可以用自己的 PPT 当模板做美化。",
+  alternates: { canonical: "/style-packs" },
+  openGraph: {
+    title: "AnPPT 模板库",
+    description: "设计师原创风格包与成套模板，按场景选择，快速开始制作。",
+    url: "/style-packs",
+  },
 };
 
 export default function StylePacksPage() {

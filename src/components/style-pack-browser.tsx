@@ -9,15 +9,18 @@ const ALL = "全部";
 export function StylePackBrowser({
   packs,
   categories,
+  limit,
 }: {
   packs: StylePack[];
   categories: string[];
+  /** 首页只展示精选数量，完整列表仍由 /style-packs 承载 */
+  limit?: number;
 }) {
   const [active, setActive] = useState(ALL);
-  const filtered = useMemo(
-    () => (active === ALL ? packs : packs.filter((p) => p.category === active)),
-    [active, packs],
-  );
+  const filtered = useMemo(() => {
+    const list = active === ALL ? packs : packs.filter((p) => p.category === active);
+    return typeof limit === "number" ? list.slice(0, limit) : list;
+  }, [active, packs, limit]);
 
   return (
     <div>

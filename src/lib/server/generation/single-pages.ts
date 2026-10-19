@@ -139,6 +139,9 @@ function upsertPage(
     | undefined;
   const ts = nowMs();
   if (existing) {
+    if (input.projectId && String(existing.project_id) !== cleanString(input.projectId, 80)) {
+      throw new ApiError('PAGE_NOT_FOUND', '页面不属于该项目', 404, false);
+    }
     if (String(existing.status) === 'running' || String(existing.status) === 'queued') {
       throw new ApiError('GENERATION_RUNNING', '该页正在生成中，请稍候', 409, true);
     }
@@ -173,6 +176,62 @@ function upsertPage(
     ts,
   );
   return getOwnedPage(userId, input.pageId);
+}
+
+/** PPT 美化草稿：只保存项目/页面/参考稿路径，不生成、不扣星。 */
+export function saveReplicateDraft(
+  userId: string,
+  input: {
+    projectId?: string;
+    title?: string;
+    pages: Array<{
+      pageId?: string;
+      title?: string;
+      content?: string;
+      imagePath?: string;
+    }>;
+  },
+): { projectId: string; pageCount: number } {
+  const rawPages = Array.isArray(input.pages) ? input.pages : [];
+  if (rawPages.length === 0) throw validationError('草稿至少要有 1 页');
+  if (rawPages.length > 40) throw new ApiError('TOO_MANY_PAGES', '一次最多保存 40 页', 400, false);
+  const title = cleanString(input.title, 120) || 'PPT 美化';
+  const db = getGenDb();
+  return withTransaction(db, () => {
+    const projectId = getOrCreateProject(userId, input.projectId, title, 'replicate');
+    db.prepare('UPDATE single_page_projects SET title = ?, source = ?, updated_at = ? WHERE id = ?').run(
+      title,
+      'replicate',
+      nowMs(),
+      projectId,
+    );
+    const pages = rawPages.map((page, index) => {
+      const pageId = cleanString(page.pageId, 80) || genId('spp_page');
+      const imagePath = page.imagePath
+        ? parseOwnedUploadRelPath(userId, page.imagePath)
+        : null;
+      if (page.imagePath && !imagePath) {
+        throw new ApiError('INVALID_IMAGE_PATH', `第 ${index + 1} 页参考稿路径无效`, 400, false);
+      }
+      return {
+        pageId,
+        title: cleanString(page.title, 120) || `第 ${index + 1} 页`,
+        content: cleanString(page.content, 8000),
+        imagePath: imagePath || '',
+      };
+    });
+    for (const page of pages) {
+      upsertPage(userId, {
+        pageId: page.pageId,
+        projectId,
+        title: page.title,
+        content: page.content,
+        projectSource: 'replicate',
+        shellPath: page.imagePath,
+      });
+    }
+    return { projectId, pageCount: pages.length };
+  });
 }
 
 function buildPagePrompt(
@@ -347,7 +406,10 @@ async function runSinglePageJob(
           : null;
         const source = current ? await readSiteFile(String(current.image_path || ''), config) : null;
         if (!source) throw new Error('原图不存在，无法改图');
-        image = await editImage({ image: source, instruction: opts.refineInstruction || '' }, runDeps);
+        image = await editImage(
+          { image: source, instruction: opts.refineInstruction || '', userKey: page.userId },
+          runDeps,
+        );
       } else if (opts.sourceImagePath) {
         const source = await readSiteFile(opts.sourceImagePath, config);
         if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
@@ -360,13 +422,13 @@ async function runSinglePageJob(
         } else {
           instruction = `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
         }
-        image = await editImage({ image: source, instruction }, runDeps);
+        image = await editImage({ image: source, instruction, userKey: page.userId }, runDeps);
       } else {
         const pack = resolveStylePack(page.stylePackId);
         const referenceImages = referencePath
           ? [loadStyleReferenceDataUrl(pack, referencePath)].filter((item): item is string => Boolean(item))
           : [];
-        image = await generateImage({ prompt, referenceImages }, runDeps);
+        image = await generateImage({ prompt, referenceImages, userKey: page.userId }, runDeps);
       }
       const saved = await saveFile('generated', page.userId, image, { kind: 'single', ext: '.png', id: versionId }, config);
       finish('succeeded', saved.relPath, saved.url, '');
@@ -520,6 +582,33 @@ export function listPageVersions(pageId: string): SinglePageVersionView[] {
   }));
 }
 
+/** 项目详情轮询用：一次取完整个项目的版本，避免逐页查询（N+1）。 */
+function listProjectVersions(projectId: string): Map<string, SinglePageVersionView[]> {
+  const rows = getGenDb()
+    .prepare(
+      `SELECT v.* FROM single_page_versions v
+       JOIN single_pages p ON p.id = v.page_id
+       WHERE p.project_id = ?
+       ORDER BY v.page_id ASC, v.created_at DESC, v.rowid DESC`,
+    )
+    .all(projectId) as Row[];
+  const grouped = new Map<string, SinglePageVersionView[]>();
+  for (const row of rows) {
+    const pageId = String(row.page_id);
+    const list = grouped.get(pageId) ?? [];
+    list.push({
+      versionId: String(row.id),
+      kind: String(row.kind || 'generate'),
+      status: String(row.status || 'queued') as SinglePageVersionView['status'],
+      imageUrl: String(row.image_url || ''),
+      error: String(row.error || ''),
+      createdAt: Number(row.created_at),
+    });
+    grouped.set(pageId, list);
+  }
+  return grouped;
+}
+
 /** 单页项目详情（?projectId= 恢复历史页 + 版本列表）；读取时顺带懒恢复中断页 */
 export function getSingleProjectDetail(userId: string, projectId: string) {
   const db = getGenDb();
@@ -527,12 +616,14 @@ export function getSingleProjectDetail(userId: string, projectId: string) {
     .prepare('SELECT * FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
     .get(cleanString(projectId, 80), userId) as Row | undefined;
   if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
-  for (const page of listSingleProjectPages(userId, String(project.id))) {
+  const initialPages = listSingleProjectPages(userId, String(project.id));
+  for (const page of initialPages) {
     reconcileSinglePage(userId, page.pageId);
   }
+  const versionsByPage = listProjectVersions(String(project.id));
   const pages = listSingleProjectPages(userId, String(project.id)).map((page) => ({
     ...page,
-    versions: listPageVersions(page.pageId),
+    versions: versionsByPage.get(page.pageId) ?? [],
   }));
   return {
     project: {

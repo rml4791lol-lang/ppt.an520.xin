@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, MenuIcon } from "@/components/icons";
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, MenuIcon } from "@/components/icons";
 import { AnnouncementBar } from "@/components/layout/announcement-bar";
 import { SidebarBrand, SidebarNav } from "@/components/layout/sidebar";
 import { UserArea } from "@/components/layout/user-area";
@@ -50,6 +50,20 @@ export function AppShell({
   const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
+    if (!drawerOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawerOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [drawerOpen]);
+
+  useEffect(() => {
     const controller = new AbortController();
     const loadSession = async () => {
       try {
@@ -72,6 +86,12 @@ export function AppShell({
 
   return (
     <div className="min-h-screen">
+      <a
+        href="#main-content"
+        className="sr-only z-[100] rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        跳到主要内容
+      </a>
       {announcement.enabled && (
         <AnnouncementBar
           html={announcement.html}
@@ -84,6 +104,7 @@ export function AppShell({
       <div className="flex">
         {/* 桌面侧边栏 */}
         <aside
+          id="app-sidebar"
           className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line bg-card transition-[width] duration-200 lg:flex ${
             collapsed ? "w-16" : "w-[216px]"
           }`}
@@ -93,6 +114,8 @@ export function AppShell({
             <button
               type="button"
               aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+              aria-expanded={!collapsed}
+              aria-controls="app-sidebar-nav"
               onClick={() => setCollapsed((v) => !v)}
               className="absolute -right-3 top-5 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-line bg-card text-ink-3 shadow-card transition hover:text-ink"
             >
@@ -103,7 +126,7 @@ export function AppShell({
               )}
             </button>
           </div>
-          <div className="min-h-0 flex-1">
+          <div id="app-sidebar-nav" className="min-h-0 flex-1">
             <SidebarNav
               collapsed={collapsed}
               serviceEmail={serviceEmail}
@@ -115,13 +138,29 @@ export function AppShell({
 
         {/* 移动端抽屉 */}
         {drawerOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            id="mobile-nav"
+            className="fixed inset-0 z-50 lg:hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label="导航菜单"
+          >
             <div
               className="absolute inset-0 bg-ink/40"
               onClick={() => setDrawerOpen(false)}
             />
             <div className="absolute left-0 top-0 flex h-full w-64 flex-col bg-card shadow-pop">
-              <SidebarBrand collapsed={false} />
+              <div className="relative">
+                <SidebarBrand collapsed={false} />
+                <button
+                  type="button"
+                  aria-label="关闭菜单"
+                  className="absolute right-3 top-4 rounded-full p-1.5 text-ink-3 transition hover:bg-page hover:text-ink"
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  <CloseIcon width={16} height={16} />
+                </button>
+              </div>
               <div className="min-h-0 flex-1">
                 <SidebarNav
                   collapsed={false}
@@ -141,6 +180,8 @@ export function AppShell({
             <button
               type="button"
               aria-label="打开菜单"
+              aria-expanded={drawerOpen}
+              aria-controls="mobile-nav"
               className="rounded-lg p-1.5 text-ink-2 hover:bg-card lg:hidden"
               onClick={() => setDrawerOpen(true)}
             >
@@ -158,7 +199,9 @@ export function AppShell({
             </div>
           </header>
 
-          <main className="flex-1">{children}</main>
+          <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
+            {children}
+          </main>
 
           {footer}
         </div>

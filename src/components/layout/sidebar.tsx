@@ -183,6 +183,7 @@ export function SidebarNav({
                   href={item.href!}
                   className={cls}
                   title={collapsed ? item.label : undefined}
+                  aria-current={active ? "page" : undefined}
                   onClick={onNavigate}
                 >
                   {inner}
@@ -194,6 +195,17 @@ export function SidebarNav({
       </nav>
 
       <div className="border-t border-line px-3 py-3">
+        <Link
+          href="/help"
+          className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-[14px] text-ink-2 transition hover:bg-page hover:text-ink ${
+            collapsed ? "justify-center px-0" : ""
+          }`}
+          title={collapsed ? "帮助中心" : undefined}
+          onClick={onNavigate}
+        >
+          <BookIcon width={18} height={18} />
+          {!collapsed && <span>帮助中心</span>}
+        </Link>
         {tutorialUrl ? (
           <a
             href={tutorialUrl}

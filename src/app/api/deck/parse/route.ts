@@ -6,6 +6,7 @@ import { getGenerationConfig } from '@/lib/server/generation/config';
 import { createDeck } from '@/lib/server/generation/decks';
 import { assertStylePackUsable } from '@/lib/server/templates';
 import { extForFile, saveFile } from '@/lib/server/generation/storage';
+import { hitRateLimit } from '@/lib/server/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,16 @@ function intField(value: FormDataEntryValue | null, fallback: number, min: numbe
 
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
+  const rate = hitRateLimit(`deck-parse:${user.id}`, { windowMs: 60 * 60_000, max: 60 });
+  if (!rate.allowed) {
+    throw new ApiError('PARSE_RATE_LIMITED', '文档解析过于频繁，请稍后再试', 429, true);
+  }
   const config = getGenerationConfig();
+  // 先看 content-length 再 formData()，避免把明显超限的 multipart 整个读进内存。
+  const contentLength = Number(request.headers.get('content-length') || 0);
+  if (Number.isFinite(contentLength) && contentLength > config.uploadMaxBytes + 1024 * 1024) {
+    throw new ApiError('FILE_TOO_LARGE', '单文件最大 30MB', 413, false);
+  }
   let form: FormData;
   try {
     form = await request.formData();

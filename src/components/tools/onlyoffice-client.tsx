@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  BookIcon,
   CheckIcon,
   CoinIcon,
   DownloadIcon,
   FileIcon,
   MonitorIcon,
+  PencilIcon,
+  ShieldIcon,
   SparklesIcon,
 } from "@/components/icons";
 
@@ -69,6 +72,54 @@ const INSTALLERS = [
     eyebrow: "ARM 设备",
     description: "适合骁龙等 ARM 架构的 Windows 电脑。",
   },
+];
+
+const PURPOSE_CARDS = [
+  {
+    icon: BookIcon,
+    title: "装的是什么",
+    text: "ONLYOFFICE Desktop Editors 桌面版：一款第三方开源免费的办公套件，文档、表格、演示三合一，装完在自己电脑上离线运行。不是 AnPPT 自研软件，也不是 Office / WPS 的特殊版本。",
+  },
+  {
+    icon: PencilIcon,
+    title: "拿来做什么",
+    text: "打开 AnPPT 导出的「可编辑 PPTX」，接着改文字、换图片、调版式、全屏放映，也可以另存成 PDF 或 PPTX 交付。文档和表格同样能编辑。",
+  },
+  {
+    icon: ShieldIcon,
+    title: "为什么用它",
+    text: "免费、无广告、不弹会员续费窗，文件全程留在自己电脑上。不想为 PowerPoint 授权付费时，它是把 AnPPT 结果继续改完的省事选择。",
+  },
+];
+
+const USAGE_STEPS = [
+  {
+    step: "01",
+    title: "拿到可编辑文件",
+    text: "在 AnPPT 生成完成后点「转可编辑」，转换结束到下载中心取回 PPTX 文件。",
+  },
+  {
+    step: "02",
+    title: "下载并安装软件",
+    text: "在下面的下载区选对电脑架构（x64 / x86 / ARM64），下载后像装普通软件一样安装 ONLYOFFICE。",
+  },
+  {
+    step: "03",
+    title: "本地接着改",
+    text: "双击用 ONLYOFFICE 打开 PPTX，改完放映或导出 PDF；外发前按兼容工具包里的清单检查一遍字体、Logo 与版式。",
+  },
+];
+
+const SOFTWARE_SIDE_POINTS = [
+  "官网与开源仓库可自行下载",
+  "AnPPT 不收软件费或授权费",
+  "版本与许可证由官方维护",
+];
+
+const ANPPT_SIDE_POINTS = [
+  "三个 Windows 安装包，附版本与 SHA-256 校验值",
+  "兼容工具包：字体、检查清单、兼容说明",
+  "下载中心与可编辑转换的衔接支持",
 ];
 
 const COMPARISON_ROWS = [
@@ -203,38 +254,88 @@ export function OnlyOfficeClient() {
               会员附带服务 · 一次充值永久解锁
             </span>
             <h1 className="mt-5 max-w-3xl text-3xl font-bold leading-[1.12] tracking-tight sm:text-4xl lg:text-[46px]">
-              不用为了继续编辑 PPT，<span className="text-emerald-300">反复续费。</span>
+              下载 ONLYOFFICE，<span className="text-emerald-300">在本地电脑继续改 PPT。</span>
             </h1>
-            <p className="mt-5 max-w-2xl text-sm leading-7 text-white/65 sm:text-base">
-              AnPPT 已充值用户可永久使用三套 Windows 一键下载、版本校验与兼容服务。
-              安装的是第三方开源免费的 ONLYOFFICE Desktop Editors，可作为 PowerPoint、WPS 演示之外的日常本地编辑选择。
+            <p className="mt-5 max-w-2xl text-sm leading-7 text-white/70 sm:text-base">
+              先说清楚：这里下载的是第三方开源免费的桌面办公软件 ONLYOFFICE Desktop Editors，
+              不是 AnPPT 自研产品。它的用途就是把 AnPPT 生成的可编辑 PPTX 拿到自己电脑上接着改——
+              改字、调版式、放映、导出 PDF，全程离线，文件不用上传。
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <BenefitAction me={me} />
-              <span className="text-xs leading-5 text-white/45">没有下一年续费，也没有安装包会员到期。</span>
+              <span className="text-xs leading-5 text-white/45">不卖软件，也不收授权费；充值解锁的是我们整理与维护的长期服务。</span>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-            <article className="rounded-3xl border border-emerald-300/25 bg-emerald-300/10 p-6">
-              <p className="text-xs font-semibold uppercase tracking-[.18em] text-emerald-200">AnPPT 附带方案</p>
-              <p className="mt-4 text-4xl font-bold tracking-tight">1 次</p>
-              <p className="mt-1 text-sm text-white/70">充值后长期解锁</p>
-              <ul className="mt-5 space-y-2.5 text-sm text-white/80">
-                <li className="flex gap-2"><CheckIcon className="mt-0.5 shrink-0 text-emerald-300" width={16} height={16} />三个 Windows 安装包</li>
-                <li className="flex gap-2"><CheckIcon className="mt-0.5 shrink-0 text-emerald-300" width={16} height={16} />兼容工具包与文件衔接</li>
-                <li className="flex gap-2"><CheckIcon className="mt-0.5 shrink-0 text-emerald-300" width={16} height={16} />无需按年续费此项权益</li>
+            <article className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <p className="text-xs font-semibold uppercase tracking-[.18em] text-white/45">软件本身（第三方）</p>
+              <p className="mt-4 text-4xl font-bold tracking-tight text-white/70">0 元</p>
+              <p className="mt-1 text-sm text-white/50">开源免费，谁都可以自行下载</p>
+              <ul className="mt-5 space-y-2.5 text-sm text-white/60">
+                {SOFTWARE_SIDE_POINTS.map((point) => (
+                  <li key={point} className="flex gap-2">
+                    <CheckIcon className="mt-0.5 shrink-0 text-white/35" width={16} height={16} />
+                    {point}
+                  </li>
+                ))}
               </ul>
             </article>
-            <article className="rounded-3xl border border-white/10 bg-white/5 p-6">
-              <p className="text-xs font-semibold uppercase tracking-[.18em] text-white/45">常见订阅型高级权益</p>
-              <p className="mt-4 text-4xl font-bold tracking-tight text-white/55">每年</p>
-              <p className="mt-1 text-sm text-white/45">到期后通常需要续订</p>
-              <p className="mt-5 text-sm leading-6 text-white/50">
-                AI、云空间、模板库、部分 PDF 工具等增值能力，常随月度或年度会员提供；具体以各产品规则为准。
-              </p>
+            <article className="rounded-3xl border border-emerald-300/25 bg-emerald-300/10 p-6">
+              <p className="text-xs font-semibold uppercase tracking-[.18em] text-emerald-200">AnPPT 提供并长期维护</p>
+              <p className="mt-4 text-4xl font-bold tracking-tight">充 1 次</p>
+              <p className="mt-1 text-sm text-white/70">任意一笔真实充值后长期解锁</p>
+              <ul className="mt-5 space-y-2.5 text-sm text-white/80">
+                {ANPPT_SIDE_POINTS.map((point) => (
+                  <li key={point} className="flex gap-2">
+                    <CheckIcon className="mt-0.5 shrink-0 text-emerald-300" width={16} height={16} />
+                    {point}
+                  </li>
+                ))}
+              </ul>
             </article>
           </div>
+        </div>
+      </section>
+
+      <section className="pt-12 sm:pt-14">
+        <div className="max-w-3xl">
+          <p className="text-sm font-semibold text-brand">先看这一节</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink sm:text-3xl">这个下载是干什么用的？</h2>
+          <p className="mt-3 text-sm leading-6 text-ink-3">
+            一句话：它是在 Windows 上离线打开并继续编辑 PPT 的免费桌面软件。下面三段说清「装的是什么、拿来做什么、为什么选它」。
+          </p>
+        </div>
+        <div className="mt-6 grid gap-5 md:grid-cols-3">
+          {PURPOSE_CARDS.map(({ icon: Icon, title, text }) => (
+            <article key={title} className="rounded-2xl border border-line bg-card p-6 shadow-card">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand">
+                <Icon width={19} height={19} />
+              </span>
+              <h3 className="mt-4 font-semibold text-ink">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-ink-3">{text}</p>
+            </article>
+          ))}
+        </div>
+        <p className="mt-4 rounded-2xl border border-line bg-page px-5 py-4 text-xs leading-5 text-ink-4 sm:px-6">
+          <strong className="font-semibold text-ink-3">什么时候可以不下载：</strong>
+          如果你只在 AnPPT 里在线生成、看图页和 PDF，不需要在本地继续改稿，就不用装软件，也不用充值解锁它。
+        </p>
+      </section>
+
+      <section className="pt-12 sm:pt-14">
+        <div className="max-w-3xl">
+          <p className="text-sm font-semibold text-brand">怎么用</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink sm:text-3xl">三步：拿到文件 → 装上软件 → 本地接着改</h2>
+        </div>
+        <div className="mt-6 grid gap-5 md:grid-cols-3">
+          {USAGE_STEPS.map((item) => (
+            <article key={item.step} className="rounded-2xl border border-line bg-card p-6 shadow-card">
+              <span className="text-xs font-semibold tracking-[.18em] text-brand">{item.step}</span>
+              <h3 className="mt-3 font-semibold text-ink">{item.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-ink-3">{item.text}</p>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -248,6 +349,9 @@ export function OnlyOfficeClient() {
             当前版本 {release.version} · {formatReleaseDate(release.publishedAt)}
           </p>
         </div>
+        <p className="mt-3 max-w-3xl text-xs leading-5 text-ink-4">
+          安装包来自 ONLYOFFICE 官方开源仓库，我们只做入口整理，并把版本号、大小与 SHA-256 校验值一起列出来，方便你核对文件有没有被改过。
+        </p>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-3">
           {INSTALLERS.map((installer) => {
@@ -309,9 +413,9 @@ export function OnlyOfficeClient() {
       <section className="mt-14 overflow-hidden rounded-[28px] border border-line bg-card shadow-card">
         <div className="border-b border-line px-6 py-7 sm:px-9">
           <p className="text-sm font-semibold text-brand">把账算清楚</p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink">一次解锁，和持续订阅有什么不同？</h2>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink">它和订阅制办公软件，差在哪？</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-3">
-            我们不把第三方免费软件包装成自研产品。你充值获得的是星星，以及 AnPPT 提供的长期下载、校验、兼容与文件衔接服务。
+            我们不把第三方免费软件包装成自研产品，也不靠软件收费。你充值获得的是星星，以及 AnPPT 提供的长期下载、校验、兼容与文件衔接服务。
           </p>
         </div>
         <div className="hidden overflow-x-auto md:block">
@@ -320,7 +424,7 @@ export function OnlyOfficeClient() {
               <tr>
                 <th className="w-[18%] bg-page px-6 py-4 font-medium text-ink-3">对比项目</th>
                 <th className="w-[41%] bg-brand px-6 py-4 font-semibold text-white">AnPPT 充值附带方案</th>
-                <th className="w-[41%] bg-[#202126] px-6 py-4 font-semibold text-white/75">常见订阅型办公套件高级服务</th>
+                <th className="w-[41%] bg-[#202126] px-6 py-4 font-semibold text-white/75">订阅制办公软件的常见做法</th>
               </tr>
             </thead>
             <tbody>
@@ -351,7 +455,7 @@ export function OnlyOfficeClient() {
                 </p>
               </div>
               <div className="mt-2 rounded-2xl bg-page p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-ink-4">常见订阅型高级服务</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-ink-4">订阅制办公软件的常见做法</p>
                 <p className="mt-2 text-sm leading-6 text-ink-3">{row.subscription}</p>
               </div>
             </article>
@@ -359,37 +463,9 @@ export function OnlyOfficeClient() {
         </div>
       </section>
 
-      <section className="mt-10 grid gap-5 md:grid-cols-3">
-        {[
-          {
-            icon: DownloadIcon,
-            title: "版本帮你整理好",
-            text: "不用跳转官网翻列表。三个 Windows 架构、版本、大小和校验值都在一个页面。",
-          },
-          {
-            icon: MonitorIcon,
-            title: "接住可编辑结果",
-            text: "从 AnPPT 下载可编辑 PPTX 后，可直接本地打开继续改字、排版、演示并导出 PDF。",
-          },
-          {
-            icon: CheckIcon,
-            title: "交付前少踩坑",
-            text: "附带字体、页眉 Logo、动画和版式兼容清单。好作品值得多检查一遍。",
-          },
-        ].map(({ icon: Icon, title, text }) => (
-          <article key={title} className="rounded-2xl border border-line bg-card p-6 shadow-card">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand">
-              <Icon width={19} height={19} />
-            </span>
-            <h3 className="mt-4 font-semibold text-ink">{title}</h3>
-            <p className="mt-2 text-sm leading-6 text-ink-3">{text}</p>
-          </article>
-        ))}
-      </section>
-
       <section className="mt-8 rounded-2xl border border-line bg-page px-5 py-4 text-xs leading-5 text-ink-4 sm:px-6">
         <strong className="font-semibold text-ink-3">说明：</strong>
-        ONLYOFFICE Desktop Editors 是第三方开源软件，不是 AnPPT 自研产品。软件本身遵循其原始开源许可证；
+        ONLYOFFICE Desktop Editors 是第三方开源软件，著作权与许可证归 ONLYOFFICE 官方所有，不是 AnPPT 自研产品；
         AnPPT 充值对应星星与长期附带服务，不是软件销售或授权费。复杂宏、少数高级动画、特殊字体和专有对象可能存在兼容差异。
       </section>
     </div>

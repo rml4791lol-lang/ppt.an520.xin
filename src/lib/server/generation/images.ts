@@ -26,19 +26,29 @@ interface ScheduledTask<T> {
   reject: (error: unknown) => void;
   maxConcurrent: number;
   startsPerMinute: number;
+  /** 多用户公平调度：同一用户在途/启动过快时让出队列 */
+  userKey: string;
+  maxPerUser: number;
+  userStartsPerMinute: number;
+}
+
+interface ImageSchedulerState {
+  active: number;
+  activeByUser: Map<string, number>;
+  starts: number[];
+  userStarts: Map<string, number[]>;
+  queue: ScheduledTask<unknown>[];
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 const schedulerGlobal = globalThis as typeof globalThis & {
-  __anpptImageScheduler?: {
-    active: number;
-    starts: number[];
-    queue: ScheduledTask<unknown>[];
-    timer: ReturnType<typeof setTimeout> | null;
-  };
+  __anpptImageScheduler?: ImageSchedulerState;
 };
-const scheduler = schedulerGlobal.__anpptImageScheduler ?? {
+const scheduler: ImageSchedulerState = schedulerGlobal.__anpptImageScheduler ?? {
   active: 0,
+  activeByUser: new Map(),
   starts: [],
+  userStarts: new Map(),
   queue: [],
   timer: null,
 };
@@ -50,33 +60,86 @@ function pumpScheduler(): void {
     scheduler.timer = null;
   }
   if (scheduler.queue.length === 0) return;
+
   const now = Date.now();
   scheduler.starts = scheduler.starts.filter((timestamp) => now - timestamp < 60_000);
-  const next = scheduler.queue[0];
-  if (scheduler.active >= next.maxConcurrent) return;
-  if (scheduler.starts.length >= next.startsPerMinute) {
-    const waitMs = Math.max(10, 60_000 - (now - scheduler.starts[0]) + 5);
-    scheduler.timer = setTimeout(pumpScheduler, waitMs);
+  for (const [key, timestamps] of scheduler.userStarts) {
+    const kept = timestamps.filter((timestamp) => now - timestamp < 60_000);
+    if (kept.length > 0) scheduler.userStarts.set(key, kept);
+    else scheduler.userStarts.delete(key);
+  }
+
+  // 不能只看队首：队首用户达到个人并发/速率上限时，后面的其他用户仍应继续。
+  let nextIndex = -1;
+  for (let index = 0; index < scheduler.queue.length; index += 1) {
+    const task = scheduler.queue[index];
+    if (scheduler.active >= task.maxConcurrent) break;
+    if (scheduler.starts.length >= task.startsPerMinute) break;
+    if ((scheduler.activeByUser.get(task.userKey) ?? 0) >= task.maxPerUser) continue;
+    const userStarts = scheduler.userStarts.get(task.userKey) ?? [];
+    if (userStarts.length >= task.userStartsPerMinute) continue;
+    nextIndex = index;
+    break;
+  }
+
+  if (nextIndex < 0) {
+    const head = scheduler.queue[0];
+    if (scheduler.active >= head.maxConcurrent) return;
+    if (scheduler.starts.length >= head.startsPerMinute) {
+      const waitMs = Math.max(10, 60_000 - (now - scheduler.starts[0]) + 5);
+      scheduler.timer = setTimeout(pumpScheduler, waitMs);
+      return;
+    }
+    // 只被“个人每分钟启动数”挡住时，按最早释放的用户窗口唤醒；
+    // 被个人在途上限挡住则等任务完成后的 finally 唤醒即可。
+    const waits: number[] = [];
+    for (const task of scheduler.queue) {
+      const userStarts = scheduler.userStarts.get(task.userKey) ?? [];
+      if (userStarts.length >= task.userStartsPerMinute) {
+        waits.push(60_000 - (now - userStarts[0]) + 5);
+      }
+    }
+    if (waits.length > 0) {
+      scheduler.timer = setTimeout(pumpScheduler, Math.max(10, Math.min(...waits)));
+    }
     return;
   }
-  scheduler.queue.shift();
+
+  const next = scheduler.queue.splice(nextIndex, 1)[0];
   scheduler.active += 1;
+  scheduler.activeByUser.set(next.userKey, (scheduler.activeByUser.get(next.userKey) ?? 0) + 1);
   scheduler.starts.push(now);
+  const userStarts = scheduler.userStarts.get(next.userKey) ?? [];
+  userStarts.push(now);
+  scheduler.userStarts.set(next.userKey, userStarts);
+
   next.run().then(next.resolve, next.reject).finally(() => {
     scheduler.active -= 1;
+    const left = (scheduler.activeByUser.get(next.userKey) ?? 1) - 1;
+    if (left > 0) scheduler.activeByUser.set(next.userKey, left);
+    else scheduler.activeByUser.delete(next.userKey);
     pumpScheduler();
   });
   queueMicrotask(pumpScheduler);
 }
 
-function scheduleImageRequest<T>(config: GenerationConfig, run: () => Promise<T>): Promise<T> {
+function scheduleImageRequest<T>(config: GenerationConfig, userKey: string, run: () => Promise<T>): Promise<T> {
+  const maxConcurrent = Math.max(1, config.imageGlobalConcurrency || 20);
+  const startsPerMinute = Math.max(1, config.imageStartsPerMinute || 24);
+  // 匿名调用（测试/内部探针）没有用户身份，不套个人配额，仍受全局并发与速率约束。
+  const anonymous = userKey === 'anonymous';
   return new Promise<T>((resolve, reject) => {
     scheduler.queue.push({
       run,
       resolve: resolve as (value: unknown) => void,
       reject,
-      maxConcurrent: Math.max(1, config.imageGlobalConcurrency || 20),
-      startsPerMinute: Math.max(1, config.imageStartsPerMinute || 24),
+      maxConcurrent,
+      startsPerMinute,
+      userKey,
+      maxPerUser: anonymous ? maxConcurrent : Math.max(1, config.imagePerUserConcurrency || 6),
+      userStartsPerMinute: anonymous
+        ? startsPerMinute
+        : Math.max(1, config.imageStartsPerUserPerMinute || 16),
     });
     pumpScheduler();
   });
@@ -86,7 +149,9 @@ function scheduleImageRequest<T>(config: GenerationConfig, run: () => Promise<T>
 export function resetImageSchedulerForTests(): void {
   if (scheduler.timer) clearTimeout(scheduler.timer);
   scheduler.active = 0;
+  scheduler.activeByUser.clear();
   scheduler.starts = [];
+  scheduler.userStarts.clear();
   scheduler.queue = [];
   scheduler.timer = null;
 }
@@ -202,12 +267,12 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function withTransientRecovery<T>(config: GenerationConfig, action: () => Promise<T>): Promise<T> {
+async function withTransientRecovery<T>(config: GenerationConfig, userKey: string, action: () => Promise<T>): Promise<T> {
   const retries = Math.max(0, config.imageMaxRetries || 0);
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      return await scheduleImageRequest(config, action);
+      return await scheduleImageRequest(config, userKey, action);
     } catch (error) {
       lastError = error;
       if (attempt >= retries || !isRetryableImageError(error)) throw error;
@@ -318,6 +383,8 @@ export interface GenerateImageInput {
   prompt: string;
   referenceImages?: string[];
   size?: string;
+  /** 用于多用户公平调度；匿名调用回退到 anonymous */
+  userKey?: string;
 }
 
 export async function generateImage(input: GenerateImageInput, deps: ImageDeps = {}): Promise<Buffer> {
@@ -332,7 +399,7 @@ export async function generateImage(input: GenerateImageInput, deps: ImageDeps =
     const ep = endpoints[i];
     const provider = ep.site === 'backup' ? 'image-backup' : 'image';
     try {
-      return await withTransientRecovery(config, async () => {
+      return await withTransientRecovery(config, input.userKey || 'anonymous', async () => {
         const startedAt = Date.now();
         if (isAtlasEndpoint(ep)) {
           try {
@@ -413,6 +480,8 @@ export interface EditImageInput {
   image: Buffer;
   instruction: string;
   size?: string;
+  /** 用于多用户公平调度；匿名调用回退到 anonymous */
+  userKey?: string;
   /** 追加的参考/标记图（主站 /images/edits 支持多 image 字段）；atlascloud 灾备多图支持未知，降级见 extraImageNote */
   extraImages?: Buffer[];
   /** 走灾备丢图时把第二图意图以文字描述拼进 prompt，并如实记日志 */
@@ -431,7 +500,7 @@ export async function editImage(input: EditImageInput, deps: ImageDeps = {}): Pr
     const ep = endpoints[i];
     const provider = ep.site === 'backup' ? 'image-backup' : 'image';
     try {
-      return await withTransientRecovery(config, async () => {
+      return await withTransientRecovery(config, input.userKey || 'anonymous', async () => {
         const extraImages = (input.extraImages || []).filter((item) => item && item.length > 0);
         // atlascloud 多图编辑支持未验证：灾备只发原图，第二图意图降级为文字描述
         const degraded = extraImages.length > 0 && isAtlasEndpoint(ep);

@@ -185,7 +185,13 @@ async function runSlideGeneration(
         }
       }
       image = await editImage(
-        { image: source, instruction, extraImages, extraImageNote: opts.refineExtraNote },
+        {
+          image: source,
+          instruction,
+          extraImages,
+          extraImageNote: opts.refineExtraNote,
+          userKey: deck.userId,
+        },
         deps,
       );
     } else {
@@ -200,7 +206,7 @@ async function runSlideGeneration(
           referenceImages = [loadStyleReferenceDataUrl(pack, referencePath)].filter((item): item is string => Boolean(item));
         }
       }
-      image = await generateImage({ prompt, referenceImages }, deps);
+      image = await generateImage({ prompt, referenceImages, userKey: deck.userId }, deps);
     }
     const saved = await saveFile(
       'generated',

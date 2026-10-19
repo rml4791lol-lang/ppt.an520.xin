@@ -31,9 +31,10 @@ export function jsonOk<T>(data: T, opts: ResponseOptions = {}): Response {
 }
 
 export function jsonError(error: ApiError, headers?: Record<string, string>): Response {
+  const finalHeaders = headers ?? (error.status === 429 ? { 'Retry-After': '60' } : undefined);
   return Response.json(
     { ok: false, error: { code: error.code, message: error.message, retryable: error.retryable } },
-    { status: error.status, headers },
+    { status: error.status, headers: finalHeaders },
   );
 }
 

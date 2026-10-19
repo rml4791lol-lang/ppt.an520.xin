@@ -11,11 +11,26 @@
                         └─ 生图 → sqface（gpt-image-2，OpenAI 兼容 images API；与 LLM 密钥分开）
 ```
 
+## 服务器 Git 布局（2026-10-19 起）
+
+```
+/opt/anppt-v2/source       Git checkout，分支 production（团队协作目录）
+/opt/anppt-v2/releases/    每次部署的不可变发布目录
+/opt/anppt-v2/current      → releases/<commit>-<timestamp> 的软链
+/opt/anppt-v2/shared/      .env、微信支付 PEM、SQLite、uploads/generated/exports
+/opt/anppt-v2/bin/         服务端部署脚本（root 所属，团队只读执行）
+```
+
+`production` 是线上分支，GitHub 仓库同分支是唯一代码事实源。服务器源码、发布目录和本地
+`/Users/an/ZCodeProject/anppt-v2` 使用同一个提交；本地 launchd 每 5 分钟
+`fetch + merge --ff-only`，脏工作区或分叉时只记日志、不覆盖本地改动。
+
 ## 首次初始化（只做一次）
 
 ```bash
 ssh hk-hermes
-mkdir -p /opt/anppt-v2/current /opt/anppt-v2/shared/data
+mkdir -p /opt/anppt-v2/releases /opt/anppt-v2/shared/data
+# source 由 Git clone 到 /opt/anppt-v2/source，部署脚本复制到 /opt/anppt-v2/bin/
 cp deploy/anppt-v2.service /etc/systemd/system/anppt-v2.service
 systemctl daemon-reload && systemctl enable anppt-v2
 ```
@@ -41,10 +56,38 @@ PPT_ENGINE_INTERNAL_TOKEN=<与引擎侧一致的内部 token>
 
 注意：不要在 .env 里开 `WECHAT_PAY_MOCK` / `EPAY_MOCK` / `OTP_DEV_ECHO`。
 
-## 日常发版
+## 日常发版（Git 优先）
 
 ```bash
-deploy/deploy.sh        # 本地构建 → rsync → npm ci --omit=dev → 重启 → 自检
+# 1) 本地必须干净，且改动已经提交
+git status --short
+bash deploy/deploy.sh
+
+# 等价于：
+# git push origin HEAD:refs/heads/production
+# ssh hk-hermes 'sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production production'
+```
+
+服务端脚本会 `git fetch` → `npm ci` → `npm run build` → 生成不可变 release →
+检查生成/导出双队列 → 原子切换 `/opt/anppt-v2/current` → 重启 → 自检。队列非 0 时
+只暂存 release、不切换、不重启。回滚时把 `current` 软链指回上一个 release 并重启即可。
+
+## 团队访问
+
+- 独立账号 `anppt-dev`（禁止密码登录，仅 SSH key），属于 `anppt-devs`；
+- 可写 `/opt/anppt-v2/source`，可执行受限的 `sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production`；
+- 不授予 root、不直改 `/opt/anppt-v2/shared`、不直改 `current`；
+- 新增成员必须各自提交公钥，不要共用私钥。交接包只用于首次应急交接，拿到后应尽快换成个人 key。
+
+团队改动的固定闭环：
+
+```bash
+cd /opt/anppt-v2/source
+git pull --ff-only origin production
+# edit + test
+git add -A && git commit -m "Describe the change"
+git push origin HEAD:production
+sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production production
 ```
 
 ## Caddy 切换到 v2（上线动作）
@@ -65,7 +108,9 @@ curl -sf https://ppt.an520.xin/api/me   # 期望 401（未登录）
 ## 运维
 
 - 日志：`journalctl -u anppt-v2 -f`
-- 数据备份：打包 `/opt/anppt-v2/shared/data/`（sqlite + 上传/生成图/导出）
+- 数据备份：
+  - SQLite 每日 03:30 自动热备（`anppt-backup.timer` → `/opt/anppt-v2/shared/backup-db.sh`），`VACUUM INTO` 后用 gzip 存到 `/opt/anppt-v2/shared/backups/`，保留 14 天。手工触发：`sudo systemctl start anppt-backup.service`。
+  - 备份只含账户/积分/订单/项目元数据；`uploads/`、`generated/`、`exports/` 原文件仍需另行归档。
 - 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy`，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile` 再手动跑一次；恢复时会发一封「服务已恢复」。
 - 引擎联调细节：`../image2-studio-v2/docs/ANPPT-V2-INTEGRATION-CONTRACT.md`
 
