@@ -4,7 +4,7 @@ set -euo pipefail
 
 LABEL="xin.anppt.v2-sync"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-SCRIPT="/Users/an/ZCodeProject/anppt-v2/scripts/sync-production.sh"
+SCRIPT="/Users/an/ZCodeProject/anppt-v2.production/scripts/sync-production.sh"
 LOG="$HOME/Library/Logs/anppt-v2-git-sync.log"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
