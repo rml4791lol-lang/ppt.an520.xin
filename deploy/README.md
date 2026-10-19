@@ -79,16 +79,19 @@ bash deploy/deploy.sh
 - 不授予 root、不直改 `/opt/anppt-v2/shared`、不直改 `current`；
 - 新增成员必须各自提交公钥，不要共用私钥。交接包只用于首次应急交接，拿到后应尽快换成个人 key。
 
-团队改动的固定闭环：
+团队改动的固定闭环（服务器端）：
 
 ```bash
 cd /opt/anppt-v2/source
 git pull --ff-only origin production
 # edit + test
 git add -A && git commit -m "Describe the change"
-git push origin HEAD:production
-sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production production
+sudo -n -u ubuntu /opt/anppt-v2/bin/publish-production production
 ```
+
+`publish-production` 先 push 当前 HEAD 到 `origin/production`，再调用
+`deploy-production`。服务器 Git 凭据由 root-only token + `git-credential-anppt`
+helper 提供，团队账号不能读取 token，也不能执行任意 ubuntu/root 命令。
 
 ## Caddy 切换到 v2（上线动作）
 
