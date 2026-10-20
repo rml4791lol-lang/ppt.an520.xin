@@ -2,7 +2,7 @@
 // Backend lib-layer smoke tests. Runs plain node (no Next dev server needed):
 //   node scripts/test-backend.mjs
 // Uses a throwaway sqlite db; exercises auth/OTP/credits/redemption/recharge flows.
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -794,9 +794,10 @@ console.log('\n[12c] 导入文档页数上限 40（自定义页数；超出回�
   check('99 页超出上限回退默认 10 页', overRes.status === 201 && pageCountOf(overJson?.data?.deckId) === 10, `实际 ${overRes.status}`);
 }
 
-console.log('\n[12d] 问题日志：落盘 / 回环 / 坏行跳过 / 过期清理');
+console.log('\n[12d] 问题日志：追踪 / 脱敏 / 健康 / 滚动 / 过期清理');
 {
   const problems = await import('../src/lib/server/problem-log.ts');
+  const { withRequestContext } = await import('../src/lib/server/request-context.ts');
   const logDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-problem-log-'));
   const previousDir = process.env.ANPPT_V2_PROBLEM_LOG_DIR;
   process.env.ANPPT_V2_PROBLEM_LOG_DIR = logDir;
@@ -828,8 +829,18 @@ console.log('\n[12d] 问题日志：落盘 / 回环 / 坏行跳过 / 过期清�
         && roundTrip.items[1].refType === 'deck'
         && roundTrip.items[1].refId === 'deck-1'
         && roundTrip.items[1].detail === 'boom'
-        && typeof roundTrip.items[1].ts === 'number',
+        && typeof roundTrip.items[1].ts === 'number'
+        && Boolean(roundTrip.items[1].eventId)
+        && roundTrip.items[1].release === 'dev',
       `items=${roundTrip.items.length}`);
+
+    check('readProblems 返回动态类别、总数与分页游标',
+      roundTrip.categories.join(',') === 'api,generation'
+        && roundTrip.total === 2
+        && roundTrip.hasMore === false
+        && roundTrip.nextOffset === 2
+        && roundTrip.scanLimited === false,
+      JSON.stringify(roundTrip));
 
     check('category / level / limit 过滤生效',
       problems.readProblems({ days: 1, category: 'api' }).items.length === 1
@@ -837,9 +848,65 @@ console.log('\n[12d] 问题日志：落盘 / 回环 / 坏行跳过 / 过期清�
         && problems.readProblems({ days: 1, limit: 1 }).items.length === 1
         && problems.readProblems({ days: 1, limit: 1 }).items[0].message === '回环测试：退款警告');
 
-    const todayName = readdirSync(logDir).find((name) => name.endsWith('.jsonl'));
-    appendFileSync(path.join(logDir, todayName), '{ bad json line\n');
-    check('坏行跳过、其余行仍可读', problems.readProblems({ days: 1 }).items.length === 2);
+    withRequestContext({ requestId: 'req_trace_12345678', method: 'POST', route: '/api/trace' }, () => {
+      problems.logProblem({ category: 'api', level: 'error', message: '上下文追踪' });
+    });
+    const traced = problems.readProblems({ days: 1 }).items.find((item) => item.message === '上下文追踪');
+    check('请求上下文写入 requestId / method / route / release',
+      traced?.requestId === 'req_trace_12345678'
+        && traced?.method === 'POST'
+        && traced?.route === '/api/trace'
+        && traced?.release === 'dev',
+      JSON.stringify(traced));
+
+    const secretValues = ['plain-password-987', 'api-key-987', 'bearer-token-987', 'cookie-987'];
+    problems.logProblem({
+      category: 'api',
+      level: 'error',
+      message: 'Authorization: Bearer bearer-token-987',
+      detail: {
+        password: secretValues[0],
+        apiKey: secretValues[1],
+        authorization: 'Bearer bearer-token-987',
+        nested: { cookie: secretValues[3] },
+      },
+    });
+    const redacted = problems.readProblems({ days: 1 }).items.find((item) => item.message.includes('Authorization'));
+    const redactedJson = JSON.stringify(redacted);
+    check('问题日志对密码、API key、Bearer、Cookie 脱敏',
+      Boolean(redacted)
+        && secretValues.every((secret) => !redactedJson.includes(secret))
+        && redactedJson.includes('[REDACTED]'),
+      redactedJson);
+
+    const healthy = problems.getProblemLogHealth({ force: true });
+    check('日志落盘健康检查可写并统计文件',
+      healthy.ok && healthy.writable && healthy.directoryReady && healthy.fileCount >= 1 && healthy.totalBytes > 0,
+      JSON.stringify(healthy));
+
+    appendFileSync(path.join(logDir, `problems-${dayKey(0)}.jsonl`), '{ bad json line\n');
+    check('坏行跳过、其余行仍可读', problems.readProblems({ days: 1 }).items.length === 4);
+
+    writeFileSync(
+      path.join(logDir, `problems-${dayKey(0)}.1.jsonl`),
+      `${JSON.stringify({
+        ts: Date.now() + 1000,
+        level: 'warn',
+        category: 'sms',
+        message: '分段记录',
+        detail: '',
+        userId: '',
+        refType: '',
+        refId: '',
+        eventId: 'evt_segment',
+        requestId: 'req_segment',
+        method: 'GET',
+        route: '/api/segment',
+        release: 'dev',
+      })}\n`,
+    );
+    const segmented = problems.readProblems({ days: 1 }).items[0];
+    check('滚动分段文件参与读取且保持新→旧', segmented?.message === '分段记录', JSON.stringify(segmented));
 
     const oldFile = path.join(logDir, `problems-${dayKey(-20)}.jsonl`);
     const keepFile = path.join(logDir, `problems-${dayKey(-5)}.jsonl`);
@@ -847,6 +914,31 @@ console.log('\n[12d] 问题日志：落盘 / 回环 / 坏行跳过 / 过期清�
     writeFileSync(keepFile, '');
     problems.logProblem({ category: 'api', level: 'error', message: '触发清理' });
     check('写入时清理超 14 天文件、保留 14 天内文件', !existsSync(oldFile) && existsSync(keepFile));
+
+    const blocker = path.join(logDir, 'not-a-directory');
+    writeFileSync(blocker, 'x');
+    process.env.ANPPT_V2_PROBLEM_LOG_DIR = blocker;
+    let threw = false;
+    try {
+      problems.logProblem({ category: 'api', level: 'error', message: '不可写目录' });
+    } catch {
+      threw = true;
+    }
+    const broken = problems.getProblemLogHealth({ force: true });
+    check('日志目录不可写时不阻断业务且健康检查报错', !threw && broken.ok === false && broken.writable === false, JSON.stringify(broken));
+    process.env.ANPPT_V2_PROBLEM_LOG_DIR = logDir;
+
+    const route = httpLib.defineRoute(async () => {
+      throw new Error('route boom');
+    });
+    const response = await route(new Request('http://localhost/api/trace-test', { method: 'GET' }));
+    const body = await response.json();
+    const requestId = response.headers.get('x-request-id') || '';
+    check('defineRoute 返回请求号并回填错误 envelope',
+      response.status === 500
+        && /^req_[a-f0-9]{24}$/.test(requestId)
+        && body?.error?.requestId === requestId,
+      JSON.stringify({ status: response.status, requestId, body }));
   } finally {
     if (previousDir === undefined) delete process.env.ANPPT_V2_PROBLEM_LOG_DIR;
     else process.env.ANPPT_V2_PROBLEM_LOG_DIR = previousDir;

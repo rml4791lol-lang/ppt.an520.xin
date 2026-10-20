@@ -2,6 +2,7 @@
 // no next imports, so scripts/test-backend.mjs can exercise it directly.
 
 import { logProblem } from './problem-log';
+import { createRequestContext, getRequestContext, withRequestContext } from './request-context';
 
 export class ApiError extends Error {
   code: string;
@@ -32,8 +33,9 @@ export function jsonOk<T>(data: T, opts: ResponseOptions = {}): Response {
 
 export function jsonError(error: ApiError, headers?: Record<string, string>): Response {
   const finalHeaders = headers ?? (error.status === 429 ? { 'Retry-After': '60' } : undefined);
+  const requestId = getRequestContext()?.requestId;
   return Response.json(
-    { ok: false, error: { code: error.code, message: error.message, retryable: error.retryable } },
+    { ok: false, error: { code: error.code, message: error.message, retryable: error.retryable, ...(requestId ? { requestId } : {}) } },
     { status: error.status, headers: finalHeaders },
   );
 }
@@ -96,16 +98,30 @@ export function guardMutationRequest(request: Request): Response | null {
 
 type RouteHandler = (request: Request) => Promise<Response> | Response;
 
+function attachRequestId(response: Response, requestId: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set('x-request-id', requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export function defineRoute(handler: RouteHandler, opts: { mutation?: boolean } = {}): RouteHandler {
   return async (request: Request): Promise<Response> => {
-    if (opts.mutation) {
-      const blocked = guardMutationRequest(request);
-      if (blocked) return blocked;
-    }
-    try {
-      return await handler(request);
-    } catch (error) {
-      return toErrorResponse(error);
-    }
+    const context = createRequestContext(request);
+    const response = await withRequestContext(context, async () => {
+      if (opts.mutation) {
+        const blocked = guardMutationRequest(request);
+        if (blocked) return blocked;
+      }
+      try {
+        return await handler(request);
+      } catch (error) {
+        return toErrorResponse(error);
+      }
+    });
+    return attachRequestId(response, context.requestId);
   };
 }

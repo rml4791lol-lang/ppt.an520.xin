@@ -1,8 +1,10 @@
-// 健康检查：供监控探针/负载均衡探测。无需登录、无副作用。
-// 监控脚本（anppt-health-monitor.py）契约：顶层 ok / llm.configured / image.configured / editable.configured。
+// 健康检查：供监控探针/负载均衡探测。无需登录；只做一次日志目录可写探针。
+// 监控脚本（anppt-health-monitor.py）契约：top-level ok + db / llm / image / editable / logging。
 import { getDb } from '@/lib/server/db';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { getGenDb } from '@/lib/server/generation/db';
+import { getProblemLogHealth } from '@/lib/server/problem-log';
+import { releaseId } from '@/lib/server/release-info';
 import { configuredEditableProviders } from '@/modules/editable-export/server/editable';
 
 export const runtime = 'nodejs';
@@ -74,13 +76,25 @@ export async function GET(): Promise<Response> {
   } catch {
     // 配置读取失败即视为未配置
   }
+  const logging = getProblemLogHealth();
   return Response.json({
     ok: db,
     service: 'anppt-v2',
+    release: releaseId(),
     db,
     llm: { configured: llmConfigured },
     image: { configured: imageConfigured },
     editable,
+    logging: {
+      ok: logging.ok,
+      writable: logging.writable,
+      fileCount: logging.fileCount,
+      totalBytes: logging.totalBytes,
+      writeFailures: logging.writeFailures,
+      lastFailureAt: logging.lastFailureAt,
+      recentFailure: logging.recentFailure,
+      retentionDays: logging.retentionDays,
+    },
     ts: Date.now(),
-  });
+  }, { headers: { 'Cache-Control': 'no-store, max-age=0' } });
 }

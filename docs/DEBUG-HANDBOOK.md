@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-10-11（9ba82e7 审查修补：退款键定长派生 / ppt_to_base 懒恢复 / OTP SMTP_FROM / 单页并发事务 / 价格统一走估价接口）
+> 最后更新：2026-10-20（问题日志请求追踪 / 脱敏 / 落盘健康契约 / 滚动保留 / 发布后自动校验与回滚）
 
 ## 1. 系统是什么
 
@@ -21,7 +21,7 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
   内容 = `VACUUM INTO` 在线备份 DB（WAL 一致，勿用 cp）+ `.env`（600）+ 数据清单 + `data-assets.tar.gz`（uploads/generated/exports 三目录打包，~50M），保留 7 天于 `/opt/anppt-v2/backups/daily/`。
   ⚠️ 老的 `anppt-daily-backup.sh`（03:15）备份的是 **slideflow 老系统**，与 anppt-v2 无关，别看错。
 - Caddy 反代：`ppt.an520.xin → 127.0.0.1:3100`（Caddyfile 备份 `/etc/caddy/Caddyfile.bak-anppt-20260819-205014`）。
-- 部署：本地工作区干净并已提交后运行 `bash deploy/deploy.sh`。脚本把 HEAD 推到 `production`，服务器从 `/opt/anppt-v2/source` 拉取、构建、生成不可变 release，**再次检查双队列**后原子切换 `current` 并 restart。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时只暂存 release，不切换、不重启。
+- 部署：本地工作区干净并已提交后运行 `bash deploy/deploy.sh`。脚本把 HEAD 推到 `production`，服务器从 `/opt/anppt-v2/source` 拉取、构建、生成不可变 release，**再次检查双队列**后原子切换 `current` 并 restart。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时只暂存 release，不切换、不重启。重启后还必须通过 `/api/health` 的 `db/logging.ok/logging.writable/release` 契约，失败自动回滚。修改 `deploy/deploy-production.sh` 时先按 `docs/LOGGING.md` §5 做一次 helper bootstrap。
 - **部署前必须同时检查生成与导出队列**（可编辑转换也可能在后台下载结果）：
 
 ```bash
@@ -41,9 +41,9 @@ NODE
 ## 3. 监控告警（邮件来源）
 
 - root cron 每 5 分钟：`/usr/local/sbin/anppt-health-monitor.py`（仓库副本 `deploy/anppt-health-monitor.py`；日志 `/var/log/anppt-monitor.log`，状态 `/var/lib/anppt-monitor/state.json`）。SMTP 读 **`/opt/anppt-v2/shared/.env`**，不要读 slideflow 的 `.env`。
-- 检查项：`anppt-v2.service` + `caddy.service` 存活 + `https://ppt.an520.xin/api/health` + 磁盘 + **anppt-v2 备份新鲜度（26h 无新备份即告警）**。
+- 检查项：`anppt-v2.service` + `caddy.service` 存活 + `https://ppt.an520.xin/api/health`（含 `release`）+ 问题日志落盘/体积 + 磁盘 + **anppt-v2 备份新鲜度（26h 无新备份即告警）**。
 - **不要**把 `slideflow-studio.service` 列为存活条件：老站已 disable、Caddy 不再代理 3300。禁区仍是不杀、不重新代理；监控盯它会导致每 5 分钟刷邮箱（2026-09-07 修：`fail_count` 曾卡在 33）。img2pptx-v4-node 已于 2026-08-22 退役，见 §17。
-- **health 契约**：顶层 `ok`、`llm.configured`、`image.configured`、`editable.configured`——缺了任何一项监控就误报。连续失败 2 次起发一封到 366150820@qq.com；持续异常最多每小时再提醒一次；恢复后发一封恢复通知。
+- **health 契约**：顶层 `ok`、`db`、`llm.configured`、`image.configured`、`editable.configured`，以及 `logging.ok` / `writable` / `recentFailure` / `totalBytes`。发布验证额外要求 `release` 等于本次 commit。连续失败 2 次起发一封到 366150820@qq.com；持续异常最多每小时再提醒一次；恢复后发一封恢复通知。
 - **QQ From**：告警信 `From` 必须是 SMTP 登录邮箱；中文显示名走 `email.utils.formataddr`（RFC2047）。不要把 `.env` 里带中文、未编码的 `SMTP_FROM` 原文塞进邮件头——QQ 会 550 拒信，监控看起来像“发了”其实没发出去。用户 OTP 走 nodemailer，一般会自动编码，不受这条影响。
 
 ## 4. 业务主链路（整套 PPT）
@@ -105,7 +105,7 @@ NODE
 
 ```bash
 node scripts/test-generation.mjs  # 当前 451 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 135 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志
+node scripts/test-backend.mjs     # 当前 142 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
 npm run build
@@ -116,7 +116,8 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 ## 9. 日志前缀速查
 
-- `[anppt-v2][problem][category]` — 问题日志写入行（同内容落盘 `logs/problems-*.jsonl`，见 §24）；category ∈ api / generation / image-upstream / editable / ppt-to-base / payments / otp / sms
+- `[anppt-v2][problem][category]` — 问题日志写入行（同内容落盘 `logs/problems-*.jsonl`，带 `requestId`，见 §24）；category ∈ api / generation / image-upstream / editable / ppt-to-base / payments / otp / sms
+- `[anppt-v2][problem-log]` — 日志落盘探针/写入失败兜底行；出现即先查磁盘和目录权限
 - `[anppt-v2][codia]` — Codia 上游调用告警（超时/非 JSON/HTTP 错误/重试）
 - `[anppt-v2][exports]` — 导出管线内部异常（上传源清理、懒恢复轮询、文字层单页提取）
 - `[anppt-v2][generation]` — 生成管线非致命降级（如全局视觉规范生成失败后继续）
@@ -291,16 +292,21 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - **次路线·pptx 本地擦除（免费）**：页面底部折叠入口。上传 `.pptx`，浏览器本地 jszip + DOMParser 解析 OOXML 并重绘——不画任何文字，保留版式/配色/图片/装饰形状——导出 1536×864 底座 PNG + 槽位 JSON。无任何服务端路由、无计价；文件不出浏览器。渲染划界（有意为之）：文字一律不画只收槽位；graphicFrame（表格/图表/SmartArt）跳过并计数提示；未识别 prstGeom 回退 rect；渐变只近似线性、组旋转/flip 忽略。**文字已烧进位图的页面擦不掉**——那类页正由主路线覆盖，两路互补。
 - 测试：`scripts/tests/ppt-to-base.test.mjs`——[7e]（17 断言）钉 pptx 纯函数层契约（EMU 换算、Office 基准色值 tint 0.2≈#d9e2f3 / shade 0.5≈#203864、槽位角色启发式）；[7f]（19 断言）截图 AI 路线服务端全 mock：成功链路（标题+落盘+扣 5🌟）、提示词契约（点名参考图/改变项不变量分离/中性词加引号）、VLM vision 分段、requestId 重放 409 且不重复扣费、VLM 失败降级、edits 400→`IMAGE_REQUEST_INVALID` 且全退、开关外 404、余额不足 402、缺 requestId 400、估价 5🌟、崩溃残留行懒恢复补退（在途不误退 / 幂等）。真实 image2.5 校准（付费）走 `output/ppt-to-base-e2e/calibrate-prompt.mjs` 手测，不进套件。
 
-## 24. 问题日志（结构化落盘 + 管理后台，2026-10-11）
+## 24. 问题日志与可观测性（结构化落盘 + 请求追踪 + 健康契约，2026-10-20）
 
-- 背景：站点关键失败此前只 `console.error` 进 systemd journal，没有集中记录、管理员在后台不可查。第一期只做「结构化落盘 + 后台查看页」，不改动任何计费/支付/恢复逻辑与控制流。
-- 写入端 `src/lib/server/problem-log.ts` 的 `logProblem()`：追加一行 JSONL 到 `<ANPPT_V2_DATA_DIR>/logs/problems-YYYY-MM-DD.jsonl`（生产 = `/opt/anppt-v2/shared/data/logs/`；目录不存在自动创建；整个日志目录可用 `ANPPT_V2_PROBLEM_LOG_DIR` 覆盖）。行字段固定：`ts`（毫秒时间戳）/ `level`（`error`|`warn`）/ `category` / `message` / `detail` / `userId` / `refType` / `refId`（后四者无值时为 `""`）；Error 取 stack、对象 JSON 化，Bearer 令牌落盘前打码，message ≤500 / detail ≤4000 字符。
-- 双写与兜底：整个函数 try/catch 静默兜底——落盘/序列化失败绝不影响业务；同时输出一行 `[anppt-v2][problem][category] message`（warn 走 console.warn，error 走 console.error），journal 运维视角保持可见。写入时机会式清理同目录早于 14 天的 `problems-*.jsonl`（best effort，失败忽略）。
-- 已接入的失败点（category）：`api` 路由未捕获异常（http.ts `toErrorResponse`）；`generation` 逐页/单页生成退款失败、生成管线异常中断、崩溃恢复补退款失败（generate.ts / single-pages.ts / recovery.ts）；`ppt-to-base` 底座退款失败（base-image.ts）；`payments` 微信/epay 回调入账失败与回调异常（recharge.ts / wechat notify route）；`otp` 验证码交付失败（otp.ts）；`sms` 阿里云拒发（sms.ts）；`image-upstream` 主站与 atlas 非 2xx（images.ts）；`editable` 可编辑导出管线失败/402 余额不足/退款失败/文字档管线失败（editable.ts）。
-- 读取端 `readProblems({days, category, level, limit, offset})`：读最近 N 天（含今天；默认 3 天、上限 14 天；limit 默认 200、上限 500），坏行跳过，单次最多解析 3000 行（从最新一天往前，防文件异常膨胀），过滤后按 ts 倒序切片，返回 `{ items }`。
-- 管理后台页 `/admin/problems`（`src/app/(main)/admin/problems/page.tsx` + `src/components/admin/problems-client.tsx`，与 /admin 相同的 cookie session + admin 角色守卫，非管理员 redirect）：默认读最近 200 条，筛选 category（下拉）/ level / 天数（1/3/7），列 = 时间 / 级别 / 类别 / 消息（含 detail 摘要）/ 用户（userId 前 8 位）/ 引用（`refType:refId`）；/admin 头部有「问题日志」入口。空态提示「该时间范围内没有匹配的问题记录」。
-- API：`GET /api/admin/problems?days=&category=&level=&limit=`（管理员会话才可访问；`days/limit` 越界自动钳制；响应为统一 envelope `{ ok, data: { items } }`，`Cache-Control: private, no-store`）。
-- 测试：`node scripts/test-backend.mjs` [12d]（落盘/回环/过滤/坏行跳过/超 14 天清理，mkdtemp 临时目录）与 [10]（未登录 401、普通用户 403、管理员 200）。
+- 背景：站点关键失败此前只 `console.error` 进 systemd journal，没有集中记录、管理员在后台不可查。现在问题日志同时承担“失败审计 + 多人协作定位 + 发布版本关联”，但**任何日志写入失败都不能反向阻断业务**。
+- 请求追踪：`src/lib/server/request-context.ts` 用 Node `AsyncLocalStorage` 给每个 `defineRoute()` 请求生成 `req_<24 hex>`；响应头 `x-request-id` 与 500 错误 envelope 的 `error.requestId` 同步回填。问题日志自动采集 `requestId` / `method` / `route`。
+- 发布关联：`src/lib/server/release-info.ts` 读取 release 根目录 `.deploy-commit`（本地 production build 回退 `.next/BUILD_ID`，非生产为 `dev`），每条问题日志写入 `release`；`/api/health.release` 也返回同一值，部署脚本据此校验运行时版本。
+- 写入端 `src/lib/server/problem-log.ts` 的 `logProblem()`：追加 JSONL 到 `<ANPPT_V2_DATA_DIR>/logs/problems-YYYY-MM-DD[.N].jsonl`（生产 = `/opt/anppt-v2/shared/data/logs/`；目录可用 `ANPPT_V2_PROBLEM_LOG_DIR` 覆盖）。固定字段：`ts` / `level` / `category` / `message` / `detail` / `userId` / `refType` / `refId` / `eventId` / `requestId` / `method` / `route` / `release`；旧记录缺新字段时读取回退为空串。message ≤500 / detail ≤4000 字符。
+- 脱敏：Bearer、Authorization、Cookie、password、token、API key、secret、credential、private key、OTP/验证码字段递归打码；对象先按敏感 key 替换再 JSON 化，Error 取脱敏后的 stack；日志文本中的 `key=value` 与 URL 查询参数也会打码。
+- 双写与兜底：`logProblem()` 全函数 try/catch；落盘/序列化/清理失败时只写 `[anppt-v2][problem-log] ...` 到 stderr，不抛给业务。正常写入同时输出 `[anppt-v2][problem][category] ... requestId=...`，journal 仍可 grep。
+- 容量：按天分文件；单文件 20 MiB 后写同日 `.1.jsonl` / `.2.jsonl`；保留 14 天；总量超 100 MiB 时从最旧文件删到 80 MiB 以下；若当天文件单独触顶则拒绝新落盘并记 `[anppt-v2][problem-log]` 告警，避免填满磁盘。读取端最多解析 3000 行、坏行跳过、未知字段忽略。
+- 已接入的失败点（category）：`api` 路由未捕获异常；`generation` 逐页/单页生成退款失败、生成管线异常中断、崩溃恢复补退款失败；`ppt-to-base` 底座退款失败；`payments` 微信/epay 回调入账失败与回调异常；`otp` 验证码交付失败；`sms` 阿里云拒发；`image-upstream` 主站与 atlas 非 2xx；`editable` 可编辑导出失败/402/退款失败/文字档管线失败。
+- 读取端 `readProblems({days, category, level, limit, offset})`：读最近 N 天（默认 3、上限 14；limit 默认 200、上限 500），返回 `{ items, categories, total, hasMore, nextOffset, scanLimited }`；categories 动态发现，新增 category 无需改前端常量。
+- 管理后台 `/admin/problems`：管理员会话守卫；动态类别筛选、级别/天数筛选、每次 200 条“加载更多”、总条数、落盘健康状态、请求号/发布版本列；异常时显示目录不可写或近期写入失败提示。API `GET /api/admin/problems?days=&category=&level=&limit=&offset=` 返回 `{ ok, data: { items, categories, total, hasMore, nextOffset, scanLimited, health } }`，`private, no-store`。
+- 健康契约：`GET /api/health` 增加 `release` 与 `logging`（`ok/writable/fileCount/totalBytes/writeFailures/lastFailureAt/recentFailure/retentionDays`）。应用侧健康探针 60 秒缓存；`logging.ok` 通过真实临时文件写入验证，目录不存在会自动创建。
+- 监控/发布：`deploy/anppt-health-monitor.py` 检查 `logging.ok`、近期写入失败、总量 80 MiB 预警；`scripts/verify-health.mjs` 在发布后强制校验 `ok/db/logging.ok/logging.writable/release`，失败自动回滚。完整多人协作、上线、回滚和故障流程见 `docs/LOGGING.md`。
+- 测试：`node scripts/test-backend.mjs` [12d]（落盘回环/动态类别/分页游标/请求上下文/脱敏/健康探针/分段读取/坏行/14 天清理/不可写降级）与 [10]（未登录 401、普通用户 403、管理员 200）。
 
 ## 25. 创新点口径（对外可用，逐条锚定实现与测试，2026-10-13）
 
@@ -334,7 +340,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 请求侧：`/api/deck/parse` 在 `formData()` 前检查 content-length（防超限 body 整段进内存），并按用户限 60 次/小时；`/api/tools/replicate/plan` 按用户限 40 次/小时。
 - 查询：`getDeckState` 改为一次取整套 `slide_versions`（`listVersionsByDeck`），单页项目详情一次取项目版本（`listProjectVersions`），项目列表用相关子查询批量取页数与封面，避免逐项目/逐页 N+1。
 - 缓存：公开的 style-pack-categories / showcase-cases / site-config 加 `public` 缓存；style-packs / templates 加 `private, max-age=60` + `Vary: Cookie`。
-- 验证：`node scripts/test-generation.mjs` 451 断言、`node scripts/test-backend.mjs` 135 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
+- 验证：`node scripts/test-generation.mjs` 451 断言、`node scripts/test-backend.mjs` 142 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
 
 - 备份：`deploy/backup-db.sh` + `deploy/anppt-backup.timer`（每日 03:30，`VACUUM INTO` → gzip，保留 14 天，目录 `/opt/anppt-v2/shared/backups`）。已做一次恢复校验：解压后 `PRAGMA integrity_check=ok`，用户/钱包/订单表可读。备份只含 SQLite；uploads/generated/exports 需另行归档。
 - 本机压测基线（2026-10-19，本地 `next start`，非生产 SLA）：20 用户、100 个 deck、600 次 `/api/me` + `/api/projects` + `/api/style-packs` 并发读，40 并发下 p50 18.4ms / p95 34.7ms / p99 115.2ms，0 失败；空库 600 请求 p95 24.7ms。生产进程常驻 RSS 约 195MB（峰值 246MB），远端可用内存 6.2GB。

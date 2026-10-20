@@ -35,5 +35,5 @@ if [[ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]]; then
   echo "deployed commit mismatch: local=$LOCAL_COMMIT server=$REMOTE_COMMIT" >&2
   exit 1
 fi
-curl -fsS https://ppt.an520.xin/api/health >/dev/null
+node scripts/verify-health.mjs https://ppt.an520.xin/api/health "$LOCAL_COMMIT"
 echo "deployed $LOCAL_COMMIT"

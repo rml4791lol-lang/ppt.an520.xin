@@ -69,8 +69,12 @@ bash deploy/deploy.sh
 ```
 
 服务端脚本会 `git fetch` → `npm ci` → `npm run build` → 生成不可变 release →
-检查生成/导出双队列 → 原子切换 `/opt/anppt-v2/current` → 重启 → 自检。队列非 0 时
-只暂存 release、不切换、不重启。
+检查生成/导出双队列 → 原子切换 `/opt/anppt-v2/current` → 重启 → 校验
+`/api/me=401`、`/api/health` 契约和运行时 `release`。队列非 0 时只暂存 release、
+不切换、不重启；重启或健康契约失败会自动回滚。
+
+若本次修改了 `deploy/deploy-production.sh`，首次部署前先把 source 里的新脚本安装到
+`/opt/anppt-v2/bin/deploy-production`；之后脚本会自更新安装副本。命令见 `docs/LOGGING.md` §5。
 
 回滚：
 
@@ -118,11 +122,18 @@ curl -sf https://ppt.an520.xin/api/me   # 期望 401（未登录）
 
 ## 运维
 
-- 日志：`journalctl -u anppt-v2 -f`
+- 运行日志：`journalctl -u anppt-v2 -f`
+- 问题日志：`<ANPPT_V2_DATA_DIR>/logs/problems-YYYY-MM-DD[.N].jsonl`；后台 `/admin/problems`。保留 14 天、单文件 20 MiB 滚动、总量 100 MiB 上限。完整变更/上线/监控流程见 `docs/LOGGING.md`。
 - 数据备份：
   - SQLite 每日 03:30 自动热备（`anppt-backup.timer` → `/opt/anppt-v2/shared/backup-db.sh`），`VACUUM INTO` 后用 gzip 存到 `/opt/anppt-v2/shared/backups/`，保留 14 天。手工触发：`sudo systemctl start anppt-backup.service`。
   - 备份只含账户/积分/订单/项目元数据；`uploads/`、`generated/`、`exports/` 原文件仍需另行归档。
-- 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy`，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile` 再手动跑一次；恢复时会发一封「服务已恢复」。
+- 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy` + health 契约 + 问题日志落盘/体积 + 磁盘 + 备份新鲜度，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile`，再安装并手动跑一次；恢复时会发一封「服务已恢复」。
+
+```bash
+python3 -m py_compile deploy/anppt-health-monitor.py
+ssh hk-hermes 'sudo -n install -m 0755 /opt/anppt-v2/source/deploy/anppt-health-monitor.py /usr/local/sbin/anppt-health-monitor.py'
+ssh hk-hermes 'sudo -n /usr/local/sbin/anppt-health-monitor.py'
+```
 - 引擎联调细节：`../image2-studio-v2/docs/ANPPT-V2-INTEGRATION-CONTRACT.md`
 
 ## 禁区（勿动）

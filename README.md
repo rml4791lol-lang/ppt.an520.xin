@@ -28,10 +28,10 @@ src/
                           generation/(deck 状态机/DSL/生图/单页运行时/项目) problem-log(问题日志落盘/读取)
 scripts/
   tests/                  模块测试（由两套主套件注入 ctx 调用）
-  test-backend.mjs        B 层：135 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限/问题日志）
+  test-backend.mjs        B 层：142 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限/问题日志追踪与健康）
   test-generation.mjs     C 层：451 项（解析/DSL/引擎+兜底/状态机/扣费退还/导出/WPS+Image2PPT+Codia 多通道/轻量文字档/生图回退/图片级编辑工具/复刻PPT/幂等重放/LLM频控/插件运行时）
   ts-hooks.mjs            node 直跑 TS 的 resolve 钩子（含 @/ 别名）
-docs/                     DEBUG-HANDBOOK（系统全貌）/ DEVELOPMENT（架构与流程）
+docs/                     DEBUG-HANDBOOK（系统全貌）/ DEVELOPMENT（架构与流程）/ LOGGING（日志变更、上线与监控）
 deploy/                   systemd 单元 / 部署脚本 / Caddy 切换块 / Runbook
 ```
 

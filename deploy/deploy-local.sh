@@ -23,10 +23,11 @@ SHORT="${COMMIT:0:12}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 RELEASE="$RELEASES/${SHORT}-${STAMP}"
 echo "== 2/5 sync release $RELEASE =="
-ssh "$SERVER" "sudo -n mkdir -p '$RELEASE/.next' '$RELEASE/public' && sudo -n chown -R ubuntu:ubuntu '$RELEASE'"
+ssh "$SERVER" "sudo -n mkdir -p '$RELEASE/.next' '$RELEASE/public' '$RELEASE/scripts' && sudo -n chown -R ubuntu:ubuntu '$RELEASE'"
 rsync -az --delete --exclude 'cache/' .next/ "$SERVER:$RELEASE/.next/"
 rsync -az --delete public/ "$SERVER:$RELEASE/public/"
 rsync -az package.json package-lock.json next.config.ts "$SERVER:$RELEASE/"
+rsync -az scripts/verify-health.mjs "$SERVER:$RELEASE/scripts/verify-health.mjs"
 
 echo "== 3/5 install production deps =="
 ssh "$SERVER" "cd '$RELEASE' && npm ci --omit=dev --no-audit --no-fund && printf '%s\n' '$COMMIT' > '$RELEASE/.deploy-commit'"
@@ -59,15 +60,37 @@ if [[ -d '$CURRENT' && ! -L '$CURRENT' ]]; then
   sudo -n mv '$CURRENT' \"\$LEGACY\"
   OLD=\"\$LEGACY\"
 fi
+rollback() {
+  echo 'post-deploy verification failed; rolling back' >&2
+  if [[ -n \"\$OLD\" ]]; then
+    sudo -n ln -sfn \"\$OLD\" '$CURRENT'
+    sudo -n systemctl restart anppt-v2 || true
+  fi
+}
 sudo -n ln -sfn '$RELEASE' '$CURRENT'
 if ! sudo -n systemctl restart anppt-v2; then
-  echo 'restart failed; rolling back' >&2
-  if [[ -n \"\$OLD\" ]]; then sudo -n ln -sfn \"\$OLD\" '$CURRENT'; sudo -n systemctl restart anppt-v2 || true; fi
+  echo 'restart failed' >&2
+  rollback
   exit 1
 fi
 sleep 2
-sudo -n systemctl is-active anppt-v2
-[[ \"\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/me)\" == '401' ]]
-curl -fsS http://127.0.0.1:3100/api/health >/dev/null
+if ! sudo -n systemctl is-active --quiet anppt-v2; then
+  rollback
+  exit 1
+fi
+if [[ \"\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/me)\" != '401' ]]; then
+  echo 'local /api/me did not return 401' >&2
+  rollback
+  exit 1
+fi
+if ! HEALTH=\"\$(curl -fsS http://127.0.0.1:3100/api/health)\"; then
+  rollback
+  exit 1
+fi
+if ! printf '%s' \"\$HEALTH\" | EXPECTED_RELEASE='$COMMIT' node '$RELEASE/scripts/verify-health.mjs'; then
+  rollback
+  exit 1
+fi
 "
+node scripts/verify-health.mjs https://ppt.an520.xin/api/health "$COMMIT"
 echo "deployed $COMMIT -> $RELEASE"

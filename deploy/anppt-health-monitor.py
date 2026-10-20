@@ -9,6 +9,7 @@ ENV_FILE = '/opt/anppt-v2/shared/.env'
 HEALTH_URL = 'https://ppt.an520.xin/api/health'
 ALERT_AFTER = 2  # 连续失败次数达到后告警
 ALERT_REPEAT_SEC = 3600  # 持续异常时最多每小时再提醒一次，避免刷邮箱
+LOG_ALERT_BYTES = 80 * 1024 * 1024  # 应用侧总量上限 100MiB，80MiB 提前告警
 
 
 def read_env(key):
@@ -84,12 +85,21 @@ def checks():
             d = json.loads(resp.read())
             if not d.get('ok'):
                 problems.append('health ok=false')
+            if not d.get('release') or d.get('release') == 'unknown':
+                problems.append('health release 缺失')
             if not d.get('llm', {}).get('configured'):
                 problems.append('LLM 未配置')
             if not d.get('image', {}).get('configured'):
                 problems.append('生图未配置')
             if not d.get('editable', {}).get('configured'):
                 problems.append('可编辑导出未配置')
+            logging = d.get('logging')
+            if not isinstance(logging, dict) or not logging.get('ok'):
+                problems.append('问题日志落盘不可用')
+            elif logging.get('recentFailure') and int(logging.get('writeFailures', 0) or 0) > 0:
+                problems.append('问题日志写入失败 ' + str(logging.get('writeFailures')) + ' 次（本次进程）')
+            if isinstance(logging, dict) and int(logging.get('totalBytes', 0) or 0) > LOG_ALERT_BYTES:
+                problems.append('问题日志体积 ' + str(round(int(logging.get('totalBytes', 0) or 0) / 1024 / 1024, 1)) + 'MiB')
             editable = d.get('editable', {})
             providers = editable.get('providers') or []
             if editable.get('provider') == 'image2ppt' and 'image2ppt' not in providers:

@@ -30,6 +30,12 @@ else
 fi
 git merge --ff-only "origin/$BRANCH"
 
+INSTALLED_HELPER=/opt/anppt-v2/bin/deploy-production
+if [[ -f "$REPO/deploy/deploy-production.sh" ]] && ! cmp -s "$REPO/deploy/deploy-production.sh" "$INSTALLED_HELPER"; then
+  echo "== update installed deploy helper for future runs =="
+  sudo -n install -m 0755 "$REPO/deploy/deploy-production.sh" "$INSTALLED_HELPER"
+fi
+
 COMMIT="$(git rev-parse HEAD)"
 SHORT="${COMMIT:0:12}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -80,25 +86,36 @@ if [[ -d "$CURRENT" && ! -L "$CURRENT" ]]; then
   OLD_TARGET="$LEGACY"
 fi
 
-ln -sfn "$RELEASE" "$CURRENT"
-if ! sudo -n systemctl restart anppt-v2; then
-  echo "restart failed; rolling back to ${OLD_TARGET:-no previous release}" >&2
+rollback() {
+  echo "rolling back to ${OLD_TARGET:-no previous release}" >&2
   if [[ -n "$OLD_TARGET" ]]; then
     ln -sfn "$OLD_TARGET" "$CURRENT"
     sudo -n systemctl restart anppt-v2 || true
   fi
+}
+
+ln -sfn "$RELEASE" "$CURRENT"
+if ! sudo -n systemctl restart anppt-v2; then
+  echo "restart failed" >&2
+  rollback
   exit 1
 fi
 
 sleep 2
 if ! sudo -n systemctl is-active --quiet anppt-v2; then
   echo "service is not active after restart" >&2
+  rollback
   exit 1
 fi
 if [[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/me)" != "401" ]]; then
   echo "local /api/me did not return 401 after restart" >&2
+  rollback
   exit 1
 fi
-curl -fsS http://127.0.0.1:3100/api/health >/dev/null
+if ! curl -fsS http://127.0.0.1:3100/api/health | EXPECTED_RELEASE="$COMMIT" node "$REPO/scripts/verify-health.mjs"; then
+  echo "post-deploy health contract failed" >&2
+  rollback
+  exit 1
+fi
 
 echo "deployed $COMMIT -> $RELEASE"
