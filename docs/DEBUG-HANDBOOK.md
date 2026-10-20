@@ -103,7 +103,7 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 439 断言，Codia/Image2PPT/生图/VLM 全部 mock
+node scripts/test-generation.mjs  # 当前 440 断言，Codia/Image2PPT/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 134 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
@@ -333,7 +333,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 请求侧：`/api/deck/parse` 在 `formData()` 前检查 content-length（防超限 body 整段进内存），并按用户限 60 次/小时；`/api/tools/replicate/plan` 按用户限 40 次/小时。
 - 查询：`getDeckState` 改为一次取整套 `slide_versions`（`listVersionsByDeck`），单页项目详情一次取项目版本（`listProjectVersions`），项目列表用相关子查询批量取页数与封面，避免逐项目/逐页 N+1。
 - 缓存：公开的 style-pack-categories / showcase-cases / site-config 加 `public` 缓存；style-packs / templates 加 `private, max-age=60` + `Vary: Cookie`。
-- 验证：`node scripts/test-generation.mjs` 439 断言、`node scripts/test-backend.mjs` 134 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
+- 验证：`node scripts/test-generation.mjs` 440 断言、`node scripts/test-backend.mjs` 134 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
 
 - 备份：`deploy/backup-db.sh` + `deploy/anppt-backup.timer`（每日 03:30，`VACUUM INTO` → gzip，保留 14 天，目录 `/opt/anppt-v2/shared/backups`）。已做一次恢复校验：解压后 `PRAGMA integrity_check=ok`，用户/钱包/订单表可读。备份只含 SQLite；uploads/generated/exports 需另行归档。
 - 本机压测基线（2026-10-19，本地 `next start`，非生产 SLA）：20 用户、100 个 deck、600 次 `/api/me` + `/api/projects` + `/api/style-packs` 并发读，40 并发下 p50 18.4ms / p95 34.7ms / p99 115.2ms，0 失败；空库 600 请求 p95 24.7ms。生产进程常驻 RSS 约 195MB（峰值 246MB），远端可用内存 6.2GB。
@@ -345,5 +345,5 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 机制：`image2ppt.ts` 负责 multipart 提交、`GET /api/v1/jobs/{id}` 轮询、带 Bearer 下载和 Standard Webhooks 验签；`editable.ts` 负责 provider 选择、主备切换、`upstream_provider` 记录、懒恢复与 webhook 去重。`export_jobs.upstream_provider` 由 `getGenDb()` 幂等迁移补齐。
 - 回调：`POST /api/webhooks/image2ppt` 只做验签和状态推进，最终下载仍走同一条管线；`saveEditableResult` 按 exportId 去重，避免 webhook 与 4s 轮询同时写文件。`PUBLIC_BASE_URL` 非 HTTPS 公网时自动省略 callback。
 - 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT 主通道未配置、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
-- 测试：`scripts/tests/image2ppt.test.mjs`（段名 [6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/主备切换/仅 Image2PPT 报价；`scripts/test-generation.mjs` 当前 439 断言，全部 mock，禁止真实付费调用。
+- 测试：`scripts/tests/image2ppt.test.mjs`（段名 [6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/test-generation.mjs` 当前 440 断言，全部 mock，禁止真实付费调用。
 - 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。该验收命令不进测试套件。

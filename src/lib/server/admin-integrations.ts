@@ -61,11 +61,11 @@ export async function checkAdminIntegration(
     url = endpoint(configured(config.imageBaseUrl, '生图 API 地址'), '/models');
     apiKey = configured(config.imageApiKey, '生图 API 密钥');
   } else {
-    editableProvider = config.editableProvider === 'image2ppt'
-      || (config.editableProvider === 'auto' && Boolean(config.image2pptApiKey))
-      || (!config.codiaApiKey && Boolean(config.image2pptApiKey))
-      ? 'image2ppt'
-      : 'codia';
+    const codiaAvailable = Boolean(config.codiaApiKey);
+    const image2pptAvailable = Boolean(config.image2pptApiKey);
+    editableProvider = config.editableProvider === 'codia'
+      ? (codiaAvailable ? 'codia' : 'image2ppt')
+      : (image2pptAvailable ? 'image2ppt' : 'codia');
     if (editableProvider === 'image2ppt') {
       url = endpoint(configured(config.image2pptBaseUrl, 'Image2PPT API 地址'), '/api/v1/account');
       apiKey = configured(config.image2pptApiKey, 'Image2PPT API 密钥');

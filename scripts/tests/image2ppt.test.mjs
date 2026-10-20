@@ -111,6 +111,14 @@ export async function runImage2PptTests(ctx) {
     const row = getGenDb().prepare('SELECT status, file_url FROM export_jobs WHERE id = ?').get(exportId);
     check('Image2PPT webhook 完成回调推进落盘',
       result.status === 200 && row?.status === 'succeeded' && String(row?.file_url).startsWith('/api/files/exports/'));
+    const again = await exportsLib.handleImage2PptWebhook(body, new Headers({
+      'webhook-id': 'msg_webhook_2',
+      'webhook-timestamp': timestamp,
+      'webhook-signature': `v1,${createHmac('sha256', key).update(`msg_webhook_2.${timestamp}.${body}`).digest('base64')}`,
+    }), { fetchImpl: fetcher, config: i2pConfig, retryDelayMs: 0 });
+    const after = getGenDb().prepare('SELECT status, file_url FROM export_jobs WHERE id = ?').get(exportId);
+    check('Image2PPT webhook 不把已成功任务降级',
+      again.status === 200 && after?.status === 'succeeded' && after?.file_url === row?.file_url);
   }
 
   {

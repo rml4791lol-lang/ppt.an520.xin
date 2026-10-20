@@ -967,6 +967,9 @@ export async function handleImage2PptWebhook(
     console.warn(`[anppt-v2][image2ppt] webhook job not found: ${jobId}`);
     return { status: 200, body: { ok: true } };
   }
+  if (String(row.status) === 'succeeded' || String(row.status) === 'failed') {
+    return { status: 200, body: { ok: true } };
+  }
   const status = cleanString(data.status, 40).toLowerCase();
   const progress = Math.min(100, Math.max(0, Math.round(Number(data.progress) || 0)));
   const total = Number(data.slideCount) || Number(row.page_count) || 0;
