@@ -69,7 +69,7 @@ bash deploy/deploy.sh
 ```
 
 服务端脚本会 `git fetch` → `npm ci` → `npm run build` → 生成不可变 release →
-检查生成/导出双队列 → 原子切换 `/opt/anppt-v2/current` → 重启 → 校验
+检查整套生成/单页批量/导出三队列 → 原子切换 `/opt/anppt-v2/current` → 重启 → 校验
 `/api/me=401`、`/api/health` 契约和运行时 `release`。队列非 0 时只暂存 release、
 不切换、不重启；重启或健康契约失败会自动回滚。
 

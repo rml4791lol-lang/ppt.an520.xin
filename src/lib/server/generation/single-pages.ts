@@ -145,13 +145,27 @@ function upsertPage(
     if (String(existing.status) === 'running' || String(existing.status) === 'queued') {
       throw new ApiError('GENERATION_RUNNING', '该页正在生成中，请稍候', 409, true);
     }
+    const nextTitle = cleanString(input.title, 120) || String(existing.title || '');
+    const nextStylePackId = cleanString(input.stylePackId, 80) || String(existing.style_pack_id || '');
+    const nextShellPath = cleanString(input.shellPath, 300) || String(existing.shell_path || '');
+    const changed =
+      input.content !== String(existing.content || '') ||
+      nextTitle !== String(existing.title || '') ||
+      nextStylePackId !== String(existing.style_pack_id || '') ||
+      nextShellPath !== String(existing.shell_path || '');
+    const invalidate = changed && String(existing.status || 'idle') === 'succeeded';
     db.prepare(
-      `UPDATE single_pages SET title = ?, content = ?, style_pack_id = ?, shell_path = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE single_pages
+       SET title = ?, content = ?, style_pack_id = ?, shell_path = ?, status = ?, error = ?, active_version_id = ?, updated_at = ?
+       WHERE id = ?`,
     ).run(
-      cleanString(input.title, 120) || String(existing.title || ''),
+      nextTitle,
       input.content,
-      cleanString(input.stylePackId, 80) || String(existing.style_pack_id || ''),
-      cleanString(input.shellPath, 300) || String(existing.shell_path || ''),
+      nextStylePackId,
+      nextShellPath,
+      invalidate ? 'idle' : String(existing.status || 'idle'),
+      invalidate ? '文案已更新，需重新生成' : String(existing.error || ''),
+      invalidate ? '' : String(existing.active_version_id || ''),
       ts,
       input.pageId,
     );
@@ -549,6 +563,54 @@ export function listSingleProjectPages(userId: string, projectId: string): Singl
   return rows.map(toPageRow);
 }
 
+/** 批量状态轮询用：页面状态 + 当前生效版本图，不携带完整版本历史。 */
+export interface SinglePageStatusView {
+  pageId: string;
+  pageIndex: number;
+  status: SinglePageRow['status'];
+  error: string;
+  activeVersionId: string;
+  imageUrl: string;
+  updatedAt: number;
+}
+
+export function listSingleProjectPageStatuses(userId: string, projectId: string): SinglePageStatusView[] {
+  const db = getGenDb();
+  const project = db
+    .prepare('SELECT id FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+    .get(cleanString(projectId, 80), userId) as Row | undefined;
+  if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
+  const rows = db
+    .prepare(
+      `SELECT p.id, p.page_index, p.status, p.error, p.active_version_id, p.updated_at,
+         COALESCE(v.image_url, '') AS image_url
+       FROM single_pages p
+       LEFT JOIN single_page_versions v ON v.id = p.active_version_id
+       WHERE p.project_id = ?
+       ORDER BY p.page_index ASC`,
+    )
+    .all(String(project.id)) as Row[];
+  return rows.map((row) => ({
+    pageId: String(row.id),
+    pageIndex: Number(row.page_index),
+    status: String(row.status || 'idle') as SinglePageRow['status'],
+    error: String(row.error || ''),
+    activeVersionId: String(row.active_version_id || ''),
+    imageUrl: String(row.image_url || ''),
+    updatedAt: Number(row.updated_at),
+  }));
+}
+
+/** 打开项目/轮询批量状态前收敛崩溃中断页，返回是否有页面被修复。 */
+export function reconcileSingleProject(userId: string, projectId: string): boolean {
+  let changed = false;
+  for (const page of listSingleProjectPages(userId, projectId)) {
+    if (page.status !== 'queued' && page.status !== 'running') continue;
+    changed = reconcileSinglePage(userId, page.pageId) || changed;
+  }
+  return changed;
+}
+
 export function getActiveVersionImagePath(page: SinglePageRow): string {
   if (!page.activeVersionId) return '';
   const row = getGenDb()
@@ -616,22 +678,22 @@ export function getSingleProjectDetail(userId: string, projectId: string) {
     .prepare('SELECT * FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
     .get(cleanString(projectId, 80), userId) as Row | undefined;
   if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
-  const initialPages = listSingleProjectPages(userId, String(project.id));
-  for (const page of initialPages) {
-    reconcileSinglePage(userId, page.pageId);
-  }
+  reconcileSingleProject(userId, String(project.id));
   const versionsByPage = listProjectVersions(String(project.id));
   const pages = listSingleProjectPages(userId, String(project.id)).map((page) => ({
     ...page,
     versions: versionsByPage.get(page.pageId) ?? [],
   }));
+  const pageUpdatedAt = Number(
+    db.prepare('SELECT MAX(updated_at) AS m FROM single_pages WHERE project_id = ?').get(String(project.id))?.m || 0,
+  );
   return {
     project: {
       id: String(project.id),
       title: String(project.title || ''),
       source: resolveProjectSource(project.source),
       createdAt: Number(project.created_at),
-      updatedAt: Number(project.updated_at),
+      updatedAt: Math.max(Number(project.updated_at), pageUpdatedAt),
     },
     pages,
   };
@@ -653,5 +715,8 @@ export function selectSinglePageVersion(userId: string, pageId: string, versionI
   getGenDb()
     .prepare("UPDATE single_pages SET active_version_id = ?, status = 'succeeded', error = '', updated_at = ? WHERE id = ?")
     .run(String(row.id), nowMs(), page.pageId);
+  getGenDb()
+    .prepare('UPDATE single_page_projects SET updated_at = ? WHERE id = ?')
+    .run(nowMs(), page.projectId);
   return getOwnedPage(userId, page.pageId);
 }

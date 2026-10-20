@@ -240,7 +240,8 @@ export function getAdminOverview(compact = false): AdminOverview {
     `SELECT
        (SELECT COUNT(*) FROM users) AS total_users,
        (SELECT COUNT(*) FROM users WHERE created_at >= ?) AS new_users,
-       (SELECT COUNT(*) FROM generation_jobs WHERE status IN ('queued', 'running')) AS active_generation,
+       (SELECT COUNT(*) FROM generation_jobs WHERE status IN ('queued', 'running'))
+         + (SELECT COUNT(*) FROM single_page_batches WHERE status IN ('queued', 'running')) AS active_generation,
        (SELECT COUNT(*) FROM export_jobs WHERE status IN ('pending', 'processing')) AS active_export,
        (SELECT COUNT(*) FROM generation_jobs WHERE status = 'failed' AND updated_at >= ?)
          + (SELECT COUNT(*) FROM export_jobs WHERE status = 'failed' AND updated_at >= ?) AS failures,

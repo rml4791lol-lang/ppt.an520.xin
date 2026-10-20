@@ -37,17 +37,21 @@ active="$({ ssh "$SERVER" 'sudo -n node'; } <<'NODE'
 const { DatabaseSync } = require('node:sqlite');
 const db = new DatabaseSync('/opt/anppt-v2/shared/data/anppt-v2.db', { readOnly: true });
 const generation = Number(db.prepare("SELECT count(*) c FROM generation_jobs WHERE status IN ('queued','running')").get().c);
+const hasSinglePageBatches = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='single_page_batches'").get());
+const singlePageBatches = hasSinglePageBatches
+  ? Number(db.prepare("SELECT count(*) c FROM single_page_batches WHERE status IN ('queued','running')").get().c)
+  : 0;
 const exports = Number(db.prepare("SELECT count(*) c FROM export_jobs WHERE status IN ('pending','processing')").get().c);
-process.stdout.write(`${generation} ${exports}`);
+process.stdout.write(`${generation} ${singlePageBatches} ${exports}`);
 NODE
 )"
-read -r generation_active export_active <<<"$active"
-echo "generation=$generation_active export=$export_active"
-if [[ ! "$generation_active" =~ ^[0-9]+$ || ! "$export_active" =~ ^[0-9]+$ ]]; then
+read -r generation_active single_page_batch_active export_active <<<"$active"
+echo "generation=$generation_active single_page_batches=$single_page_batch_active export=$export_active"
+if [[ ! "$generation_active" =~ ^[0-9]+$ || ! "$single_page_batch_active" =~ ^[0-9]+$ || ! "$export_active" =~ ^[0-9]+$ ]]; then
   echo "cannot confirm queues; refusing restart" >&2
   exit 1
 fi
-if (( generation_active > 0 || export_active > 0 )); then
+if (( generation_active > 0 || single_page_batch_active > 0 || export_active > 0 )); then
   echo "in-flight work detected; release staged but not activated" >&2
   exit 2
 fi

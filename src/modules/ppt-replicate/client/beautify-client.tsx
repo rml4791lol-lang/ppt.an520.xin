@@ -9,12 +9,16 @@ import { ApiClientError } from "@/lib/client/api";
 import {
   exportSinglePagesImagePptx,
   generateSinglePage,
+  getLatestBeautifyBatch,
   getSinglePageProject,
   planBeautifyCopy,
   refineSinglePage,
   saveBeautifyDraft,
+  startBeautifyBatch,
   startUploadedEditableExport,
   uploadAsset,
+  type BeautifyBatch,
+  type BeautifyBatchDetail,
 } from "./beautify-api";
 import { takeBeautifyFiles } from "./beautify-handoff";
 import {
@@ -55,6 +59,7 @@ export function BeautifyClient() {
   const projectIdRef = useRef("");
   const draftReady = useRef(false);
   const draftTimerRef = useRef<number | null>(null);
+  const batchPollingRef = useRef(false);
 
   const [gate, setGate] = useState<"loading" | "login" | "closed" | "ready">("loading");
   const [username, setUsername] = useState("");
@@ -73,6 +78,7 @@ export function BeautifyClient() {
   const [runBanner, setRunBanner] = useState<BeautifyBanner | null>(null);
   const [planning, setPlanning] = useState(false);
   const [running, setRunning] = useState(false);
+  const [batch, setBatch] = useState<BeautifyBatch | null>(null);
   const [exporting, setExporting] = useState(false);
   const [imageExporting, setImageExporting] = useState(false);
   const [exportJobs, setExportJobs] = useState<{ pageCount: number; status: string }[]>([]);
@@ -87,6 +93,42 @@ export function BeautifyClient() {
     const next = pagesRef.current.map((page, i) => (i === index ? { ...page, ...patch } : page));
     pagesRef.current = next;
     setPages(next);
+  }, []);
+
+  const applyBatchDetail = useCallback((detail: BeautifyBatchDetail) => {
+    const remoteById = new Map(detail.pages.map((page) => [page.pageId, page]));
+    const active = detail.batch?.status === "queued" || detail.batch?.status === "running";
+    const targets = new Set(active ? detail.batch?.targetIds ?? [] : []);
+    const next = pagesRef.current.map((page) => {
+      const remote = remoteById.get(page.pageId);
+      if (!remote) return page;
+      const imageUrl = safeReplicateFileUrl(remote.imageUrl || "");
+      const status =
+        remote.status === "succeeded" && imageUrl
+          ? "已生成"
+          : remote.status === "failed"
+            ? remote.error || "生成失败"
+            : remote.status === "queued" || remote.status === "running"
+              ? "图生图中…"
+              : imageUrl
+                ? "已生成"
+                : targets.has(page.pageId)
+                  ? "排队中…"
+                  : "待生成";
+      return {
+        ...page,
+        imageUrl: imageUrl || page.imageUrl,
+        error:
+          remote.status === "succeeded" || remote.status === "queued" || remote.status === "running"
+            ? ""
+            : remote.error || page.error,
+        status,
+        busy: false,
+      };
+    });
+    pagesRef.current = next;
+    setPages(next);
+    setBatch(detail.batch);
   }, []);
 
   const persistDraft = useCallback(async () => {
@@ -147,6 +189,9 @@ export function BeautifyClient() {
         const canvases = await filesToShellCanvases(files);
         sessionRef.current = newBeautifySession();
         projectIdRef.current = "";
+        setBatch(null);
+        setRunning(false);
+        setRunBanner(null);
         window.history.replaceState(null, "", "/beautify");
         const next = canvases.map((canvas, i) =>
           emptyBeautifyPage(`${sessionRef.current}p${i}`, {
@@ -200,6 +245,9 @@ export function BeautifyClient() {
       const detail = await getSinglePageProject(id);
       if (!detail?.project?.id) throw new Error("项目不存在");
       projectIdRef.current = detail.project.id;
+      setBatch(null);
+      setRunning(false);
+      setRunBanner(null);
       window.history.replaceState(null, "", beautifyHref(detail.project.id));
       const restored = (detail.pages ?? []).map((page, i) => {
         const versions = page.versions ?? [];
@@ -208,7 +256,10 @@ export function BeautifyClient() {
           ? versions.find((item) => item.versionId === page.activeVersionId && item.imageUrl)
           : undefined;
         const succeeded =
-          active || versions.find((item) => item.status === "succeeded" && item.imageUrl) || versions[0];
+          active
+          || (page.status === "succeeded"
+            ? versions.find((item) => item.status === "succeeded" && item.imageUrl)
+            : undefined);
         const imageUrl = safeReplicateFileUrl(succeeded?.imageUrl || "");
         const imagePath = String(page.shellPath || "");
         const shellUrl = imagePath ? safeReplicateFileUrl(`/api/files/${imagePath}`) : imageUrl;
@@ -216,15 +267,111 @@ export function BeautifyClient() {
           shellUrl,
           copy: String(page.content || page.title || ""),
           imagePath,
-          status: imageUrl ? "已生成" : "待生成",
+          status:
+            page.status === "succeeded" && imageUrl
+              ? "已生成"
+              : page.status === "failed"
+                ? page.error || "生成失败"
+                : page.status === "queued" || page.status === "running"
+                  ? "图生图中…"
+                  : imageUrl
+                    ? "已生成"
+                    : "待生成",
           imageUrl,
+          error: page.error || "",
         });
       });
       replacePages(restored);
       setUploadStatus(restoreProjectHint(restored));
+      try {
+        const batchDetail = await getLatestBeautifyBatch(detail.project.id);
+        applyBatchDetail(batchDetail);
+        const latest = batchDetail.batch;
+        if (latest && (latest.status === "queued" || latest.status === "running")) {
+          setRunning(true);
+          setRunBanner({
+            kind: "warn",
+            text: `已接上后台生成任务：已完成 ${latest.succeeded}/${latest.total} 页${latest.failed > 0 ? ` · 失败 ${latest.failed}` : ""}。可以离开页面，任务会继续。`,
+          });
+        } else if (latest?.status === "succeeded") {
+          setRunBanner({ kind: "ok", text: `最近一批已完成 ${latest.succeeded}/${latest.total} 页，结果已回填。` });
+        } else if (latest && (latest.status === "partial" || latest.status === "failed")) {
+          setRunBanner({ kind: latest.succeeded > 0 ? "warn" : "err", text: latest.error || "上一批未全部完成，可重试未生成页。" });
+        }
+      } catch {
+        // 项目本身已恢复；批量状态接口暂时失败不阻塞继续编辑。
+      }
     },
-    [replacePages],
+    [applyBatchDetail, replacePages],
   );
+
+  const pollBatch = useCallback(
+    async (projectId: string) => {
+      if (batchPollingRef.current) return;
+      batchPollingRef.current = true;
+      try {
+        const detail = await getLatestBeautifyBatch(projectId);
+        applyBatchDetail(detail);
+        const latest = detail.batch;
+        if (!latest) {
+          setRunning(false);
+          return;
+        }
+        if (latest.status === "queued" || latest.status === "running") {
+          setRunning(true);
+          setRunBanner({
+            kind: "warn",
+            text: `后台生成中：已完成 ${latest.succeeded}/${latest.total} 页${latest.failed > 0 ? ` · 失败 ${latest.failed}` : ""}。可以离开页面，任务会继续。`,
+          });
+          return;
+        }
+        setRunning(false);
+        if (latest.status === "succeeded") {
+          setRunBanner({ kind: "ok", text: `已完成 ${latest.succeeded}/${latest.total} 页，结果已全部回填。` });
+        } else {
+          setRunBanner({
+            kind: latest.succeeded > 0 ? "warn" : "err",
+            text: latest.error || `已完成 ${latest.succeeded}/${latest.total} 页，未完成页可重新生成。`,
+          });
+        }
+        try {
+          const me = await getMe();
+          setBalance(me.balance);
+        } catch {
+          // 余额刷新失败不影响结果回填。
+        }
+      } catch {
+        setRunBanner((current) => current ?? {
+          kind: "warn",
+          text: "批量结果同步暂时失败，正在自动重试…",
+        });
+      } finally {
+        batchPollingRef.current = false;
+      }
+    },
+    [applyBatchDetail],
+  );
+
+  const recoverPageResult = useCallback(async (pageId: string): Promise<boolean> => {
+    const projectId = projectIdRef.current;
+    if (!projectId) return false;
+    try {
+      const detail = await getLatestBeautifyBatch(projectId);
+      applyBatchDetail(detail);
+      const remote = detail.pages.find((page) => page.pageId === pageId);
+      return remote?.status === "succeeded" && Boolean(remote.imageUrl);
+    } catch {
+      return false;
+    }
+  }, [applyBatchDetail]);
+
+  useEffect(() => {
+    if (gate !== "ready" || !running || !projectIdRef.current) return;
+    const projectId = projectIdRef.current;
+    void pollBatch(projectId);
+    const timer = window.setInterval(() => void pollBatch(projectId), 2500);
+    return () => window.clearInterval(timer);
+  }, [gate, pollBatch, running]);
 
   useEffect(() => {
     let cancelled = false;
@@ -430,48 +577,31 @@ export function BeautifyClient() {
           }
         : null,
     );
+    setBatch(null);
     setRunning(true);
-    let newlyOk = 0;
-    let failed = 0;
-    let stoppedForCredits = false;
-    let creditsMessage = "";
     try {
       await ensureShells((done, total) => {
         setRunBanner({ kind: "warn", text: `上传参考稿 ${done}/${total}` });
       });
-      for (const i of ids) {
-        setRunBanner({ kind: "warn", text: `正在生成第 ${i + 1}/${current.length} 页` });
-        try {
-          await generateOne(i, false);
-          newlyOk += 1;
-        } catch (error) {
-          failed += 1;
-          const message = error instanceof Error ? error.message : "本页生成失败";
-          patchPage(i, { error: message, status: message });
-          if (error instanceof ApiClientError && error.isInsufficientCredits) {
-            stoppedForCredits = true;
-            creditsMessage = message;
-            break;
-          }
-        }
+      await persistDraft();
+      const projectId = projectIdRef.current;
+      if (!projectId) throw new Error("项目尚未保存，请重新上传参考稿");
+      const pageIds = ids.map((index) => pagesRef.current[index]?.pageId).filter((id): id is string => Boolean(id));
+      const structures: Record<string, unknown> = {};
+      for (const id of pageIds) {
+        const page = pagesRef.current.find((item) => item.pageId === id);
+        if (page?.structureReady) structures[id] = page.structure;
       }
-      setRunBanner(
-        buildGenerateFinishBanner({
-          newlyOk,
-          failed,
-          skippedDone,
-          stoppedForCredits,
-          creditsMessage,
-        }),
-      );
+      const started = await startBeautifyBatch({ projectId, pageIds, colorMode, structures });
+      setBatch(started);
+      setRunBanner({
+        kind: "warn",
+        text: started.reused
+          ? `已接上正在运行的后台任务：已完成 ${started.succeeded}/${started.total} 页。`
+          : `已提交后台生成：0/${started.total} 页。可以离开页面，任务会继续。`,
+      });
     } catch (error) {
       setRunBanner({ kind: "err", text: error instanceof Error ? error.message : "生成失败" });
-    } finally {
-      try {
-        await persistDraft();
-      } catch {
-        // 生成结果已在服务端；草稿补存失败不影响本次结果。
-      }
       setRunning(false);
     }
   }
@@ -483,6 +613,7 @@ export function BeautifyClient() {
     try {
       await generateOne(index, true);
     } catch (error) {
+      if (await recoverPageResult(page.pageId)) return;
       const message = error instanceof Error ? error.message : "本页生成失败";
       patchPage(index, { error: message, status: message });
     } finally {
@@ -513,6 +644,7 @@ export function BeautifyClient() {
         busy: false,
       });
     } catch (error) {
+      if (await recoverPageResult(page.pageId)) return;
       const message = error instanceof Error ? error.message : "改图失败";
       patchPage(index, { status: message, error: message, busy: false });
     }
@@ -787,7 +919,14 @@ export function BeautifyClient() {
               page={page}
               index={i}
               locked={locked}
-              onCopy={(value) => patchPage(i, { copy: value })}
+              onCopy={(value) => {
+                const current = pagesRef.current[i];
+                if (current?.imageUrl && value !== current.copy) {
+                  patchPage(i, { copy: value, imageUrl: "", status: "文案已更新，需重新生成", error: "" });
+                  return;
+                }
+                patchPage(i, { copy: value });
+              }}
               onTweak={(value) => patchPage(i, { tweak: value })}
               onRetry={() => void retryPage(i)}
               onRefine={() => void tweakPage(i)}
@@ -810,7 +949,11 @@ export function BeautifyClient() {
             onClick={() => void runAll()}
             className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:opacity-50"
           >
-            {running ? "正在生成…" : "按画面生成页面"}
+            {running && batch
+              ? `后台生成中 ${batch.succeeded}/${batch.total}`
+              : running
+                ? "正在启动…"
+                : "按画面生成页面"}
           </button>
           <button
             type="button"

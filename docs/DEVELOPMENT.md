@@ -63,7 +63,7 @@ git diff --check
 - WPS、Image2PPT、Codia、生图、VLM **禁止真实调用进测试**（全部 mock）；真机验证走 dev 环境小额度实测。
 - 日志系统的 schema、writer、health、monitor 或 deploy 验证改动，必须同时阅读并更新 `docs/LOGGING.md`；多人并行时不要直接改生产服务器副本。
 - commit 用英文祈使句；不执行 git commit/push/reset/rebase，除非用户明确要求。
-- 部署前查双队列（生成+导出在途为 0），流程见 `deploy/README.md` 与手册 §2。
+- 部署前查三队列（整套生成 + PPT 美化批量 + 导出在途为 0），流程见 `deploy/README.md` 与手册 §2。
 
 ## 6. 文档维护
 

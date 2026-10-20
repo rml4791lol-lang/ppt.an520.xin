@@ -121,7 +121,7 @@ printf '%s' '{"ok":true,"service":"anppt-v2","release":"test","db":true,"logging
 
 ## 5. 上线顺序
 
-1. **确认队列为空**：生成 `queued/running` 和导出 `pending/processing` 都必须为 0；部署脚本也会再次检查。
+1. **确认队列为空**：整套生成 `queued/running`、PPT 美化批量 `queued/running`、导出 `pending/processing` 都必须为 0；部署脚本也会再次检查。
 2. **全量门全绿**，文档、断言数、README 已同步。
 3. **提交并推送分支**，由发布负责人合并到 `production`；不要直接编辑服务器源码。
 4. 如果本次改到了 `/opt/anppt-v2/bin/deploy-production` 使用的 `deploy/deploy-production.sh`，先做一次 bootstrap（新脚本之后会自更新安装副本）：
@@ -131,7 +131,7 @@ ssh hk-hermes 'cd /opt/anppt-v2/source && git fetch origin production && git mer
 ssh hk-hermes 'sudo -n install -m 0755 /opt/anppt-v2/source/deploy/deploy-production.sh /opt/anppt-v2/bin/deploy-production'
 ```
 
-5. 执行唯一入口 `bash deploy/deploy.sh`。脚本会推 production、构建不可变 release、检查双队列、切 symlink、重启。
+5. 执行唯一入口 `bash deploy/deploy.sh`。脚本会推 production、构建不可变 release、检查三队列、切 symlink、重启。
 6. 脚本内置发布后验证：`/api/me` 必须 401，`/api/health` 必须 `ok=true`、`db=true`、`logging.ok=true`、`logging.writable=true`，且 `release` 等于本次 commit。任一失败自动回滚到上一个 release。
 7. 应用发布后再安装监控脚本（监控脚本不会随 release 自动安装）：
 
@@ -155,7 +155,7 @@ curl -sS https://ppt.an520.xin/api/health
 - 日志数据不随 release 回滚：`/opt/anppt-v2/shared/data/logs` 和 SQLite 审计仍在共享数据目录。
 - 旧 release 可能不认识新的分段文件名或新字段；回滚只用于短期止血，恢复后尽快修复并重新发布。
 - 监控脚本回滚：从 Git 取上一版本重新 `install`，手动跑一次，确认恢复邮件行为。
-- 任何回滚后都要重新检查：服务 active、`/api/me=401`、`/api/health`、双队列、监控日志。
+- 任何回滚后都要重新检查：服务 active、`/api/me=401`、`/api/health`、三队列、监控日志。
 
 ## 7. 监控与告警
 
@@ -177,7 +177,7 @@ curl -sS https://ppt.an520.xin/api/health
 1. 看 `/api/health` 和 `/var/log/anppt-monitor.log`。
 2. 检查 `df -h`、`<数据目录>/logs` 权限、`ANPPT_V2_PROBLEM_LOG_DIR` 是否指向普通文件或错误路径。
 3. 若服务仍可用，先修复目录/磁盘，不必立即重启；日志写入会自然恢复。
-4. 需要重启时仍要等双队列为 0，避免打断在途生成/导出。
+4. 需要重启时仍要等三队列为 0，避免打断在途生成/导出。
 5. journal 里的 `[anppt-v2][problem][category]` 行仍可作为临时排查来源。
 
 ### 日志量异常增长

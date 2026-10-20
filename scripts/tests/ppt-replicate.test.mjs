@@ -174,6 +174,87 @@ export async function runPptReplicateTests(ctx) {
     check('详情透出 source 与壳路径',
       singlePages.getSingleProjectDetail(uid, rp1.page.projectId).project.source === 'replicate'
         && singlePages.getOwnedPage(uid, 'rpok1').shellPath === shell.relPath);
+
+    const batch = await import('../../src/modules/ppt-replicate/server/batch.ts');
+    const rpBeforeRegenerate = credits.getBalance(uid);
+    const oldVersionId = singlePages.getOwnedPage(uid, 'rpok1').activeVersionId;
+    singlePages.saveReplicateDraft(uid, {
+      projectId: rp1.page.projectId,
+      title: '批量重生成测试',
+      pages: [{ pageId: 'rpok1', title: '新指标二版', content: '完成率改成 92%', imagePath: shell.relPath }],
+    });
+    const pendingRegenerate = singlePages.getOwnedPage(uid, 'rpok1');
+    check('文案变更后服务端清空旧 active 版本',
+      pendingRegenerate.status === 'idle' && pendingRegenerate.activeVersionId === '');
+    await batch.startReplicateBatch(uid, {
+      projectId: rp1.page.projectId,
+      pageIds: ['rpok1'],
+      colorMode: 'follow-shell',
+    }, { fetchImpl: makeMockFetcher([editsOkHandler]), config: llmConfig });
+    for (let i = 0; i < 100; i += 1) {
+      const detail = batch.getSinglePageBatchDetail(uid, rp1.page.projectId);
+      if (detail.batch && ['succeeded', 'partial', 'failed'].includes(detail.batch.status)) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const regeneratedPage = singlePages.getOwnedPage(uid, 'rpok1');
+    check('文案变更后批量任务不会误跳过旧成品',
+      regeneratedPage.status === 'succeeded' && regeneratedPage.activeVersionId !== oldVersionId,
+      `status=${regeneratedPage.status} old=${oldVersionId} new=${regeneratedPage.activeVersionId} batch=${JSON.stringify(batch.getSinglePageBatchDetail(uid, rp1.page.projectId).batch)}`);
+    check('文案变更后的批量重生成按页扣费', rpBeforeRegenerate - credits.getBalance(uid) === 10,
+      `before=${rpBeforeRegenerate} after=${credits.getBalance(uid)}`);
+
+    singlePages.saveReplicateDraft(uid, {
+      projectId: rp1.page.projectId,
+      title: '批量测试',
+      pages: [
+        { pageId: 'rp-batch-1', title: '批量一', content: '第一页文案', imagePath: shell.relPath },
+        { pageId: 'rp-batch-2', title: '批量二', content: '第二页文案', imagePath: shell.relPath },
+      ],
+    });
+    const batchBefore = credits.getBalance(uid);
+    const started = await batch.startReplicateBatch(uid, {
+      projectId: rp1.page.projectId,
+      pageIds: ['rp-batch-1', 'rp-batch-2'],
+      colorMode: 'follow-shell',
+      structures: {
+        'rp-batch-1': { family: 'cards', zones: '上方标题', slots: '两张卡', hierarchy: '标题最大', world: '保留底图', forbidden: [] },
+      },
+    }, { fetchImpl: makeMockFetcher([editsOkHandler]), config: llmConfig });
+    let batchDetail = null;
+    for (let i = 0; i < 100; i += 1) {
+      batchDetail = batch.getSinglePageBatchDetail(uid, rp1.page.projectId);
+      if (batchDetail.batch && ['succeeded', 'partial', 'failed'].includes(batchDetail.batch.status)) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const batchPages = batchDetail?.pages.filter((page) => ['rp-batch-1', 'rp-batch-2'].includes(page.pageId)) || [];
+    check('批量任务在服务端完成并回填全部图片',
+      started.status === 'running'
+        && batchDetail?.batch?.status === 'succeeded'
+        && batchDetail.batch.succeeded === 2
+        && batchPages.length === 2
+        && batchPages.every((page) => page.status === 'succeeded' && page.imageUrl));
+    check('批量任务按页扣费 10🌟', batchBefore - credits.getBalance(uid) === 20);
+    const batchPageUpdatedAt = Math.max(...batchPages.map((page) => page.updatedAt));
+    const batchListed = projects.listProjects(uid).items.find((item) => item.id === rp1.page.projectId);
+    check('批量完成后项目更新时间跟随页面完成时间', batchListed && batchListed.updatedAt >= batchPageUpdatedAt);
+
+    const staleProject = singlePages.saveReplicateDraft(uid, {
+      title: '批量中断恢复',
+      pages: [{ pageId: 'rp-batch-stale', title: '中断页', content: '中断文案', imagePath: shell.relPath }],
+    });
+    const dbMod = await import('../../src/lib/server/generation/db.ts');
+    const staleAt = Date.now() - llmConfig.jobStaleMs - 1000;
+    dbMod.getGenDb().prepare(
+      `INSERT INTO single_page_batches
+        (id, user_id, project_id, status, total, succeeded, failed, error, target_ids, created_at, updated_at, started_at, completed_at)
+       VALUES (?, ?, ?, 'running', 1, 0, 0, '', ?, ?, ?, ?, 0)`,
+    ).run('spb-stale-test', uid, staleProject.projectId, JSON.stringify(['rp-batch-stale']), staleAt, staleAt, staleAt);
+    const staleDetail = batch.getSinglePageBatchDetail(uid, staleProject.projectId);
+    check('运行中的批量任务超时后可释放并提示重试',
+      staleDetail.batch?.status === 'failed'
+        && staleDetail.batch.error.includes('中断')
+        && staleDetail.batch.failed === 1);
+
     let mixErr = null;
     try {
       await singlePages.generateSinglePage(uid, {

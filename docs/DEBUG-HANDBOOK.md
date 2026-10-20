@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-10-20（问题日志请求追踪 / 脱敏 / 落盘健康契约 / 滚动保留 / 发布后自动校验与回滚）
+> 最后更新：2026-10-20（问题日志请求追踪 / 脱敏 / 落盘健康契约 / 发布后自动校验与回滚；PPT 美化批量任务服务端化 / 刷新续看 / 项目更新时间按页修正）
 
 ## 1. 系统是什么
 
@@ -21,8 +21,8 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
   内容 = `VACUUM INTO` 在线备份 DB（WAL 一致，勿用 cp）+ `.env`（600）+ 数据清单 + `data-assets.tar.gz`（uploads/generated/exports 三目录打包，~50M），保留 7 天于 `/opt/anppt-v2/backups/daily/`。
   ⚠️ 老的 `anppt-daily-backup.sh`（03:15）备份的是 **slideflow 老系统**，与 anppt-v2 无关，别看错。
 - Caddy 反代：`ppt.an520.xin → 127.0.0.1:3100`（Caddyfile 备份 `/etc/caddy/Caddyfile.bak-anppt-20260819-205014`）。
-- 部署：本地工作区干净并已提交后运行 `bash deploy/deploy.sh`。脚本把 HEAD 推到 `production`，服务器从 `/opt/anppt-v2/source` 拉取、构建、生成不可变 release，**再次检查双队列**后原子切换 `current` 并 restart。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时只暂存 release，不切换、不重启。重启后还必须通过 `/api/health` 的 `db/logging.ok/logging.writable/release` 契约，失败自动回滚。修改 `deploy/deploy-production.sh` 时先按 `docs/LOGGING.md` §5 做一次 helper bootstrap。
-- **部署前必须同时检查生成与导出队列**（可编辑转换也可能在后台下载结果）：
+- 部署：本地工作区干净并已提交后运行 `bash deploy/deploy.sh`。脚本把 HEAD 推到 `production`，服务器从 `/opt/anppt-v2/source` 拉取、构建、生成不可变 release，**再次检查三队列**后原子切换 `current` 并 restart。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时只暂存 release，不切换、不重启。重启后还必须通过 `/api/health` 的 `db/logging.ok/logging.writable/release` 契约，失败自动回滚。修改 `deploy/deploy-production.sh` 时先按 `docs/LOGGING.md` §5 做一次 helper bootstrap。
+- **部署前必须同时检查整套生成、PPT 美化批量任务与导出队列**（可编辑转换也可能在后台下载结果）：
 
 ```bash
 ssh hk-hermes 'sudo -n node' <<'NODE'
@@ -30,6 +30,7 @@ const { DatabaseSync } = require("node:sqlite");
 const db = new DatabaseSync("/opt/anppt-v2/shared/data/anppt-v2.db", { readOnly: true });
 console.log({
   generation: db.prepare("SELECT count(*) c FROM generation_jobs WHERE status IN ('queued','running')").get().c,
+  singlePageBatches: db.prepare("SELECT count(*) c FROM single_page_batches WHERE status IN ('queued','running')").get().c,
   export: db.prepare("SELECT count(*) c FROM export_jobs WHERE status IN ('pending','processing')").get().c,
 });
 NODE
@@ -104,7 +105,7 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 451 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
+node scripts/test-generation.mjs  # 当前 458 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 142 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
@@ -260,6 +261,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
   - **2026-09-08 对抗审查修补**：生成/改图 `requestId` 改为每次 UUID（刷新后再点「重试本页」不再撞 `DUPLICATE_REQUEST`）；改图失败保留旧成品图；再完善文案若字变了会清成品图并提示重新扣星；`refine` 对 `source=replicate` 项目也走 `ppt_replicate` 硬门；PDF worker 改走同站打包资源，不再拉 unpkg。
   - **2026-10-19 导出入口补齐**：PPT 美化第 4 步新增「导出图片版 PPTX」（免费，走 `/api/single-page/export-image-pptx`），生成成功后自动下载并写入导出中心；同时常驻「打开下载中心」入口。生成/恢复项目后把 `projectId` 写回 URL（`/beautify?projectId=...`），刷新不会丢项目。
   - **2026-10-19 草稿持久化**：上传参考稿后立即并发上传壳图并 `POST /api/single-page/draft`（不生成、不扣星），保存项目/页面/文案/参考稿路径；完善文案和整批生成结束后补存。刷新或换设备可通过 `?projectId=` 恢复；服务端校验参考稿路径必须属于当前用户。
+  - **2026-10-20 批量任务服务端化**：`POST /api/single-page/batch` 只负责创建/复用 `single_page_batches` 在途任务并立即返回，worker 在服务端按 3 页并发调用现有单页运行时；`GET /api/single-page/batch?projectId=` 返回任务进度与页面图，前端轮询回填。刷新/关页不再中断后续页；同一项目唯一在途任务防重复扣星。任务保存每页起始版本快照，已生成页改文案重做时旧版本不会被算成本批成功；服务端在文案/壳图变更时清空旧 active 版本并置回待生成，避免刷新后又把旧图当新结果。任务心跳超 `ANPPT_V2_JOB_STALE_MS` 且页状态已收敛时，批量行置 partial/failed，释放唯一索引供重试。项目列表/详情更新时间取 `MAX(project.updated_at, MAX(single_pages.updated_at))`，修复生成完成后项目仍按创建时间沉底。
   - **2026-10-19 PDF 解析修复**：浏览器端 worker 由 `scripts/sync-pdf-worker.mjs` 在 predev/prebuild 复制到 `public/pdf.worker.min.mjs`，固定走同站 URL，避免 Next/Turbopack 的 `?url` 导入返回非字符串触发 `Invalid 'workerSrc' type`；服务端 `documents.ts` 显式把 pdfjs `workerSrc` 指到 node_modules 真实文件，并配置本地 `cmaps/`、`standard_fonts/`、`wasm/`，避免服务端 chunk 相对路径去找 `.next/server/chunks/pdf.worker.mjs`，也避免中文 CID 字体因缺 CMap 解析为空。回归：`scripts/test-generation.mjs` 新增中文 CID PDF 断言（424 项）。
 - 视觉预算：单次最多 24 页结构；10 分钟 48 次 VLM。文案 LLM 走 `replicate-plan:{userId}` 30/10min，**不占**大纲 `llm-free`。
 - 项目身份：`source='replicate'`。列表「美化 ·」链到 `/beautify`；工作台缺省生成 409 `REPLICATE_PROJECT`（文案「请到 PPT 美化」）。
@@ -270,7 +272,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 转可编辑：20 页一批；可编辑是位图转 PPTX，不是原槽位（产品边界）。
 - 计费：10🌟/页生成、失败退星；可编辑 20🌟/页。单价由 `/api/credits/estimate` 现读（`single_page_generate`/`export_editable`），客户端不硬编码。
 - **2026-10-11 审查修补**：恢复项目优先用 `page.activeVersionId` 的版本（找不到才回落最新成功版，避免把非当前版本送去转可编辑）；壳图 `imagePaths` 改为定长数组按页对齐（缺失留空，服务端 `ownedReplicateImagePaths` 同样保下标，不再过滤塌缩导致结构卡串页）；`structureExtracted` 只统计非 null 结构卡（VLM 失败不再虚报 N/M）；限流桶各记自己的 windowMs，短窗口调用不再驱逐长窗口桶。
-- 测试：`scripts/tests/ppt-replicate.test.mjs`（套件内段名 [7c]）含结构卡/路径/项目 source/llm-free 隔离/40 页上限/壳图过期清理/美化 URL 白名单/已生成不扣星/402 横幅/409 文案；开关门控在 test-backend.mjs [11]。**禁止真实 VLM/生图/Codia。**
+- 测试：`scripts/tests/ppt-replicate.test.mjs`（套件内段名 [7c]）含结构卡/路径/项目 source/llm-free 隔离/40 页上限/壳图过期清理/美化 URL 白名单/已生成不扣星/402 横幅/409 文案/服务端批量任务回填与中断恢复/项目更新时间；开关门控在 test-backend.mjs [11]。**禁止真实 VLM/生图/Codia。**
 
 ## 22. 插件运行时三件与先锋插件（pricing / models，2026-09-06）
 
@@ -340,7 +342,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 请求侧：`/api/deck/parse` 在 `formData()` 前检查 content-length（防超限 body 整段进内存），并按用户限 60 次/小时；`/api/tools/replicate/plan` 按用户限 40 次/小时。
 - 查询：`getDeckState` 改为一次取整套 `slide_versions`（`listVersionsByDeck`），单页项目详情一次取项目版本（`listProjectVersions`），项目列表用相关子查询批量取页数与封面，避免逐项目/逐页 N+1。
 - 缓存：公开的 style-pack-categories / showcase-cases / site-config 加 `public` 缓存；style-packs / templates 加 `private, max-age=60` + `Vary: Cookie`。
-- 验证：`node scripts/test-generation.mjs` 451 断言、`node scripts/test-backend.mjs` 142 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
+- 验证：`node scripts/test-generation.mjs` 458 断言、`node scripts/test-backend.mjs` 142 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
 
 - 备份：`deploy/backup-db.sh` + `deploy/anppt-backup.timer`（每日 03:30，`VACUUM INTO` → gzip，保留 14 天，目录 `/opt/anppt-v2/shared/backups`）。已做一次恢复校验：解压后 `PRAGMA integrity_check=ok`，用户/钱包/订单表可读。备份只含 SQLite；uploads/generated/exports 需另行归档。
 - 本机压测基线（2026-10-19，本地 `next start`，非生产 SLA）：20 用户、100 个 deck、600 次 `/api/me` + `/api/projects` + `/api/style-packs` 并发读，40 并发下 p50 18.4ms / p95 34.7ms / p99 115.2ms，0 失败；空库 600 请求 p95 24.7ms。生产进程常驻 RSS 约 195MB（峰值 246MB），远端可用内存 6.2GB。
@@ -352,5 +354,5 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 机制：`image2ppt.ts` 负责 multipart 提交、`GET /api/v1/jobs/{id}` 轮询、带 Bearer 下载和 Standard Webhooks 验签；`editable.ts` 负责 provider 选择、主备切换、`upstream_provider` 记录、懒恢复与 webhook 去重。`export_jobs.upstream_provider` 由 `getGenDb()` 幂等迁移补齐。
 - 回调：`POST /api/webhooks/image2ppt` 只做验签和状态推进，最终下载仍走同一条管线；`saveEditableResult` 按 exportId 去重，避免 webhook 与 4s 轮询同时写文件。`PUBLIC_BASE_URL` 非 HTTPS 公网时自动省略 callback。
 - 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/wps/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT/WPS 主通道未配置、Image2PPT 剩余额度 <20、Image2PPT/WPS 登录态失效（401/403）、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
-- 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/test-generation.mjs` 当前 451 断言，全部 mock，禁止真实付费调用。
+- 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/test-generation.mjs` 当前 458 断言，全部 mock，禁止真实付费调用。
 - 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。WPS 另用真实登录态跑通 `convertPdfWithWpsAippt`：1 页 PDF → 10,591 bytes PPTX，`slides/slide1.xml` 含可编辑 `<a:t>` 文本节点且无整页媒体图片；该验收命令不进测试套件。

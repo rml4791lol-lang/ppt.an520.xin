@@ -21,4 +21,4 @@ curl -s -o /dev/null -w "%{http_code}" https://ppt.an520.xin/      # 200
 curl -s https://ppt.an520.xin/api/health                           # ok:true
 ```
 
-服务器纪律：线上库 `/opt/anppt-v2/shared/data/anppt-v2.db` 属 root，直读直写用 `sudo -n node`；node:sqlite 无 `db.transaction()`，用显式 BEGIN IMMEDIATE/COMMIT；重启前双队列（生成+导出在途）必须为 0。
+服务器纪律：线上库 `/opt/anppt-v2/shared/data/anppt-v2.db` 属 root，直读直写用 `sudo -n node`；node:sqlite 无 `db.transaction()`，用显式 BEGIN IMMEDIATE/COMMIT；重启前三队列（整套生成 + PPT 美化批量 + 导出在途）必须为 0。

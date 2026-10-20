@@ -4,7 +4,8 @@
 
 ## 边界
 
-- `server/replicate.ts`：结构卡（VLM）、拆文案计划、复刻生图指令、模块常量与限流键。唯一服务端出口。
+- `server/replicate.ts`：结构卡（VLM）、拆文案计划、复刻生图指令、模块常量与限流键。
+- `server/batch.ts`：PPT 美化批量任务状态机（服务端 3 页并发、在途复用、心跳超时收敛、轮询详情）；HTTP 薄壳为 `/api/single-page/batch`。
 - `client/`：`beautify-client.tsx`（/beautify 工作台编排）、`beautify-ui.tsx`（UI 零件）、`beautify-pages.ts`（扣费名单/横幅/草稿规则/`requestId`）、`beautify-api.ts`（请求）、`beautify-handoff.ts`（首页→/beautify 文件交接）、`replicate-shell.ts`（浏览器拆页/壳图，PDF worker 同站打包）、`replicate-urls.ts`（URL 白名单与跳转）、`own-template-panel.tsx`（模板库入口卡）。
 - 薄壳（只做鉴权/参数/调模块，不在本目录）：`src/app/(main)/beautify/page.tsx`、`src/app/api/tools/replicate/plan/route.ts`。
 

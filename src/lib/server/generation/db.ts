@@ -130,6 +130,28 @@ CREATE TABLE IF NOT EXISTS single_page_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_single_versions_page ON single_page_versions(page_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS single_page_batches (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES single_page_projects(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'queued',
+  total INTEGER NOT NULL DEFAULT 0,
+  succeeded INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  target_ids TEXT NOT NULL DEFAULT '[]',
+  start_versions TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  started_at INTEGER NOT NULL DEFAULT 0,
+  completed_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_single_page_batches_project
+  ON single_page_batches(user_id, project_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_single_page_batches_active
+  ON single_page_batches(project_id)
+  WHERE status IN ('queued', 'running');
+
 CREATE TABLE IF NOT EXISTS export_jobs (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -218,6 +240,10 @@ export function getGenDb(): DatabaseSync {
     const singlePageCols = db.prepare("SELECT name FROM pragma_table_info('single_pages')").all() as Array<{ name: string }>;
     if (!singlePageCols.some((c) => c.name === 'shell_path')) {
       db.exec("ALTER TABLE single_pages ADD COLUMN shell_path TEXT NOT NULL DEFAULT ''");
+    }
+    const batchCols = db.prepare("SELECT name FROM pragma_table_info('single_page_batches')").all() as Array<{ name: string }>;
+    if (!batchCols.some((c) => c.name === 'start_versions')) {
+      db.exec("ALTER TABLE single_page_batches ADD COLUMN start_versions TEXT NOT NULL DEFAULT '{}'");
     }
     migrated.add(db);
   }

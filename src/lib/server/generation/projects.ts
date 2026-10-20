@@ -178,14 +178,15 @@ export function listProjects(
   if (!type || type === 'single-page') {
     const rows = db
       .prepare(
-        `SELECT p.id, p.title, p.source, p.created_at, p.updated_at,
+        `SELECT p.id, p.title, p.source, p.created_at,
+           MAX(p.updated_at, COALESCE((SELECT MAX(sp.updated_at) FROM single_pages sp WHERE sp.project_id = p.id), 0)) AS updated_at,
            (SELECT COUNT(*) FROM single_pages sp WHERE sp.project_id = p.id) AS page_count,
            (SELECT v.image_url FROM single_pages sp JOIN single_page_versions v ON v.id = sp.active_version_id
             WHERE sp.project_id = p.id AND sp.status = 'succeeded'
             ORDER BY sp.page_index ASC LIMIT 1) AS cover_url
          FROM single_page_projects p
          WHERE p.user_id = ? AND p.deleted_at IS NULL
-         ORDER BY p.updated_at DESC`,
+         ORDER BY updated_at DESC`,
       )
       .all(userId) as Row[];
     items = items.concat(rows.map(singleProjectToItem));
