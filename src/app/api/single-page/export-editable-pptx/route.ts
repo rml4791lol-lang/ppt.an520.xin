@@ -7,7 +7,7 @@ import { cleanString } from '@/lib/server/generation/types';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** 单页项目可编辑 PPTX 导出（20🌟/页，Codia 链）：建行扣费后后台转换，202 返回任务句柄 */
+/** 单页项目可编辑 PPTX 导出（20🌟/页，Image2PPT 主通道 / Codia 备用）：建行扣费后后台转换，202 返回任务句柄 */
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;

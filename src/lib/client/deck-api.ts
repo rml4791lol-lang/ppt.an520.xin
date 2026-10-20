@@ -176,7 +176,7 @@ export interface EditableExportStart {
   reused: boolean;
 }
 
-/** 可编辑 PPTX 导出（20🌟/页，Codia 链）：202 返回任务句柄，结果轮询 getExportRecord */
+/** 可编辑 PPTX 导出（20🌟/页，Image2PPT 主通道 / Codia 备用）：202 返回任务句柄，结果轮询 getExportRecord */
 export function startEditableExport(deckId: string, force = false): Promise<EditableExportStart> {
   return apiFetch<EditableExportStart>(`/api/deck/${encodeURIComponent(deckId)}/export-editable`, {
     body: { force },
@@ -244,7 +244,7 @@ export function listExportRecords(
   return apiFetch(`/api/pptx-exports?${params.toString()}`);
 }
 
-/** 当前项目最近一次可编辑导出（kind 区分 Codia 重管线 / 轻量文字档）；用于刷新后恢复任务状态。 */
+/** 当前项目最近一次可编辑导出（kind 区分可编辑重管线 / 轻量文字档）；用于刷新后恢复任务状态。 */
 export async function getLatestEditableExport(
   refType: "deck" | "single-page",
   refId: string,

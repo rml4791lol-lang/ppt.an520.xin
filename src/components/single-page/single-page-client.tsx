@@ -72,7 +72,7 @@ export function SinglePageClient() {
   const [replicateOrigin, setReplicateOrigin] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState(false);
-  // ---------- 转可编辑 PPTX（Codia 链，按页计费） ----------
+  // ---------- 转可编辑 PPTX（Image2PPT 主通道 / Codia 备用，按页计费） ----------
   const [editableOpen, setEditableOpen] = useState(false);
   const [editableForce, setEditableForce] = useState(false);
   const [editableUnit, setEditableUnit] = useState(20);
@@ -472,7 +472,7 @@ export function SinglePageClient() {
     }
   };
 
-  // ---------- 转可编辑 PPTX（Codia 链，按页计费，失败退星） ----------
+  // ---------- 转可编辑 PPTX（Image2PPT 主通道 / Codia 备用，按页计费，失败退星） ----------
   const doneCount = pages.filter((p) => p.status === "done").length;
   const editableTotal = doneCount * editableUnit;
 

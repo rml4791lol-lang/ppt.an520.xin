@@ -76,7 +76,7 @@ export function StepGenerate({
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  // ---------- 转可编辑 PPTX（Codia 链，20🌟/页） ----------
+  // ---------- 转可编辑 PPTX（Image2PPT 主通道 / Codia 备用，20🌟/页） ----------
   const [editableOpen, setEditableOpen] = useState(false);
   const [editableForce, setEditableForce] = useState(false);
   const [editableUnit, setEditableUnit] = useState(20);
