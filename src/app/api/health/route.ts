@@ -23,6 +23,7 @@ export async function GET(): Promise<Response> {
     provider: '',
     providers: [] as string[],
     image2ppt: { configured: false, webhookConfigured: false },
+    wps: { configured: false },
     queue: { active: 0, failedLastHour: 0, succeededLastHour: 0, oldestActiveAgeMs: 0 },
   };
   try {
@@ -37,6 +38,9 @@ export async function GET(): Promise<Response> {
       image2ppt: {
         configured: Boolean(config.image2pptApiKey),
         webhookConfigured: Boolean(config.image2pptWebhookSecret),
+      },
+      wps: {
+        configured: Boolean(config.wpsAipptCookie),
       },
       queue: editable.queue,
     };

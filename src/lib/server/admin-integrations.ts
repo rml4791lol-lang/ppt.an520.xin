@@ -42,6 +42,49 @@ function finiteNumber(value: unknown): number | null {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
+async function checkWpsAipptLogin(
+  config: ReturnType<typeof getGenerationConfig>,
+  fetchImpl: typeof fetch,
+): Promise<AdminIntegrationCheckResult> {
+  const cookie = configured(config.wpsAipptCookie, 'WPS AIPPT Cookie');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetchImpl('https://account.wps.cn/api/v3/islogin', {
+      method: 'GET',
+      headers: { Accept: 'application/json', Cookie: cookie },
+      signal: controller.signal,
+      cache: 'no-store',
+      redirect: 'error',
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError('INTEGRATION_CHECK_TIMEOUT', '连接检查超时，WPS 暂时没有响应', 504, true);
+    }
+    throw new ApiError('INTEGRATION_CHECK_FAILED', '无法连接 WPS，请检查网络后重试', 502, true);
+  } finally {
+    clearTimeout(timer);
+  }
+  const latencyMs = Date.now() - startedAt;
+  const payload = await readJsonIfPresent(response);
+  if (!response.ok || payload.result !== 'ok' || payload.userid == null) {
+    throw new ApiError('INTEGRATION_AUTH_FAILED', 'WPS 登录态已失效，请重新登录后替换 Cookie', 502, false);
+  }
+  return {
+    kind: 'editable',
+    ok: true,
+    latencyMs,
+    endpoint: '/api/v3/islogin',
+    message: 'WPS AIPPT 登录态有效；检查未发起转换',
+    details: {
+      provider: 'wps',
+      fallback: config.image2pptApiKey ? 'image2ppt' : config.codiaApiKey ? 'codia' : null,
+    },
+  };
+}
+
 export async function checkAdminIntegration(
   kind: AdminIntegrationKind,
   draftValues?: Record<string, unknown>,
@@ -53,7 +96,7 @@ export async function checkAdminIntegration(
   const config = getGenerationConfig(mergeAdminConfigDraft(draftValues));
   let url = '';
   let apiKey = '';
-  let editableProvider: 'codia' | 'image2ppt' = 'codia';
+  let editableProvider: 'codia' | 'image2ppt' | 'wps' = 'codia';
   if (kind === 'llm') {
     url = endpoint(configured(config.llmBaseUrl, 'LLM API 地址'), '/models');
     apiKey = configured(config.llmApiKey, 'LLM API 密钥');
@@ -61,11 +104,22 @@ export async function checkAdminIntegration(
     url = endpoint(configured(config.imageBaseUrl, '生图 API 地址'), '/models');
     apiKey = configured(config.imageApiKey, '生图 API 密钥');
   } else {
-    const codiaAvailable = Boolean(config.codiaApiKey);
-    const image2pptAvailable = Boolean(config.image2pptApiKey);
-    editableProvider = config.editableProvider === 'codia'
-      ? (codiaAvailable ? 'codia' : 'image2ppt')
-      : (image2pptAvailable ? 'image2ppt' : 'codia');
+    const available = {
+      wps: Boolean(config.wpsAipptCookie),
+      image2ppt: Boolean(config.image2pptApiKey),
+      codia: Boolean(config.codiaApiKey),
+    } as const;
+    const order = config.editableProvider === 'codia'
+      ? (['codia', 'image2ppt', 'wps'] as const)
+      : config.editableProvider === 'image2ppt'
+        ? (['image2ppt', 'wps', 'codia'] as const)
+        : (['wps', 'image2ppt', 'codia'] as const);
+    const selected = order.find((provider) => available[provider]);
+    if (!selected) throw new ApiError('INTEGRATION_NOT_CONFIGURED', '可编辑转换服务尚未配置', 409, false);
+    editableProvider = selected;
+    if (editableProvider === 'wps') {
+      return checkWpsAipptLogin(config, fetchImpl);
+    }
     if (editableProvider === 'image2ppt') {
       url = endpoint(configured(config.image2pptBaseUrl, 'Image2PPT API 地址'), '/api/v1/account');
       apiKey = configured(config.image2pptApiKey, 'Image2PPT API 密钥');

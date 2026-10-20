@@ -5,7 +5,7 @@
 
 ## 1. 系统是什么
 
-ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Next.js 16.3.1 App Router + React 19 + TypeScript + better-sqlite3（WAL）+ 自研 lib 层。生图走 OpenAI 兼容图片接口，大纲/梳理走 LLM 模型链，转可编辑走 Codia Open API。
+ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Next.js 16.3.1 App Router + React 19 + TypeScript + better-sqlite3（WAL）+ 自研 lib 层。生图走 OpenAI 兼容图片接口，大纲/梳理走 LLM 模型链，转可编辑走 WPS AIPPT / Image2PPT / Codia 多通道。
 
 - 仓库：GitHub `An-an-525/anppt-v2` 分支 `production`；本地专用同步 worktree `/Users/an/ZCodeProject/anppt-v2.production`。
 - 站点：https://ppt.an520.xin
@@ -77,19 +77,20 @@ NODE
     - **坑**：下单 `description` 不可含 emoji/非 BMP。微信报「请求内容传入了非UTF8参数」。`sanitizeWechatDescription` 必须用 `/[^\u0000-\uFFFF]/gu`（**带 `u` 旗**）；无 `u` 时代理对各自落在 BMP 内，过滤失效。建单文案用「星」不用「🌟」。
     - 验收：先只建单（`codeUrl` 以 `weixin://` 开头）不付款；真实小额扫码由人工核对回调验签 + 星星入账 + 订单 `paid`。
 
-## 6. 转可编辑 PPTX（Image2PPT 主通道 + Codia 备用，20🌟/页）
+## 6. 转可编辑 PPTX（WPS 免费优先 / Image2PPT / Codia 备用，20🌟/页）
 
-- 代码（2026-09-06 归拢进模块）：`src/modules/editable-export/server/image2ppt.ts`（Image2PPT 客户端）、`src/modules/editable-export/server/codia.ts`（Codia 客户端）、`src/modules/editable-export/server/editable.ts`（deck / single-page / upload 共用 `launchEditableExport` + 双通道管线 + 懒恢复），路由 `POST /api/deck/[id]/export-editable`、`POST /api/single-page/export-editable-pptx`、`POST /api/editable-conversions`，状态 `GET /api/pptx-exports/[id]`，回调 `POST /api/webhooks/image2ppt`。
-- 主备：`ANPPT_V2_EDITABLE_PROVIDER=image2ppt` 时先走 Image2PPT，失败自动切 Codia；`codia` 时顺序相反；`auto` 等同 image2ppt 优先。任一通道成功即停，全部失败才退星。2026-10-20 起生产主通道为 Image2PPT。
-- 流程：站内作品读页图，外部入口接受单份 PDF 或最多 20 张 PNG/JPG；图片先用 pdf-lib 合成 image-only PDF。Image2PPT 走 `POST /api/v1/jobs`（multipart，`Idempotency-Key: anppt-editable-{exportId}`）→ 4s 轮询 `GET /api/v1/jobs/{id}` → 带 Bearer 下载 `/download`；Codia 走 uploads → tasks → poll → 下载。PPTX 流式写临时文件并原子落盘；上传源 PDF 在所有终态安全删除。
+- 代码（2026-09-06 归拢进模块）：`src/modules/editable-export/server/wps-aippt.ts`（WPS 内部页面转 PPT 客户端）、`src/modules/editable-export/server/image2ppt.ts`（Image2PPT 客户端）、`src/modules/editable-export/server/codia.ts`（Codia 客户端）、`src/modules/editable-export/server/editable.ts`（deck / single-page / upload 共用 `launchEditableExport` + 多通道管线 + 懒恢复），路由 `POST /api/deck/[id]/export-editable`、`POST /api/single-page/export-editable-pptx`、`POST /api/editable-conversions`，状态 `GET /api/pptx-exports/[id]`，回调 `POST /api/webhooks/image2ppt`。
+- 主备顺序：`wps` / `auto` = WPS（配置 Cookie 时）→ Image2PPT → Codia；`image2ppt` = Image2PPT → WPS → Codia；`codia` = Codia → Image2PPT → WPS。任一通道成功即停，全部失败才退星。WPS 是网页内部接口而非公开 API，必须由服务端 WPS 登录 Cookie 驱动，受登录态、限时免费额度和风控影响；Cookie 失效或转换失败时自动回退，不向普通用户暴露凭据/上游细节。**合规边界**：WPS 在线服务协议写明账号由用户自行保管、服务仅供本人使用，不得出租/借用/分享；把个人 WPS 账号作为面向多用户的 SaaS 共享后端存在条款与封号风险，生产启用前必须取得账号本人/组织授权，或改用 WPS 官方企业/开放平台方案。
+- 流程：站内作品读页图，外部入口接受单份 PDF 或最多 20 张 PNG/JPG；图片先用 pdf-lib 合成 image-only PDF。WPS 走 `token_by_kso` 换取 KS3 上传凭证 → PUT PDF → `POST /api/structppt/convert_pptx`（SSE 进度）→ 下载 `file_url`；Image2PPT 走 `POST /api/v1/jobs`（multipart，`Idempotency-Key: anppt-editable-{exportId}`）→ 4s 轮询 `GET /api/v1/jobs/{id}` → 带 Bearer 下载 `/download`；Codia 走 uploads → tasks → poll → 下载。PPTX 流式/内存写临时文件并原子落盘；上传源 PDF 在所有终态安全删除。
 - 回调：`POST /api/webhooks/image2ppt` 按 Standard Webhooks 校验 `webhook-id/timestamp/signature`（HMAC-SHA256，5 分钟时间窗）；只用于提前推进状态，下载仍由同一管线完成，webhook 与轮询按 exportId 去重。`PUBLIC_BASE_URL` 非 HTTPS 公网时不传 callback，纯轮询。
 - 幂等：同项目进行中任务直接复用；同一来源指纹已有成功结果默认复用；只有显式 `force=true` 才重新建任务、重新扣星。查重、建行、扣费在同一 `BEGIN IMMEDIATE` 事务中。
 - 请求恢复：GET 最多 3 次；带固定 `Idempotency-Key` 的提交最多 2 次；仅网络错误、429、5xx 与非 JSON 临时响应短退避恢复。401/402/403 与业务参数错误不盲目重试。Image2PPT 与 Codia 重试都复用同一幂等键。
+- WPS 限流：上游错误码 `10712` / `convert2pptxRateLimited` 映射为 429，并进入进程级 10 分钟冷却；冷却期内直接回退 Image2PPT/Codia，不再打 WPS。2026-10-20 实测单账号 16 路并发 1 页转换全部成功（约 2.7s 完成），未观察到并发上限，但内部接口不承诺 SLA。
 - 失败语义：单通道 failed 先自动切备用通道；Codia 内部仍保留 `-retry1` 重建一次。全部失败 → 幂等退星 + 行 failed。普通用户只看到“服务器开小差/稍后在下载中心查看”等安全文案，不暴露供应商名称、私网地址、密钥、额度或上游响应正文；原始技术信息只进服务端日志。上游 402 → 立即退星 + journal 告警。
-- 懒恢复：pending/processing 的 editable 行在 getExport/listExports 时被现场推进（`upstream_provider` 区分 Image2PPT / Codia，有 task_id 现场 poll；无 task_id 且创建超 30s 后台重跑整条管线，幂等安全）。上游状态轮询没有虚假的前端倒计时。
+- 懒恢复：pending/processing 的 editable 行在 getExport/listExports 时被现场推进（`upstream_provider` 区分 WPS / Image2PPT / Codia；Image2PPT/Codia 有 task_id 现场 poll；WPS 内部接口没有可恢复的任务查询端点，转换中断时后台重跑整条管线；无 task_id 且创建超 30s 同样重跑）。上游状态轮询没有虚假的前端倒计时。
 - 限制：每任务 ≤20 页（EXPORT_TOO_MANY_PAGES）；deck 必须 status==='generated'；单页项目取全部有 activeVersion 的页；同 ref 并发请求复用同一任务，不返回重复任务、不重复扣星。
-- 上游计费：Image2PPT 按页扣账号 credits（当前 200 credits；API 与网页共用积分池）；Codia 13 credits/页。用户侧仍统一 20🌟/页。**测试禁止真实调用付费上游**；真机验收只允许小额度单页。
-- 官方文档：https://image2ppt.com/en/docs/api 、https://codia.ai/pdf-to-editable-ppt-api
+- 上游计费：WPS 当前为网页限时免费通道，但依赖登录 Cookie 与上游风控；Image2PPT 按页扣账号 credits（当前 200 credits；API 与网页共用积分池）；Codia 13 credits/页。用户侧仍统一 20🌟/页，免费通道不改变站内计价。**测试禁止真实调用付费上游**；真机验收只允许小额度单页。
+- 参考入口：https://aippt.wps.cn/aippt/convert-ppt/home （WPS 内部页面，无公开 API 契约）、https://image2ppt.com/en/docs/api 、https://codia.ai/pdf-to-editable-ppt-api
 
 ## 7. 前端要点
 
@@ -103,8 +104,8 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 440 断言，Codia/Image2PPT/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 134 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志
+node scripts/test-generation.mjs  # 当前 451 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
+node scripts/test-backend.mjs     # 当前 135 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
 npm run build
@@ -168,15 +169,15 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 - 入口：`/admin`。页面与 `/api/admin/**` 都会校验当前会话用户 `users.role='admin'`；普通用户页面重定向、API 返回 403。管理员身份来自数据库角色，不硬编码邮箱。
 - 能力：总用户/24h 新增/生成与导出在途/24h 失败/项目数、进程内存、磁盘、数据库、集成配置状态、最新注册用户与最近审计可视化；支持生成 1000 星等兑换码和用户角色管理。（2026-08-26 起按用户决策移除“重点用户监控”，`admin_user_watches` 表随之废弃。）
-- 运行时配置：LLM、生图、Codia 与容量参数保存在 DB；密钥由 `ANPPT_V2_ADMIN_CONFIG_KEY` 派生 AES-256-GCM 密钥后加密，浏览器只获得“已配置”和短指纹，永不返回明文。公网 API 地址必须 HTTPS，HTTP 只允许本机/内网。
+- 运行时配置：LLM、生图、WPS / Image2PPT / Codia 与容量参数保存在 DB；密钥由 `ANPPT_V2_ADMIN_CONFIG_KEY` 派生 AES-256-GCM 密钥后加密，浏览器只获得“已配置”和短指纹，永不返回明文。公网 API 地址必须 HTTPS，HTTP 只允许本机/内网。
 - `ANPPT_V2_ADMIN_CONFIG_KEY` 至少 32 字符，只能存在生产 `.env`，文件权限保持 600。**轮换前必须先导出/重新录入所有运行时密钥**；直接更换主密钥会使旧密文无法解密。备份 `.env` 时同样按密钥材料保护。
-- 连接检查零付费：LLM/Image 仅 `GET /models`，Codia 仅 `GET /v2/open/credits`；三者均 `redirect: 'error'`，不会跟随到未知端点，不调用 `/tasks`、`/uploads`、聊天或生图接口。
+- 连接检查零付费：LLM/Image 仅 `GET /models`，Codia 仅 `GET /v2/open/credits`，Image2PPT 仅 `GET /api/v1/account`，WPS 仅 `GET /api/v3/islogin`；全部 `redirect: 'error'`，不会跟随到未知端点，不调用 `/tasks`、`/uploads`、转换、聊天或生图接口。
 - 运行时配置有 30 秒进程缓存；保存/清除后主动失效。已经启动的生图或可编辑任务使用启动时配置快照，避免中途切换密钥/地址造成半套任务跨供应配置。
 - 所有管理员写操作进入 `admin_audit_logs`；详情递归脱敏 secret/password/token/api key/authorization/cookie/private key 等字段，审计写失败只记服务端错误，不反向破坏已成功业务操作。
 
 ## 14. 上游消耗本地计量与财务统计（2026-08-22）
 
-- 口径（用户拍板）：**只记本项目自己的逐条消耗**，不拉上游余额接口。每次真实上游调用（LLM/生图/Codia）落一条 `upstream_usage_records`（provider/kind/model/status/tokens/units/cost_fen/duration_ms）。
+- 口径（用户拍板）：**只记本项目自己的逐条消耗**，不拉上游余额接口。每次真实上游调用（LLM/生图/WPS/Image2PPT/Codia）落一条 `upstream_usage_records`（provider/kind/model/status/tokens/units/cost_fen/duration_ms）。
 - 计量代码：`src/lib/server/usage-meter.ts`（`recordUpstreamUsage`，全路径 try/catch——**记账绝不允许影响主流程**）；接入点在 engine/images/codia 的真实上游调用处。
 - 金额估算：`cost_fen` 仅在 `ANPPT_V2_COST_*` 单价 env 配置后衍生估算；未配置保持 NULL——**tokens/张数/次数是上游返回的真实数据，金额只是衍生**。汇总时整组未定价则 costFen 为 null（未配置单价 ≠ 花费 0）。
 - 统计接口：`GET /api/admin/finance`（仅 admin）→ `src/lib/server/finance-stats.ts`，返回收入（充值订单）+ 内部消费（星星账/兑换码）+ 上游消耗（total/last30d/byProvider，按 provider+kind+model 分组——便宜渠道与贵渠道据此分开）。当前只有 API，无后台页面。
@@ -333,17 +334,17 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 请求侧：`/api/deck/parse` 在 `formData()` 前检查 content-length（防超限 body 整段进内存），并按用户限 60 次/小时；`/api/tools/replicate/plan` 按用户限 40 次/小时。
 - 查询：`getDeckState` 改为一次取整套 `slide_versions`（`listVersionsByDeck`），单页项目详情一次取项目版本（`listProjectVersions`），项目列表用相关子查询批量取页数与封面，避免逐项目/逐页 N+1。
 - 缓存：公开的 style-pack-categories / showcase-cases / site-config 加 `public` 缓存；style-packs / templates 加 `private, max-age=60` + `Vary: Cookie`。
-- 验证：`node scripts/test-generation.mjs` 440 断言、`node scripts/test-backend.mjs` 134 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
+- 验证：`node scripts/test-generation.mjs` 451 断言、`node scripts/test-backend.mjs` 135 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
 
 - 备份：`deploy/backup-db.sh` + `deploy/anppt-backup.timer`（每日 03:30，`VACUUM INTO` → gzip，保留 14 天，目录 `/opt/anppt-v2/shared/backups`）。已做一次恢复校验：解压后 `PRAGMA integrity_check=ok`，用户/钱包/订单表可读。备份只含 SQLite；uploads/generated/exports 需另行归档。
 - 本机压测基线（2026-10-19，本地 `next start`，非生产 SLA）：20 用户、100 个 deck、600 次 `/api/me` + `/api/projects` + `/api/style-packs` 并发读，40 并发下 p50 18.4ms / p95 34.7ms / p99 115.2ms，0 失败；空库 600 请求 p95 24.7ms。生产进程常驻 RSS 约 195MB（峰值 246MB），远端可用内存 6.2GB。
 
-## 28. Image2PPT 可编辑转换接入（2026-10-20）
+## 28. 可编辑转换接入（WPS / Image2PPT / Codia，2026-10-20）
 
-- 背景：Codia 的 Full/元素级能力与 Image2PPT 的原生文字/形状/表格重建是两条不同路线。2026-10-20 实测一张 1280×720 中文页，Image2PPT 输出 13 个对象（3 个原生形状 + 7 个文本框），LibreOffice 渲染与源图基本一致；因此生产把 Image2PPT 设为主通道、Codia 保留为自动备用。
-- 配置（只放 `shared/.env`，不进仓库）：`ANPPT_V2_EDITABLE_PROVIDER=image2ppt`、`ANPPT_V2_IMAGE2PPT_API_KEY`、`ANPPT_V2_IMAGE2PPT_BASE_URL=https://image2ppt.com`、`ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET=whsec_...`；财务估算可选 `ANPPT_V2_COST_IMAGE2PPT_FEN_PER_PAGE=100`。管理后台「可编辑」连接检查会按主通道调用只读 `/api/v1/account`，不会创建转换任务。
+- 背景：Codia 的 Full/元素级能力与 Image2PPT 的原生文字/形状/表格重建是两条不同路线。2026-10-20 实测一张 1280×720 中文页，Image2PPT 输出 13 个对象（3 个原生形状 + 7 个文本框），LibreOffice 渲染与源图基本一致；因此保留 Image2PPT 为付费主通道、Codia 为自动备用。同日晚些时候接入 WPS AIPPT 免费网页通道，配置 Cookie 后可设 `ANPPT_V2_EDITABLE_PROVIDER=wps` 排到最前；未配置 WPS 时仍维持 Image2PPT 优先。
+- 配置（只放 `shared/.env`，不进仓库）：`ANPPT_V2_EDITABLE_PROVIDER=image2ppt|wps|auto|codia`、`ANPPT_V2_IMAGE2PPT_API_KEY`、`ANPPT_V2_IMAGE2PPT_BASE_URL=https://image2ppt.com`、`ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET=whsec_...`；WPS 需 `ANPPT_V2_WPS_AIPPT_COOKIE`（可选 `ANPPT_V2_WPS_AIPPT_BASE_URL=https://ippt.wps.cn`）。财务估算可选 `ANPPT_V2_COST_IMAGE2PPT_FEN_PER_PAGE=100`。管理后台「可编辑」连接检查会按当前首选通道调用只读接口（WPS 为 `/api/v3/islogin`），不会创建转换任务。
 - 机制：`image2ppt.ts` 负责 multipart 提交、`GET /api/v1/jobs/{id}` 轮询、带 Bearer 下载和 Standard Webhooks 验签；`editable.ts` 负责 provider 选择、主备切换、`upstream_provider` 记录、懒恢复与 webhook 去重。`export_jobs.upstream_provider` 由 `getGenDb()` 幂等迁移补齐。
 - 回调：`POST /api/webhooks/image2ppt` 只做验签和状态推进，最终下载仍走同一条管线；`saveEditableResult` 按 exportId 去重，避免 webhook 与 4s 轮询同时写文件。`PUBLIC_BASE_URL` 非 HTTPS 公网时自动省略 callback。
-- 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT 主通道未配置、剩余额度 <20、额度接口 401/403、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
-- 测试：`scripts/tests/image2ppt.test.mjs`（段名 [6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/test-generation.mjs` 当前 440 断言，全部 mock，禁止真实付费调用。
-- 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。该验收命令不进测试套件。
+- 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/wps/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT/WPS 主通道未配置、Image2PPT 剩余额度 <20、Image2PPT/WPS 登录态失效（401/403）、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
+- 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/test-generation.mjs` 当前 451 断言，全部 mock，禁止真实付费调用。
+- 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。WPS 另用真实登录态跑通 `convertPdfWithWpsAippt`：1 页 PDF → 10,591 bytes PPTX，`slides/slide1.xml` 含可编辑 `<a:t>` 文本节点且无整页媒体图片；该验收命令不进测试套件。

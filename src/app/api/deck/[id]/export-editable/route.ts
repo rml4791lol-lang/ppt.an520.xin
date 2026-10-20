@@ -6,7 +6,7 @@ import { startDeckEditableExport } from '@/modules/editable-export/server/editab
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** 可编辑 PPTX 导出（20🌟/页，Image2PPT 主通道 / Codia 备用）：建行扣费后后台转换，202 返回任务句柄 */
+/** 可编辑 PPTX 导出（20🌟/页，WPS 免费优先 / Image2PPT / Codia 备用）：建行扣费后后台转换，202 返回任务句柄 */
 export const POST = defineApiRoute(async (request, ctx) => {
   const { user } = requireUser(request);
   const id = await paramOf(ctx, 'id');

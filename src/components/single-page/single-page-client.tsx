@@ -72,7 +72,7 @@ export function SinglePageClient() {
   const [replicateOrigin, setReplicateOrigin] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState(false);
-  // ---------- 转可编辑 PPTX（Image2PPT 主通道 / Codia 备用，按页计费） ----------
+  // ---------- 转可编辑 PPTX（WPS 免费优先 / Image2PPT / Codia 备用，按页计费） ----------
   const [editableOpen, setEditableOpen] = useState(false);
   const [editableForce, setEditableForce] = useState(false);
   const [editableUnit, setEditableUnit] = useState(20);
@@ -472,7 +472,7 @@ export function SinglePageClient() {
     }
   };
 
-  // ---------- 转可编辑 PPTX（Image2PPT 主通道 / Codia 备用，按页计费，失败退星） ----------
+  // ---------- 转可编辑 PPTX（WPS 免费优先 / Image2PPT / Codia 备用，按页计费，失败退星） ----------
   const doneCount = pages.filter((p) => p.status === "done").length;
   const editableTotal = doneCount * editableUnit;
 
@@ -854,6 +854,10 @@ export function SinglePageClient() {
             {editableUnit}🌟/页 × {doneCount} 页 ={" "}
             <b className="text-brand">{editableTotal} 🌟</b>
           </div>
+          <p className="mt-2 text-xs leading-5 text-ink-3">
+            WPS 免费通道仅在服务端已授权配置时启用并优先，失败自动回退 Image2PPT / Codia。
+            WPS 通道受登录态与限时免费额度影响，实际以生成文件为准。
+          </p>
           <p className="mt-2 text-xs leading-5 text-ink-3">
             {editableForce
               ? "这会创建一份新的转换结果并再次扣星；原文件仍保留在下载中心。"

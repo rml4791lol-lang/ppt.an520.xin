@@ -24,6 +24,8 @@ export type AdminConfigKey =
   | 'ANPPT_V2_IMAGE2PPT_BASE_URL'
   | 'ANPPT_V2_IMAGE2PPT_API_KEY'
   | 'ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET'
+  | 'ANPPT_V2_WPS_AIPPT_COOKIE'
+  | 'ANPPT_V2_WPS_AIPPT_BASE_URL'
   | 'ANPPT_V2_IMAGE_TIMEOUT_MS'
   | 'ANPPT_V2_GENERATE_CONCURRENCY'
   | 'ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY'
@@ -77,7 +79,7 @@ const DEFINITIONS: readonly AdminConfigDefinition[] = [
   },
   {
     key: 'ANPPT_V2_EDITABLE_PROVIDER', group: 'editable', label: '可编辑转换主通道', input: 'text', secret: false,
-    defaultValue: 'codia', description: 'codia / image2ppt / auto；auto 优先 image2ppt，失败回退 Codia。',
+    defaultValue: 'codia', description: 'codia / image2ppt / auto / wps；wps 优先已授权的免费 WPS，失败回退 Image2PPT/Codia。',
   },
   {
     key: 'ANPPT_V2_CODIA_BASE_URL', group: 'editable', label: 'Codia API 地址', input: 'url', secret: false,
@@ -98,6 +100,14 @@ const DEFINITIONS: readonly AdminConfigDefinition[] = [
   {
     key: 'ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET', group: 'editable', label: 'Image2PPT Webhook 密钥', input: 'password', secret: true,
     defaultValue: '', description: 'Standard Webhooks whsec_ 密钥，用于校验完成回调。',
+  },
+  {
+    key: 'ANPPT_V2_WPS_AIPPT_BASE_URL', group: 'editable', label: 'WPS AIPPT API 地址', input: 'url', secret: false,
+    defaultValue: 'https://ippt.wps.cn', description: 'WPS 图片/PDF 转 PPT 内部接口根地址。',
+  },
+  {
+    key: 'ANPPT_V2_WPS_AIPPT_COOKIE', group: 'editable', label: 'WPS AIPPT Cookie', input: 'password', secret: true,
+    defaultValue: '', description: '仅填账号本人或已获授权的 WPS 登录态；检查时只读登录态，不发起转换。',
   },
   {
     key: 'ANPPT_V2_IMAGE_TIMEOUT_MS', group: 'capacity', label: '单次生图超时（毫秒）', input: 'number', secret: false,
@@ -235,6 +245,12 @@ export function normalizeAdminConfigValue(key: AdminConfigKey, rawValue: unknown
   const definition = definitionByKey.get(key);
   if (!definition) throw validationError('不支持的配置项');
   const value = trim(rawValue);
+  if (key === 'ANPPT_V2_WPS_AIPPT_COOKIE') {
+    if (!value || value.length > 4000 || /[\r\n\0]/.test(value) || !value.includes('=')) {
+      throw validationError('WPS AIPPT Cookie 格式不正确');
+    }
+    return value;
+  }
   if (definition.secret) {
     if (value.length < 6 || value.length > 4096 || /[\r\n\0]/.test(value)) {
       throw validationError(`${definition.label}格式不正确`);
@@ -266,8 +282,8 @@ export function normalizeAdminConfigValue(key: AdminConfigKey, rawValue: unknown
   }
   if (key === 'ANPPT_V2_EDITABLE_PROVIDER') {
     const provider = value.toLowerCase();
-    if (!['codia', 'image2ppt', 'auto'].includes(provider)) {
-      throw validationError('可编辑转换主通道只能是 codia、image2ppt 或 auto');
+    if (!['codia', 'image2ppt', 'auto', 'wps'].includes(provider)) {
+      throw validationError('可编辑转换主通道只能是 codia、image2ppt、auto 或 wps');
     }
     return provider;
   }

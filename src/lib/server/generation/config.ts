@@ -5,7 +5,7 @@ import path from 'node:path';
 import { getEffectiveGenerationEnv } from '../admin-config';
 
 export type LlmReasoningEffort = 'low' | 'high' | 'max' | 'off';
-export type EditableProvider = 'codia' | 'image2ppt' | 'auto';
+export type EditableProvider = 'codia' | 'image2ppt' | 'auto' | 'wps';
 
 const LLM_REASONING_EFFORTS: readonly LlmReasoningEffort[] = ['low', 'high', 'max', 'off'];
 
@@ -68,12 +68,16 @@ export interface GenerationConfig {
   /** Codia 开放 API（图片版 PPT 转可编辑 PPTX 上游） */
   codiaApiKey: string;
   codiaBaseUrl: string;
-  /** 可编辑转换主通道：codia / image2ppt / auto（auto 优先 image2ppt，失败回退 Codia） */
+  /** 可编辑转换主通道：codia / image2ppt / auto / wps（wps 优先 WPS，失败回退 Image2PPT/Codia） */
   editableProvider: EditableProvider;
   /** Image2PPT 开放 API（原生文字/形状/表格重建） */
   image2pptApiKey: string;
   image2pptBaseUrl: string;
   image2pptWebhookSecret: string;
+  /** WPS AIPPT 图片/PDF 转可编辑 PPTX：已登录 WPS 会话的 Cookie 请求头。 */
+  wpsAipptCookie: string;
+  wpsAipptBaseUrl: string;
+  wpsAipptTimeoutMs: number;
   /** 单页生成器单价（🌟/张）。env.ts 的 CREDIT_ACTION_PRICES 尚无 single 动作，
    *  这里自带默认值；deck 页价走 credits.estimateCredits('deck_page_generate')。 */
   singlePageCredits: number;
@@ -117,7 +121,7 @@ function llmReasoningEffortFrom(value: unknown): LlmReasoningEffort {
 
 function editableProviderFrom(value: unknown): EditableProvider {
   const provider = trim(value).toLowerCase();
-  return provider === 'image2ppt' || provider === 'auto' ? provider : 'codia';
+  return provider === 'image2ppt' || provider === 'auto' || provider === 'wps' ? provider : 'codia';
 }
 
 export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): GenerationConfig {
@@ -172,6 +176,9 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     image2pptApiKey: trim(effectiveEnv.ANPPT_V2_IMAGE2PPT_API_KEY),
     image2pptBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_IMAGE2PPT_BASE_URL) || 'https://image2ppt.com'),
     image2pptWebhookSecret: trim(effectiveEnv.ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET),
+    wpsAipptCookie: trim(effectiveEnv.ANPPT_V2_WPS_AIPPT_COOKIE),
+    wpsAipptBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_WPS_AIPPT_BASE_URL) || 'https://ippt.wps.cn'),
+    wpsAipptTimeoutMs: Math.min(600_000, intFrom(effectiveEnv.ANPPT_V2_WPS_AIPPT_TIMEOUT_MS, 300_000)),
     singlePageCredits: intFrom(effectiveEnv.ANPPT_V2_SINGLE_PAGE_CREDITS, 10),
     costLlmInputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_INPUT_FEN_PER_MTOK, 0),
     costLlmOutputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_OUTPUT_FEN_PER_MTOK, 0),

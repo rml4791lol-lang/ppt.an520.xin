@@ -176,7 +176,7 @@ export interface EditableExportStart {
   reused: boolean;
 }
 
-/** 可编辑 PPTX 导出（20🌟/页，Image2PPT 主通道 / Codia 备用）：202 返回任务句柄，结果轮询 getExportRecord */
+/** 可编辑 PPTX 导出（20🌟/页，WPS 免费优先 / Image2PPT / Codia 备用）：202 返回任务句柄，结果轮询 getExportRecord */
 export function startEditableExport(deckId: string, force = false): Promise<EditableExportStart> {
   return apiFetch<EditableExportStart>(`/api/deck/${encodeURIComponent(deckId)}/export-editable`, {
     body: { force },

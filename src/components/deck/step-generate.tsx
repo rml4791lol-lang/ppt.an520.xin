@@ -76,7 +76,7 @@ export function StepGenerate({
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  // ---------- 转可编辑 PPTX（Image2PPT 主通道 / Codia 备用，20🌟/页） ----------
+  // ---------- 转可编辑 PPTX（WPS 免费优先 / Image2PPT / Codia 备用，20🌟/页） ----------
   const [editableOpen, setEditableOpen] = useState(false);
   const [editableForce, setEditableForce] = useState(false);
   const [editableUnit, setEditableUnit] = useState(20);
@@ -533,6 +533,10 @@ export function StepGenerate({
             {editableUnit}🌟/页 × {slides.length} 页 ={" "}
             <b className="text-brand">{editableTotal} 🌟</b>
           </div>
+          <p className="mt-2 text-xs leading-5 text-ink-3">
+            WPS 免费通道仅在服务端已授权配置时启用并优先，失败自动回退 Image2PPT / Codia。
+            WPS 通道受登录态与限时免费额度影响，实际以生成文件为准。
+          </p>
           <p className="mt-2 text-xs leading-5 text-ink-3">
             {editableForce
               ? "这会创建一份新的转换结果并再次扣星；原文件仍保留在下载中心。"

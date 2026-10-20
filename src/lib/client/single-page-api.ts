@@ -69,7 +69,7 @@ export interface SingleEditableExportStart {
   reused: boolean;
 }
 
-/** 单页项目 → 可编辑 PPTX（20🌟/页，Image2PPT 主通道 / Codia 备用）：202 返回任务句柄，轮询 /api/pptx-exports/{id} */
+/** 单页项目 → 可编辑 PPTX（20🌟/页，WPS 免费优先 / Image2PPT / Codia 备用）：202 返回任务句柄，轮询 /api/pptx-exports/{id} */
 export function startSingleEditableExport(projectId: string, force = false): Promise<SingleEditableExportStart> {
   return apiFetch<SingleEditableExportStart>("/api/single-page/export-editable-pptx", {
     body: { projectId, force },

@@ -1,15 +1,17 @@
-// 可编辑导出模块服务端：Codia 重转换链（20🌟/页，任务制+懒恢复）+ 轻量文字可编辑档（VLM 覆盖层，5🌟/页）
+// 可编辑导出模块服务端：WPS / Image2PPT / Codia 多通道重转换链（20🌟/页，任务制+懒恢复）
+// + 轻量文字可编辑档（VLM 覆盖层，5🌟/页）
 // + 导出中心查询（listExports/getExport/quoteExport，含可编辑行的懒恢复触发）。
 // 图片版 PPTX 导出在平台件 src/lib/server/exports.ts。
 import { createRequire } from 'node:module';
 import { createWriteStream } from 'node:fs';
-import { rename, unlink } from 'node:fs/promises';
+import { rename, unlink, writeFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import { ApiError, validationError } from '@/lib/server/http';
 import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '@/lib/server/credits';
 import { createPdfToPptTask, getTask, uploadPdf, type CodiaTaskView } from './codia';
+import { convertPdfWithWpsAippt } from './wps-aippt';
 import {
   getJob as getImage2PptJob,
   image2PptAuthHeaders,
@@ -28,7 +30,7 @@ import { absPathForRelPath, readSiteFile, saveFile } from '@/lib/server/generati
 import { cleanString } from '@/lib/server/generation/types';
 import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
 import { logProblem } from '@/lib/server/problem-log';
-// ---------- 可编辑导出（Codia 链） ----------
+// ---------- 可编辑导出（WPS / Image2PPT / Codia 多通道） ----------
 
 /** Codia 单任务页数上限（官方限制 ≤20 页/任务） */
 const EDITABLE_MAX_PAGES = 20;
@@ -68,17 +70,20 @@ export interface StartedEditableExport {
 
 type ExportRow = Record<string, string | number | null>;
 type EditableRefType = 'deck' | 'single-page' | 'upload';
-type EditableProvider = 'codia' | 'image2ppt';
+type EditableProvider = 'wps' | 'image2ppt' | 'codia';
 
 /** 已配置的可编辑转换通道，按主通道优先级排序。 */
 export function configuredEditableProviders(config: GenerationConfig): EditableProvider[] {
   const available: EditableProvider[] = [];
+  if (config.wpsAipptCookie) available.push('wps');
   if (config.image2pptApiKey) available.push('image2ppt');
   if (config.codiaApiKey) available.push('codia');
-  if (config.editableProvider === 'codia') {
-    return available.sort((a, b) => (a === 'codia' ? -1 : b === 'codia' ? 1 : 0));
-  }
-  return available;
+  const order: EditableProvider[] = config.editableProvider === 'codia'
+    ? ['codia', 'image2ppt', 'wps']
+    : config.editableProvider === 'image2ppt'
+      ? ['image2ppt', 'wps', 'codia']
+      : ['wps', 'image2ppt', 'codia'];
+  return order.filter((provider) => available.includes(provider));
 }
 
 export function isEditableExportConfigured(config: GenerationConfig): boolean {
@@ -420,6 +425,49 @@ async function saveEditableResult(
   return run;
 }
 
+/** WPS 已在内存中返回 PPTX；与 URL 下载共用终态去重，避免恢复管线双写。 */
+async function saveEditableBytes(
+  exportId: string,
+  userId: string,
+  bytes: Buffer,
+  deps: EditableExportDeps,
+): Promise<void> {
+  const existing = editableFinalizations.get(exportId);
+  if (existing) return existing;
+  const run = (async () => {
+    const config = deps.config ?? getGenerationConfig();
+    const current = getGenDb()
+      .prepare('SELECT status, file_url FROM export_jobs WHERE id = ?')
+      .get(exportId) as ExportRow | undefined;
+    if (String(current?.status || '') === 'succeeded' && String(current?.file_url || '')) return;
+    updateExportRow(exportId, { status: 'processing', stage: 'downloading' });
+    const saved = await saveFile('exports', userId, Buffer.alloc(0), { ext: '.pptx', id: exportId }, config);
+    const partialPath = `${saved.absPath}.part-${process.pid}-${Date.now()}-wps`;
+    try {
+      await writeFile(partialPath, bytes, { flag: 'wx' });
+      await rename(partialPath, saved.absPath);
+    } catch (error) {
+      await Promise.allSettled([unlink(partialPath), unlink(saved.absPath)]);
+      throw error;
+    }
+    const row = getGenDb().prepare('SELECT page_count FROM export_jobs WHERE id = ?').get(exportId) as ExportRow | undefined;
+    updateExportRow(exportId, {
+      status: 'succeeded',
+      filePath: saved.relPath,
+      fileUrl: saved.url,
+      error: '',
+      progress: 100,
+      completedPages: Number(row?.page_count) || 0,
+      stage: 'completed',
+      completedAt: nowMs(),
+    });
+  })().finally(() => {
+    if (editableFinalizations.get(exportId) === run) editableFinalizations.delete(exportId);
+  });
+  editableFinalizations.set(exportId, run);
+  return run;
+}
+
 function image2PptStage(view: Image2PptJobView): string {
   if (view.status === 'completed') return 'downloading';
   if (view.status === 'failed') return 'failed';
@@ -534,6 +582,33 @@ async function runImage2PptProvider(
   });
 }
 
+/** WPS AIPPT 通道：PDF → 内部上传 + 转换 SSE → 直接落盘。 */
+async function runWpsProvider(
+  row: ExportRow,
+  pdf: Buffer,
+  pageCount: number,
+  deps: EditableExportDeps,
+): Promise<void> {
+  const exportId = String(row.id);
+  updateExportRow(exportId, { upstreamProvider: 'wps', stage: 'uploading' });
+  const converted = await convertPdfWithWpsAippt(pdf, `${exportId}.pdf`, {
+    ...deps,
+    onProgress: (progress) => {
+      updateExportRow(exportId, {
+        status: 'processing',
+        stage: 'converting',
+        progress,
+        completedPages: Math.min(pageCount, Math.round((progress / 100) * pageCount)),
+      });
+    },
+  });
+  await saveEditableBytes(exportId, String(row.user_id), converted.bytes, deps);
+  updateExportRow(exportId, {
+    upstreamProvider: 'wps',
+    upstreamTaskId: converted.docId ? `wps:${converted.docId}` : '',
+  });
+}
+
 /**
  * 可编辑导出管线（不含扣费；扣费只在 start 时发生一次）。
  * 读图 → image-only PDF → 按主通道转换；失败自动切备用通道。
@@ -555,7 +630,8 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
     for (let index = 0; index < providers.length; index += 1) {
       const provider = providers[index];
       try {
-        if (provider === 'image2ppt') await runImage2PptProvider(row, pdf, pageCount, runDeps);
+        if (provider === 'wps') await runWpsProvider(row, pdf, pageCount, runDeps);
+        else if (provider === 'image2ppt') await runImage2PptProvider(row, pdf, pageCount, runDeps);
         else await runCodiaProvider(row, pdf, pageCount, runDeps);
         return;
       } catch (error) {
@@ -890,7 +966,10 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
   if (taskId && kind === 'editable') {
     const provider = String(row.upstream_provider || 'codia');
     try {
-      if (provider === 'image2ppt') {
+      if (provider === 'wps') {
+        // WPS 内部接口没有可恢复的任务查询端点：已进入转换后进程中断，只能重跑整条管线。
+        ensureEditablePipeline(row, runDeps);
+      } else if (provider === 'image2ppt') {
         const view = await getImage2PptJob(taskId, runDeps);
         persistImage2PptProgress(exportId, view, Number(row.page_count) || 0);
         if (view.status === 'completed' && view.downloadUrl) {
@@ -1424,10 +1503,14 @@ export function quoteExport(userId: string, body: Record<string, unknown>) {
   } catch {
     // CREDIT_ACTION_PRICES 被覆盖且不含 export_editable 时用默认 20🌟/页
   }
-  const editableAvailable = pageCount > 0 && isEditableExportConfigured(getGenerationConfig());
+  const config = getGenerationConfig();
+  const providers = configuredEditableProviders(config);
+  const editableAvailable = pageCount > 0 && providers.length > 0;
   return {
     pageCount,
     refType,
+    provider: providers[0] || '',
+    providers,
     quotes: [
       { kind: 'image', credits: 0, available: pageCount > 0 },
       {

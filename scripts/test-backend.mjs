@@ -428,6 +428,9 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
     Promise.resolve(adminConfig.normalizeAdminConfigValue('ANPPT_V2_LLM_BASE_URL', 'https://u:p@example.com/v1?q=1')), 'VALIDATION_ERROR');
   check('本机 HTTP API 地址允许',
     adminConfig.normalizeAdminConfigValue('ANPPT_V2_LLM_BASE_URL', 'http://127.0.0.1:6800/v1') === 'http://127.0.0.1:6800/v1');
+  check('可编辑 provider 支持 wps 且 WPS Cookie 可保存',
+    adminConfig.normalizeAdminConfigValue('ANPPT_V2_EDITABLE_PROVIDER', 'wps') === 'wps'
+      && adminConfig.normalizeAdminConfigValue('ANPPT_V2_WPS_AIPPT_COOKIE', 'wps_sid=test; uid=1') === 'wps_sid=test; uid=1');
 
   const integrationCalls = [];
   const integrationFetch = async (url, init) => {
@@ -439,6 +442,9 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
     }
     if (String(url).endsWith('/api/v1/account')) {
       return Response.json({ email: 'i2p-test@example.com', credits: 123 });
+    }
+    if (String(url).endsWith('/api/v3/islogin')) {
+      return Response.json({ result: 'ok', userid: 123 });
     }
     return Response.json({ data: [{ id: 'runtime-main-model' }, { id: 'image-test-model' }] });
   };
@@ -457,15 +463,20 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
     ANPPT_V2_IMAGE2PPT_BASE_URL: 'https://image2ppt.com',
     ANPPT_V2_IMAGE2PPT_API_KEY: 'i2p-test-key',
   }, integrationFetch);
-  check('LLM/Image/Codia/Image2PPT 检查全部只发 GET 且不创建付费任务',
-    integrationCalls.length === 4
+  const wpsCheck = await adminIntegrations.checkAdminIntegration('editable', {
+    ANPPT_V2_EDITABLE_PROVIDER: 'wps',
+    ANPPT_V2_WPS_AIPPT_COOKIE: 'wps_sid=test; uid=1',
+  }, integrationFetch);
+  check('LLM/Image/Codia/Image2PPT/WPS 检查全部只发 GET 且不创建付费任务',
+    integrationCalls.length === 5
       && integrationCalls.every((call) => call.method === 'GET' && call.redirect === 'error')
       && !integrationCalls.some((call) => /\/tasks|\/uploads/.test(call.url)));
-  check('无付费连接检查返回模型、Codia 额度与 Image2PPT 额度',
-    llmCheck.ok && imageCheck.ok && codiaCheck.ok && image2pptCheck.ok
+  check('无付费连接检查返回模型、Codia/Image2PPT 额度与 WPS 登录态',
+    llmCheck.ok && imageCheck.ok && codiaCheck.ok && image2pptCheck.ok && wpsCheck.ok
       && codiaCheck.details.credits === 321
       && image2pptCheck.details.provider === 'image2ppt'
-      && image2pptCheck.details.credits === 123);
+      && image2pptCheck.details.credits === 123
+      && wpsCheck.details.provider === 'wps');
 
   const redemptionRoute = await import('../src/app/api/admin/redemption-codes/route.ts');
   const generatedResponse = await redemptionRoute.POST(adminRequest('http://localhost/api/admin/redemption-codes', {

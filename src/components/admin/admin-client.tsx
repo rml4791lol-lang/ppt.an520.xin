@@ -157,7 +157,7 @@ const GROUPS: Array<{
 }> = [
   { key: "llm", title: "大纲与内容模型", short: "LLM", description: "主模型、回退链与 OpenAI 兼容接口。", checkKind: "llm" },
   { key: "image", title: "图片生成", short: "生图", description: "生图上游、模型、尺寸与密钥。", checkKind: "image" },
-  { key: "editable", title: "可编辑转换", short: "Image2PPT", description: "按主通道检查额度接口，不会创建付费转换任务。", checkKind: "editable" },
+  { key: "editable", title: "可编辑转换", short: "WPS/Image2PPT", description: "按当前首选通道检查只读接口，不会创建转换任务。", checkKind: "editable" },
   { key: "capacity", title: "并发与恢复", short: "并发", description: "修改仅作用于后续新请求，在途任务继续使用原配置。" },
 ];
 

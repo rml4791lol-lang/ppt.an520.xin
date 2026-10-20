@@ -9,7 +9,7 @@ Next.js 16 全栈单体（App Router + Route Handlers + node:sqlite），无外�
 - 计费：逐页生成 10🌟/页，**失败自动退还**；大纲 / 内容梳理 / 解析 / 图片版导出免费
 - 套餐：¥9.9/100🌟、¥39.9/500🌟（推荐）、¥79.9/1000🌟、¥149.9/2000🌟；支持兑换码
 - 支付：微信 Native 扫码 + 支付宝（epay 收银台），回调验签 + 金额校验 + 幂等履约
-- 可编辑导出双档：Codia 重转换 20🌟/页（全量开放）；轻量文字可编辑档 5🌟/页（VLM 文字覆盖层，beta 开关，仅测试用户）
+- 可编辑导出双档：WPS 免费通道优先、Image2PPT / Codia 自动回退，20🌟/页（全量开放）；轻量文字可编辑档 5🌟/页（VLM 文字覆盖层，beta 开关，仅测试用户）
 - 新功能走功能开关板：off/beta/public 三态，测试用户先行验收，见 `docs/DEVELOPMENT.md` §4
 
 ## 目录
@@ -28,8 +28,8 @@ src/
                           generation/(deck 状态机/DSL/生图/单页运行时/项目) problem-log(问题日志落盘/读取)
 scripts/
   tests/                  模块测试（由两套主套件注入 ctx 调用）
-  test-backend.mjs        B 层：134 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限/问题日志）
-  test-generation.mjs     C 层：440 项（解析/DSL/引擎+兜底/状态机/扣费退还/导出/Image2PPT+Codia 双通道/轻量文字档/生图回退/图片级编辑工具/复刻PPT/幂等重放/LLM频控/插件运行时）
+  test-backend.mjs        B 层：135 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限/问题日志）
+  test-generation.mjs     C 层：451 项（解析/DSL/引擎+兜底/状态机/扣费退还/导出/WPS+Image2PPT+Codia 多通道/轻量文字档/生图回退/图片级编辑工具/复刻PPT/幂等重放/LLM频控/插件运行时）
   ts-hooks.mjs            node 直跑 TS 的 resolve 钩子（含 @/ 别名）
 docs/                     DEBUG-HANDBOOK（系统全貌）/ DEVELOPMENT（架构与流程）
 deploy/                   systemd 单元 / 部署脚本 / Caddy 切换块 / Runbook

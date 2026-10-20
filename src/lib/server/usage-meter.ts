@@ -1,4 +1,4 @@
-// 上游消耗本地计量：每一次真实上游调用（LLM/生图/Codia）落一条记录到
+// 上游消耗本地计量：每一次真实上游调用（LLM/生图/可编辑转换）落一条记录到
 // upstream_usage_records，财务统计据此汇总“本项目实际消耗”，不依赖上游余额接口。
 // 记账绝不允许影响主流程：整个写入路径全部 try/catch 吞掉。
 // cost_fen 仅在对应单价 env（ANPPT_V2_COST_*，见 generation/config.ts）配置后估算，
@@ -6,7 +6,7 @@
 import { getDb } from './db';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
 
-export type UsageProvider = 'llm-primary' | 'llm-backup' | 'image' | 'image-backup' | 'codia' | 'image2ppt';
+export type UsageProvider = 'llm-primary' | 'llm-backup' | 'image' | 'image-backup' | 'codia' | 'image2ppt' | 'wps';
 
 export interface UsageRecordInput {
   provider: UsageProvider;

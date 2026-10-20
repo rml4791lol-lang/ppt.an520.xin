@@ -46,6 +46,28 @@ def check_image2ppt_credits():
     return None
 
 
+def check_wps_login():
+    cookie = read_env('ANPPT_V2_WPS_AIPPT_COOKIE')
+    if not cookie:
+        return 'WPS AIPPT Cookie 未配置'
+    try:
+        req = urllib.request.Request(
+            'https://account.wps.cn/api/v3/islogin',
+            headers={'Cookie': cookie, 'Accept': 'application/json', 'User-Agent': 'anppt-health-monitor'},
+        )
+        with urllib.request.urlopen(req, timeout=10, context=ssl.create_default_context()) as resp:
+            data = json.loads(resp.read())
+        if data.get('result') != 'ok' or data.get('userid') is None:
+            return 'WPS AIPPT 登录态已失效，请更新 Cookie'
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403):
+            return 'WPS AIPPT 登录态鉴权失败，请更新 Cookie'
+        return 'WPS AIPPT 登录态检查失败: HTTP %s' % error.code
+    except Exception as error:
+        return 'WPS AIPPT 登录态检查失败: ' + str(error)[:60]
+    return None
+
+
 def checks():
     problems = []
     # 1. systemd：只盯现行站。slideflow-studio 已 disable、Caddy 不再代理 3300，
@@ -72,6 +94,8 @@ def checks():
             providers = editable.get('providers') or []
             if editable.get('provider') == 'image2ppt' and 'image2ppt' not in providers:
                 problems.append('Image2PPT 主通道未配置')
+            if editable.get('provider') == 'wps' and 'wps' not in providers:
+                problems.append('WPS AIPPT 主通道未配置')
             queue = editable.get('queue') or {}
             if int(queue.get('oldestActiveAgeMs') or 0) > 45 * 60 * 1000:
                 problems.append('可编辑导出在途超过 45 分钟')
@@ -81,6 +105,10 @@ def checks():
                 credit_problem = check_image2ppt_credits()
                 if credit_problem:
                     problems.append(credit_problem)
+            if 'wps' in providers:
+                wps_problem = check_wps_login()
+                if wps_problem:
+                    problems.append(wps_problem)
     except Exception as e:
         problems.append('health 请求失败: ' + str(e)[:80])
     # 3. 磁盘

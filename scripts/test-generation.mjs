@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 生成链（阶段 C）lib 层全链路测试。node 直跑：
 //   node scripts/test-generation.mjs
-// 引擎 / LLM / 生图上游全部用 mock fetcher，绝不真实调用付费上游。
+// 引擎 / LLM / 生图 / WPS / Image2PPT / Codia 上游全部用 mock fetcher，绝不真实调用付费上游。
 import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,6 +9,7 @@ import { registerTsHooks } from './ts-hooks.mjs';
 import { runPptReplicateTests } from './tests/ppt-replicate.test.mjs';
 import { runEditableExportTests } from './tests/editable-export.test.mjs';
 import { runImage2PptTests } from './tests/image2ppt.test.mjs';
+import { runWpsAipptTests } from './tests/wps-aippt.test.mjs';
 import { runPluginRuntimeTests } from './tests/plugin-runtime.test.mjs';
 import { runPptToBaseTests, runPptToBaseServerTests } from './tests/ppt-to-base.test.mjs';
 
@@ -1080,6 +1081,7 @@ console.log('\n[6] 导出：图片版 pptx 真产出 + editable 501 + 导出中�
 
 await runEditableExportTests({ check, expectThrows, auth, credits, uid, llmConfig, baseConfig, decks, singlePages, makeMockFetcher, editsOkHandler, PNG_1X1_B64, deck, actions, STYLE_PACKS, engineConfig, engineHandlers, imageConfig, jsonResponse });
 await runImage2PptTests({ check, baseConfig, credits, uid, deck, makeMockFetcher, jsonResponse });
+await runWpsAipptTests({ check, baseConfig, credits, uid, deck, jsonResponse });
 
 console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
 {

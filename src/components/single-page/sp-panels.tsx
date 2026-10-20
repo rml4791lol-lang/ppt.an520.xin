@@ -3,7 +3,7 @@
 // 单页生成器右侧面板与画布下方组件（SINGLEPAGE-UI-SPEC §6/§7）。
 // - StylePanel：风格包选择 + 生成版本数 + 生成主按钮
 // - RefineBar / VersionBar：result 画布下方
-// - ExportPanel：导出选项（图片版 PPTX 免费；可编辑版按页计费（Image2PPT 主通道 / Codia 备用））
+// - ExportPanel：导出选项（图片版 PPTX 免费；可编辑版按页计费（WPS 免费优先 / Image2PPT / Codia 备用））
 import Image from "next/image";
 import { useState } from "react";
 import { CheckIcon, SparklesIcon, WandIcon } from "@/components/icons";

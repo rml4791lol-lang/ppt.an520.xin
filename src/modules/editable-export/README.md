@@ -2,9 +2,12 @@
 
 图片版 PPT 转可编辑 PPTX 的独立功能模块。机制与二阶语义见 `docs/DEBUG-HANDBOOK.md` §6/§16。
 
+默认优先级：WPS AIPPT（免费通道，配置 Cookie 后）→ Image2PPT → Codia；任一路成功即停，全部失败才退星。
+
 ## 边界
 
-- `server/editable.ts`：唯一服务端出口——Image2PPT 主通道 + Codia 备用（`startDeckEditableExport` / `startSinglePageEditableExport` / `startUploadedEditableExport`，20🌟/页，任务制+懒恢复+主备切换）、轻量文字档（`startDeckTextEditableExport`，VLM 覆盖层 5🌟/页，开关 `editable_text_overlay`）、导出中心查询（`listExports` / `getExport` / `quoteExport`，含进行中可编辑行的懒恢复触发）、Image2PPT webhook 验签与状态推进。
+- `server/editable.ts`：唯一服务端出口——WPS / Image2PPT / Codia 多通道（`startDeckEditableExport` / `startSinglePageEditableExport` / `startUploadedEditableExport`，20🌟/页，任务制+懒恢复+主备切换）、轻量文字档（`startDeckTextEditableExport`，VLM 覆盖层 5🌟/页，开关 `editable_text_overlay`）、导出中心查询（`listExports` / `getExport` / `quoteExport`，含进行中可编辑行的懒恢复触发）、Image2PPT webhook 验签与状态推进。
+- `server/wps-aippt.ts`：WPS 网页版内部 PDF/图片转 PPT 客户端（KS3 上传 + SSE 转换 + PPTX 下载）；依赖服务端 WPS 登录 Cookie，失败由管线自动回退。
 - `server/image2ppt.ts`：Image2PPT 开放 API 客户端（multipart jobs、状态轮询、Bearer 下载、Standard Webhooks 验签，依赖注入 fetcher，含上游计量）。
 - `server/codia.ts`：Codia 开放 API 客户端（uploads/tasks，依赖注入 fetcher，含上游计量）。
 - `client/`：`use-editable-export.ts`（导出编排 hook）、`editable-converter-client.tsx`（/tools/editable-converter 工具页）。
@@ -16,4 +19,4 @@
 
 ## 测试
 
-`scripts/tests/editable-export.test.mjs`（套件内段名 [6b]-[6e]）与 `scripts/tests/image2ppt.test.mjs`（[6f]），由 test-generation.mjs 注入 ctx；开关可见性矩阵在 test-backend.mjs [11]。**禁止真实调用 Codia/Image2PPT/VLM/生图。**
+`scripts/tests/editable-export.test.mjs`（[6b]-[6e]）、`scripts/tests/image2ppt.test.mjs`（[6f]）、`scripts/tests/wps-aippt.test.mjs`（[6g]），由 test-generation.mjs 注入 ctx；开关可见性矩阵在 test-backend.mjs [11]。**禁止真实调用 WPS/Image2PPT/Codia/VLM/生图。**

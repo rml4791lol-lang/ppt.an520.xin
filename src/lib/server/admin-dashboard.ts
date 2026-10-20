@@ -289,7 +289,7 @@ export function getAdminOverview(compact = false): AdminOverview {
   overview.integrations = {
     llm: Boolean(generation.llmBaseUrl && generation.llmApiKey && generation.llmModel),
     image: Boolean(generation.imageBaseUrl && generation.imageApiKey && generation.imageModel),
-    editable: Boolean(generation.codiaBaseUrl && generation.codiaApiKey),
+    editable: Boolean(generation.image2pptApiKey || generation.wpsAipptCookie || (generation.codiaBaseUrl && generation.codiaApiKey)),
     smtp: env.smtpReady,
     sms: env.smsReady,
     payment: wechatReady || epayReady,

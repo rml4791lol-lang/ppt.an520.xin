@@ -60,7 +60,7 @@ git diff --check
 ```
 
 - 改业务逻辑必须同步加/改断言；两套测试全绿才允许提交，断言数变化同步更新 README 与手册 §8。
-- Codia、生图、VLM **禁止真实调用进测试**（全部 mock）；真机验证走 dev 环境小额度实测。
+- WPS、Image2PPT、Codia、生图、VLM **禁止真实调用进测试**（全部 mock）；真机验证走 dev 环境小额度实测。
 - commit 用英文祈使句；不执行 git commit/push/reset/rebase，除非用户明确要求。
 - 部署前查双队列（生成+导出在途为 0），流程见 `deploy/README.md` 与手册 §2。
 

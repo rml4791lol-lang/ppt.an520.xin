@@ -337,6 +337,11 @@ export function EditableConverterClient() {
         </div>
       </section>
 
+      <p className="mt-4 text-xs leading-5 text-ink-3">
+        WPS 免费通道仅在服务端已授权配置时启用并优先，失败自动回退 Image2PPT / Codia。
+        WPS 通道受登录态与限时免费额度影响，实际以生成文件为准。
+      </p>
+
       <section className="mt-8 grid gap-4 sm:grid-cols-3">
         {[
           [CheckIcon, "元素级可编辑", "尽可能重建文字、形状、图片与页面层级。"],

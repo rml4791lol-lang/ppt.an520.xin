@@ -1,5 +1,5 @@
 // 图片版 PPTX 导出（pptxgenjs，16:9 逐页整图嵌入）+ 导出中心记录。
-// 免费；可编辑导出（Codia 链/轻量文字档）与导出中心查询在 src/modules/editable-export/。
+// 免费；可编辑导出（WPS/Image2PPT/Codia 多通道/轻量文字档）与导出中心查询在 src/modules/editable-export/。
 import { createRequire } from 'node:module';
 import { ApiError } from './http';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
