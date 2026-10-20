@@ -30,7 +30,7 @@ def checks():
         r = subprocess.run(['systemctl', 'is-active', svc], capture_output=True, text=True)
         if r.stdout.strip() != 'active':
             problems.append(svc + ' 未运行')
-    # 2. API 健康契约：ok + llm/image/editable.configured
+    # 2. API 健康契约：ok + llm/image/editable.configured + 可编辑队列
     try:
         ctx = ssl.create_default_context()
         req = urllib.request.Request(HEALTH_URL, headers={'User-Agent': 'anppt-monitor'})
@@ -44,6 +44,15 @@ def checks():
                 problems.append('生图未配置')
             if not d.get('editable', {}).get('configured'):
                 problems.append('可编辑导出未配置')
+            editable = d.get('editable', {})
+            providers = editable.get('providers') or []
+            if editable.get('provider') == 'image2ppt' and 'image2ppt' not in providers:
+                problems.append('Image2PPT 主通道未配置')
+            queue = editable.get('queue') or {}
+            if int(queue.get('oldestActiveAgeMs') or 0) > 45 * 60 * 1000:
+                problems.append('可编辑导出在途超过 45 分钟')
+            if int(queue.get('failedLastHour') or 0) >= 3 and int(queue.get('succeededLastHour') or 0) == 0:
+                problems.append('可编辑导出一小时内连续失败且无成功')
     except Exception as e:
         problems.append('health 请求失败: ' + str(e)[:80])
     # 3. 磁盘

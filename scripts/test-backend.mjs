@@ -437,6 +437,9 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
     if (String(url).endsWith('/v2/open/credits')) {
       return Response.json({ code: 0, data: { credits: 321 } });
     }
+    if (String(url).endsWith('/api/v1/account')) {
+      return Response.json({ email: 'i2p-test@example.com', credits: 123 });
+    }
     return Response.json({ data: [{ id: 'runtime-main-model' }, { id: 'image-test-model' }] });
   };
   const llmCheck = await adminIntegrations.checkAdminIntegration('llm', undefined, integrationFetch);
@@ -449,12 +452,20 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
     ANPPT_V2_CODIA_BASE_URL: 'https://openapi.codia.ai',
     ANPPT_V2_CODIA_API_KEY: 'codia-test-key',
   }, integrationFetch);
-  check('LLM/Image/Codia 检查全部只发 GET 且不创建付费任务',
-    integrationCalls.length === 3
+  const image2pptCheck = await adminIntegrations.checkAdminIntegration('editable', {
+    ANPPT_V2_EDITABLE_PROVIDER: 'image2ppt',
+    ANPPT_V2_IMAGE2PPT_BASE_URL: 'https://image2ppt.com',
+    ANPPT_V2_IMAGE2PPT_API_KEY: 'i2p-test-key',
+  }, integrationFetch);
+  check('LLM/Image/Codia/Image2PPT 检查全部只发 GET 且不创建付费任务',
+    integrationCalls.length === 4
       && integrationCalls.every((call) => call.method === 'GET' && call.redirect === 'error')
       && !integrationCalls.some((call) => /\/tasks|\/uploads/.test(call.url)));
-  check('无付费连接检查返回模型与 Codia 额度',
-    llmCheck.ok && imageCheck.ok && codiaCheck.ok && codiaCheck.details.credits === 321);
+  check('无付费连接检查返回模型、Codia 额度与 Image2PPT 额度',
+    llmCheck.ok && imageCheck.ok && codiaCheck.ok && image2pptCheck.ok
+      && codiaCheck.details.credits === 321
+      && image2pptCheck.details.provider === 'image2ppt'
+      && image2pptCheck.details.credits === 123);
 
   const redemptionRoute = await import('../src/app/api/admin/redemption-codes/route.ts');
   const generatedResponse = await redemptionRoute.POST(adminRequest('http://localhost/api/admin/redemption-codes', {

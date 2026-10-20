@@ -6,7 +6,7 @@
 import { getDb } from './db';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
 
-export type UsageProvider = 'llm-primary' | 'llm-backup' | 'image' | 'image-backup' | 'codia';
+export type UsageProvider = 'llm-primary' | 'llm-backup' | 'image' | 'image-backup' | 'codia' | 'image2ppt';
 
 export interface UsageRecordInput {
   provider: UsageProvider;
@@ -39,6 +39,10 @@ function estimateCostFen(input: UsageRecordInput, config: GenerationConfig): num
   if (input.provider === 'codia') {
     if (config.costCodiaFenPerCall <= 0) return null;
     return config.costCodiaFenPerCall * Math.max(1, input.units ?? 1);
+  }
+  if (input.provider === 'image2ppt') {
+    if (config.costImage2PptFenPerPage <= 0) return null;
+    return config.costImage2PptFenPerPage * Math.max(1, input.units ?? 1);
   }
   return null;
 }

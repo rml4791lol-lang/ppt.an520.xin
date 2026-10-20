@@ -18,8 +18,12 @@ export type AdminConfigKey =
   | 'ANPPT_V2_IMAGE_API_KEY'
   | 'ANPPT_V2_IMAGE_MODEL'
   | 'ANPPT_V2_IMAGE_SIZE'
+  | 'ANPPT_V2_EDITABLE_PROVIDER'
   | 'ANPPT_V2_CODIA_BASE_URL'
   | 'ANPPT_V2_CODIA_API_KEY'
+  | 'ANPPT_V2_IMAGE2PPT_BASE_URL'
+  | 'ANPPT_V2_IMAGE2PPT_API_KEY'
+  | 'ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET'
   | 'ANPPT_V2_IMAGE_TIMEOUT_MS'
   | 'ANPPT_V2_GENERATE_CONCURRENCY'
   | 'ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY'
@@ -72,12 +76,28 @@ const DEFINITIONS: readonly AdminConfigDefinition[] = [
     defaultValue: '1536x864', description: '宽×高，例如 1536x864。',
   },
   {
+    key: 'ANPPT_V2_EDITABLE_PROVIDER', group: 'editable', label: '可编辑转换主通道', input: 'text', secret: false,
+    defaultValue: 'codia', description: 'codia / image2ppt / auto；auto 优先 image2ppt，失败回退 Codia。',
+  },
+  {
     key: 'ANPPT_V2_CODIA_BASE_URL', group: 'editable', label: 'Codia API 地址', input: 'url', secret: false,
     defaultValue: 'https://openapi.codia.ai', description: '可编辑转换服务地址。',
   },
   {
     key: 'ANPPT_V2_CODIA_API_KEY', group: 'editable', label: 'Codia API 密钥', input: 'password', secret: true,
     defaultValue: '', description: '检查时调用官方积分查询接口，不创建转换任务。',
+  },
+  {
+    key: 'ANPPT_V2_IMAGE2PPT_BASE_URL', group: 'editable', label: 'Image2PPT API 地址', input: 'url', secret: false,
+    defaultValue: 'https://image2ppt.com', description: 'Image2PPT 开放 API 根地址。',
+  },
+  {
+    key: 'ANPPT_V2_IMAGE2PPT_API_KEY', group: 'editable', label: 'Image2PPT API 密钥', input: 'password', secret: true,
+    defaultValue: '', description: '检查时只读账户额度，不创建转换任务。',
+  },
+  {
+    key: 'ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET', group: 'editable', label: 'Image2PPT Webhook 密钥', input: 'password', secret: true,
+    defaultValue: '', description: 'Standard Webhooks whsec_ 密钥，用于校验完成回调。',
   },
   {
     key: 'ANPPT_V2_IMAGE_TIMEOUT_MS', group: 'capacity', label: '单次生图超时（毫秒）', input: 'number', secret: false,
@@ -243,6 +263,13 @@ export function normalizeAdminConfigValue(key: AdminConfigKey, rawValue: unknown
       throw validationError('图片尺寸应为 512–4096 范围内的“宽x高”');
     }
     return value;
+  }
+  if (key === 'ANPPT_V2_EDITABLE_PROVIDER') {
+    const provider = value.toLowerCase();
+    if (!['codia', 'image2ppt', 'auto'].includes(provider)) {
+      throw validationError('可编辑转换主通道只能是 codia、image2ppt 或 auto');
+    }
+    return provider;
   }
   if (key === 'ANPPT_V2_LLM_MODEL' || key === 'ANPPT_V2_IMAGE_MODEL') return normalizeModel(value);
   if (!value || value.length > 500 || /[\r\n\0]/.test(value)) throw validationError(`${definition.label}格式不正确`);

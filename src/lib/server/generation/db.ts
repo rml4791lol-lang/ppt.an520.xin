@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS export_jobs (
   file_url TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
   upstream_task_id TEXT NOT NULL DEFAULT '',
+  upstream_provider TEXT NOT NULL DEFAULT '',
   charged_credits INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL DEFAULT 0,
@@ -186,6 +187,7 @@ export function getGenDb(): DatabaseSync {
     const colNames = new Set(exportCols.map((c) => c.name));
     if (!colNames.has('error')) db.exec("ALTER TABLE export_jobs ADD COLUMN error TEXT NOT NULL DEFAULT ''");
     if (!colNames.has('upstream_task_id')) db.exec("ALTER TABLE export_jobs ADD COLUMN upstream_task_id TEXT NOT NULL DEFAULT ''");
+    if (!colNames.has('upstream_provider')) db.exec("ALTER TABLE export_jobs ADD COLUMN upstream_provider TEXT NOT NULL DEFAULT ''");
     if (!colNames.has('charged_credits')) db.exec('ALTER TABLE export_jobs ADD COLUMN charged_credits INTEGER NOT NULL DEFAULT 0');
     if (!colNames.has('updated_at')) db.exec('ALTER TABLE export_jobs ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
     if (!colNames.has('source_fingerprint')) db.exec("ALTER TABLE export_jobs ADD COLUMN source_fingerprint TEXT NOT NULL DEFAULT ''");

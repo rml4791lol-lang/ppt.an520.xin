@@ -10,6 +10,14 @@ import { createHash } from 'node:crypto';
 import { ApiError, validationError } from '@/lib/server/http';
 import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '@/lib/server/credits';
 import { createPdfToPptTask, getTask, uploadPdf, type CodiaTaskView } from './codia';
+import {
+  getJob as getImage2PptJob,
+  image2PptAuthHeaders,
+  image2PptCallbackUrl,
+  submitJob as submitImage2PptJob,
+  verifyImage2PptWebhook,
+  type Image2PptJobView,
+} from './image2ppt';
 import { withTransaction } from '@/lib/server/db';
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
@@ -60,6 +68,22 @@ export interface StartedEditableExport {
 
 type ExportRow = Record<string, string | number | null>;
 type EditableRefType = 'deck' | 'single-page' | 'upload';
+type EditableProvider = 'codia' | 'image2ppt';
+
+/** 已配置的可编辑转换通道，按主通道优先级排序。 */
+export function configuredEditableProviders(config: GenerationConfig): EditableProvider[] {
+  const available: EditableProvider[] = [];
+  if (config.image2pptApiKey) available.push('image2ppt');
+  if (config.codiaApiKey) available.push('codia');
+  if (config.editableProvider === 'codia') {
+    return available.sort((a, b) => (a === 'codia' ? -1 : b === 'codia' ? 1 : 0));
+  }
+  return available;
+}
+
+export function isEditableExportConfigured(config: GenerationConfig): boolean {
+  return configuredEditableProviders(config).length > 0;
+}
 
 export interface UploadedEditableFile {
   name: string;
@@ -76,9 +100,12 @@ interface EditableSourceMeta {
 
 const exportGlobal = globalThis as typeof globalThis & {
   __anpptEditablePipelines?: Map<string, Promise<void>>;
+  __anpptEditableFinalizations?: Map<string, Promise<void>>;
 };
 const editablePipelines = exportGlobal.__anpptEditablePipelines ?? new Map<string, Promise<void>>();
 exportGlobal.__anpptEditablePipelines = editablePipelines;
+const editableFinalizations = exportGlobal.__anpptEditableFinalizations ?? new Map<string, Promise<void>>();
+exportGlobal.__anpptEditableFinalizations = editableFinalizations;
 
 function fingerprintSource(refType: 'deck' | 'single-page', versionIds: string[]): string {
   return createHash('sha256').update(`${refType}\n${versionIds.join('\n')}`).digest('hex');
@@ -129,6 +156,7 @@ function updateExportRow(
     filePath?: string;
     fileUrl?: string;
     upstreamTaskId?: string;
+    upstreamProvider?: string;
     progress?: number;
     completedPages?: number;
     stage?: string;
@@ -157,6 +185,10 @@ function updateExportRow(
   if (patch.upstreamTaskId !== undefined) {
     sets.push('upstream_task_id = ?');
     values.push(patch.upstreamTaskId);
+  }
+  if (patch.upstreamProvider !== undefined) {
+    sets.push('upstream_provider = ?');
+    values.push(patch.upstreamProvider);
   }
   if (patch.progress !== undefined) {
     sets.push('progress = MAX(progress, ?)');
@@ -300,7 +332,7 @@ function codiaStage(view: CodiaTaskView): string {
 function persistCodiaProgress(exportId: string, view: CodiaTaskView, fallbackTotal: number): void {
   const total = view.totalPages || view.pageCount || fallbackTotal;
   updateExportRow(exportId, {
-    status: view.status === 'pending' ? 'processing' : view.status,
+    status: view.status === 'failed' || view.status === 'canceled' ? view.status : 'processing',
     progress: view.status === 'succeeded' ? 100 : view.progress,
     completedPages: view.status === 'succeeded' ? total : view.completedPages,
     stage: codiaStage(view),
@@ -327,50 +359,185 @@ async function pollCodiaTask(
   }
 }
 
-/** 下载 PPTX 落盘并置行 succeeded */
+/** 下载 PPTX 落盘并置行 succeeded。webhook 与轮询可能同时到达，按 exportId 去重。 */
 async function saveEditableResult(
   exportId: string,
   userId: string,
   pptUrl: string,
   deps: EditableExportDeps,
+  opts: { headers?: Record<string, string>; provider?: EditableProvider } = {},
 ): Promise<void> {
-  const config = deps.config ?? getGenerationConfig();
-  const fetchImpl = deps.fetchImpl ?? fetch;
-  updateExportRow(exportId, { status: 'processing', stage: 'downloading' });
-  const response = await fetchImpl(pptUrl);
-  if (!response.ok) throw new ApiError('CODIA_UPSTREAM_ERROR', `HTTP ${response.status}: PPTX 下载失败`, 502, true);
-  if (!response.body) throw new ApiError('CODIA_UPSTREAM_ERROR', 'PPTX 下载响应为空', 502, true);
-  const saved = await saveFile('exports', userId, Buffer.alloc(0), { ext: '.pptx', id: exportId }, config);
-  const partialPath = `${saved.absPath}.part-${process.pid}-${Date.now()}`;
-  try {
-    await pipeline(
-      Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
-      createWriteStream(partialPath, { flags: 'wx' }),
-    );
-    await rename(partialPath, saved.absPath);
-  } catch (error) {
-    await Promise.allSettled([unlink(partialPath), unlink(saved.absPath)]);
-    throw error;
-  }
-  const row = getGenDb().prepare('SELECT page_count FROM export_jobs WHERE id = ?').get(exportId) as ExportRow | undefined;
-  const pageCount = Number(row?.page_count) || 0;
+  const existing = editableFinalizations.get(exportId);
+  if (existing) return existing;
+  const run = (async () => {
+    const config = deps.config ?? getGenerationConfig();
+    const fetchImpl = deps.fetchImpl ?? fetch;
+    const current = getGenDb()
+      .prepare('SELECT status, file_url FROM export_jobs WHERE id = ?')
+      .get(exportId) as ExportRow | undefined;
+    if (String(current?.status || '') === 'succeeded' && String(current?.file_url || '')) return;
+    updateExportRow(exportId, { status: 'processing', stage: 'downloading' });
+    const response = await fetchImpl(pptUrl, {
+      headers: opts.headers,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      throw new ApiError('EDITABLE_UPSTREAM_ERROR', `HTTP ${response.status}: PPTX 下载失败`, 502, true);
+    }
+    if (!response.body) throw new ApiError('EDITABLE_UPSTREAM_ERROR', 'PPTX 下载响应为空', 502, true);
+    const contentType = response.headers.get('content-type') || '';
+    if (/text\/html/i.test(contentType)) {
+      throw new ApiError('EDITABLE_UPSTREAM_ERROR', 'PPTX 下载返回了错误页面', 502, true);
+    }
+    const saved = await saveFile('exports', userId, Buffer.alloc(0), { ext: '.pptx', id: exportId }, config);
+    const partialPath = `${saved.absPath}.part-${process.pid}-${Date.now()}-${opts.provider || 'editable'}`;
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
+        createWriteStream(partialPath, { flags: 'wx' }),
+      );
+      await rename(partialPath, saved.absPath);
+    } catch (error) {
+      await Promise.allSettled([unlink(partialPath), unlink(saved.absPath)]);
+      throw error;
+    }
+    const row = getGenDb().prepare('SELECT page_count FROM export_jobs WHERE id = ?').get(exportId) as ExportRow | undefined;
+    const pageCount = Number(row?.page_count) || 0;
+    updateExportRow(exportId, {
+      status: 'succeeded',
+      filePath: saved.relPath,
+      fileUrl: saved.url,
+      error: '',
+      progress: 100,
+      completedPages: pageCount,
+      stage: 'completed',
+      completedAt: nowMs(),
+    });
+  })().finally(() => {
+    if (editableFinalizations.get(exportId) === run) editableFinalizations.delete(exportId);
+  });
+  editableFinalizations.set(exportId, run);
+  return run;
+}
+
+function image2PptStage(view: Image2PptJobView): string {
+  if (view.status === 'completed') return 'downloading';
+  if (view.status === 'failed') return 'failed';
+  return view.progress > 0 ? 'converting' : 'waiting';
+}
+
+function persistImage2PptProgress(exportId: string, view: Image2PptJobView, fallbackTotal: number): void {
+  const total = view.slideCount || fallbackTotal;
+  const completed = view.status === 'completed'
+    ? total
+    : Math.min(total, Math.round((view.progress / 100) * total));
   updateExportRow(exportId, {
-    status: 'succeeded',
-    filePath: saved.relPath,
-    fileUrl: saved.url,
-    error: '',
-    progress: 100,
-    completedPages: pageCount,
-    stage: 'completed',
-    completedAt: nowMs(),
+    status: 'processing',
+    progress: view.status === 'completed' ? 100 : view.progress,
+    completedPages: completed,
+    stage: image2PptStage(view),
+  });
+}
+
+/** 轮询 Image2PPT 任务直到终态；429/5xx/网络抖动继续等，不设硬超时（懒恢复兜底）。 */
+async function pollImage2PptJob(
+  exportId: string,
+  jobId: string,
+  pageCount: number,
+  deps: EditableExportDeps,
+): Promise<Image2PptJobView> {
+  const interval = Math.max(1, deps.pollIntervalMs ?? POLL_INTERVAL_MS);
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, interval));
+    try {
+      const view = await getImage2PptJob(jobId, deps);
+      persistImage2PptProgress(exportId, view, pageCount);
+      if (view.status === 'completed' || view.status === 'failed') return view;
+    } catch (error) {
+      if (error instanceof ApiError && !error.retryable) throw error;
+    }
+  }
+}
+
+/** Codia 通道：上传 PDF → 建 pdf_to_ppt → 轮询 → 下载。 */
+async function runCodiaProvider(
+  row: ExportRow,
+  pdf: Buffer,
+  pageCount: number,
+  deps: EditableExportDeps,
+): Promise<void> {
+  const exportId = String(row.id);
+  updateExportRow(exportId, { upstreamProvider: 'codia', stage: 'uploading' });
+  const { uploadId } = await uploadPdf(pdf, `${exportId}.pdf`, deps);
+  const pageNo = Array.from({ length: pageCount }, (_, index) => index);
+  let lastError = '上游转换失败';
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const idempotencyKey = `anppt-editable-${exportId}${attempt === 1 ? '-retry1' : ''}`;
+    try {
+      const task = await createPdfToPptTask(
+        { uploadId, pageNo, title: `anppt-editable-${exportId}`, idempotencyKey },
+        deps,
+      );
+      updateExportRow(exportId, {
+        upstreamTaskId: task.taskId,
+        upstreamProvider: 'codia',
+        status: 'processing',
+        stage: 'waiting',
+      });
+      const terminal = await pollCodiaTask(exportId, task.taskId, pageCount, deps);
+      if (terminal.status === 'succeeded' && terminal.pptUrl) {
+        await saveEditableResult(exportId, String(row.user_id), terminal.pptUrl, deps, { provider: 'codia' });
+        return;
+      }
+      lastError = terminal.error || (terminal.status === 'canceled' ? '上游任务被取消' : '上游未返回可下载文件');
+    } catch (error) {
+      if (error instanceof ApiError && !error.retryable) throw error;
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  throw new Error(lastError);
+}
+
+/** Image2PPT 通道：提交 PDF → 轮询 → 带鉴权下载。 */
+async function runImage2PptProvider(
+  row: ExportRow,
+  pdf: Buffer,
+  pageCount: number,
+  deps: EditableExportDeps,
+): Promise<void> {
+  const exportId = String(row.id);
+  const config = deps.config ?? getGenerationConfig();
+  updateExportRow(exportId, { upstreamProvider: 'image2ppt', stage: 'uploading' });
+  const job = await submitImage2PptJob(
+    {
+      pdf,
+      filename: `${exportId}.pdf`,
+      pageCount,
+      idempotencyKey: `anppt-editable-${exportId}`,
+      callbackUrl: image2PptCallbackUrl(),
+    },
+    deps,
+  );
+  updateExportRow(exportId, {
+    upstreamProvider: 'image2ppt',
+    upstreamTaskId: job.jobId,
+    status: 'processing',
+    stage: 'waiting',
+  });
+  const terminal = await pollImage2PptJob(exportId, job.jobId, pageCount, deps);
+  if (terminal.status !== 'completed' || !terminal.downloadUrl) {
+    throw new Error(terminal.error || (terminal.status === 'failed' ? '上游任务失败' : '上游未返回可下载文件'));
+  }
+  await saveEditableResult(exportId, String(row.user_id), terminal.downloadUrl, deps, {
+    headers: image2PptAuthHeaders(config),
+    provider: 'image2ppt',
   });
 }
 
 /**
  * 可编辑导出管线（不含扣费；扣费只在 start 时发生一次）。
- * 读图 → image-only PDF → 上传 → 建任务 → 轮询 → 下载落盘。
- * failed 自动以 `-retry1` 幂等键重建一次（上游幂等退 credits，不双扣）；
- * 再失败/异常 → 退星 + 行标 failed。上游 402（站方余额不足）：立即终态退星 + 大字日志。
+ * 读图 → image-only PDF → 按主通道转换；失败自动切备用通道。
+ * 全部失败/异常 → 退星 + 行标 failed。上游 402（站方余额不足）：终态退星 + 大字日志。
  */
 async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
   const runDeps = snapshotEditableDeps(deps);
@@ -380,36 +547,34 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
     updateExportRow(exportId, { status: 'processing', stage: 'preparing', startedAt: Number(row.started_at) || nowMs() });
     updateExportRow(exportId, { stage: 'building-pdf' });
     const { pdf, pageCount } = await prepareEditablePdf(row, config);
-    updateExportRow(exportId, { stage: 'uploading' });
-    const { uploadId } = await uploadPdf(pdf, `${exportId}.pdf`, runDeps);
-    const pageNo = Array.from({ length: pageCount }, (_, index) => index);
-    let lastError = '上游转换失败';
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const idempotencyKey = `anppt-editable-${exportId}${attempt === 1 ? '-retry1' : ''}`;
+    const providers = configuredEditableProviders(config);
+    if (providers.length === 0) {
+      throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑转换服务尚未配置，请联系管理员', 503, false);
+    }
+    let lastError: unknown = null;
+    for (let index = 0; index < providers.length; index += 1) {
+      const provider = providers[index];
       try {
-        const task = await createPdfToPptTask(
-          { uploadId, pageNo, title: `anppt-editable-${exportId}`, idempotencyKey },
-          runDeps,
-        );
-        updateExportRow(exportId, { upstreamTaskId: task.taskId, status: 'processing', stage: 'waiting' });
-        const terminal = await pollCodiaTask(exportId, task.taskId, pageCount, runDeps);
-        if (terminal.status === 'succeeded' && terminal.pptUrl) {
-          await saveEditableResult(exportId, String(row.user_id), terminal.pptUrl, runDeps);
-          return;
-        }
-        lastError = terminal.error || (terminal.status === 'canceled' ? '上游任务被取消' : '上游未返回可下载文件');
+        if (provider === 'image2ppt') await runImage2PptProvider(row, pdf, pageCount, runDeps);
+        else await runCodiaProvider(row, pdf, pageCount, runDeps);
+        return;
       } catch (error) {
-        if (error instanceof ApiError && !error.retryable) throw error;
-        lastError = error instanceof Error ? error.message : String(error);
+        lastError = error;
+        const next = providers[index + 1];
+        if (!next) throw error;
+        console.warn(
+          `[anppt-v2][exports] ${provider} 失败，切换 ${next}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        updateExportRow(exportId, { stage: 'fallback', upstreamTaskId: '', upstreamProvider: next });
       }
     }
-    throw new Error(lastError);
+    throw lastError instanceof Error ? lastError : new Error('上游转换失败');
   } catch (error) {
     const noCredits = error instanceof ApiError && error.code === 'UPSTREAM_NO_CREDITS';
     logProblem({
       category: 'editable',
       level: 'error',
-      message: noCredits ? '上游 Codia 余额不足（402），可编辑导出全部失败，站方需尽快充值' : '可编辑导出管线失败',
+      message: noCredits ? '上游可编辑转换余额不足（402），全部通道失败，站方需尽快充值' : '可编辑导出管线失败',
       detail: error,
       userId: String(row.user_id),
       refType: 'export',
@@ -438,7 +603,7 @@ export async function startDeckEditableExport(
 ): Promise<StartedEditableExport> {
   const runDeps = snapshotEditableDeps(deps);
   const config = runDeps.config;
-  if (!config.codiaApiKey) {
+  if (!isEditableExportConfigured(config)) {
     throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑导出尚未配置，请联系管理员', 503, false);
   }
   const deck = getOwnedDeck(userId, deckId);
@@ -608,7 +773,7 @@ export async function startSinglePageEditableExport(
 ): Promise<StartedEditableExport> {
   const runDeps = snapshotEditableDeps(deps);
   const config = runDeps.config;
-  if (!config.codiaApiKey) {
+  if (!isEditableExportConfigured(config)) {
     throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑导出尚未配置，请联系管理员', 503, false);
   }
   const cleanId = cleanString(projectId, 80);
@@ -645,7 +810,7 @@ export async function startUploadedEditableExport(
 ): Promise<StartedEditableExport> {
   const runDeps = snapshotEditableDeps(deps);
   const config = runDeps.config;
-  if (!config.codiaApiKey) {
+  if (!isEditableExportConfigured(config)) {
     throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑转换服务尚未配置，请联系管理员', 503, false);
   }
   if (!Array.isArray(files) || files.length === 0) throw validationError('请选择 PDF 或图片文件');
@@ -723,16 +888,29 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
   const exportId = String(row.id);
   const taskId = String(row.upstream_task_id || '');
   if (taskId && kind === 'editable') {
-    // 已有上游任务：现场 poll 一次并推进状态
+    const provider = String(row.upstream_provider || 'codia');
     try {
-      const view = await getTask(taskId, runDeps);
-      persistCodiaProgress(exportId, view, Number(row.page_count) || 0);
-      if (view.status === 'succeeded' && view.pptUrl) {
-        await saveEditableResult(exportId, String(row.user_id), view.pptUrl, runDeps);
-      } else if (view.status === 'failed' || view.status === 'canceled') {
-        // 进程可能在第一次失败后、创建 retry1 之前重启。用同一幂等键重跑管线，
-        // 由 Codia 返回原 failed 任务后继续 retry1；ensure 防止同进程重复启动。
-        ensureEditablePipeline(row, runDeps);
+      if (provider === 'image2ppt') {
+        const view = await getImage2PptJob(taskId, runDeps);
+        persistImage2PptProgress(exportId, view, Number(row.page_count) || 0);
+        if (view.status === 'completed' && view.downloadUrl) {
+          await saveEditableResult(exportId, String(row.user_id), view.downloadUrl, runDeps, {
+            headers: image2PptAuthHeaders(runDeps.config),
+            provider: 'image2ppt',
+          });
+        } else if (view.status === 'failed' || (view.status === 'completed' && !view.downloadUrl)) {
+          ensureEditablePipeline(row, runDeps);
+        }
+      } else {
+        const view = await getTask(taskId, runDeps);
+        persistCodiaProgress(exportId, view, Number(row.page_count) || 0);
+        if (view.status === 'succeeded' && view.pptUrl) {
+          await saveEditableResult(exportId, String(row.user_id), view.pptUrl, runDeps, { provider: 'codia' });
+        } else if (view.status === 'failed' || view.status === 'canceled') {
+          // 进程可能在第一次失败后、创建 retry1 之前重启。用同一幂等键重跑管线，
+          // 由 Codia 返回原 failed 任务后继续 retry1；ensure 防止同进程重复启动。
+          ensureEditablePipeline(row, runDeps);
+        }
       }
     } catch (error) {
       // 上游暂不可达：保持原状态，下次访问再推进
@@ -747,6 +925,69 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
     ensureEditablePipeline(row, runDeps);
   }
   return row;
+}
+
+export interface Image2PptWebhookResult {
+  status: number;
+  body: Record<string, unknown>;
+}
+
+/** Image2PPT 完成回调：验签 → 关单推进；下载仍由同一管线完成，避免 webhook/轮询双写。 */
+export async function handleImage2PptWebhook(
+  rawBody: string,
+  headers: Headers,
+  deps: EditableExportDeps = {},
+): Promise<Image2PptWebhookResult> {
+  const runDeps = snapshotEditableDeps(deps);
+  if (!runDeps.config.image2pptWebhookSecret) {
+    return { status: 503, body: { error: 'webhook_not_configured' } };
+  }
+  if (!verifyImage2PptWebhook(rawBody, headers, runDeps.config.image2pptWebhookSecret)) {
+    return { status: 401, body: { error: 'invalid_signature' } };
+  }
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(rawBody) as Record<string, unknown>;
+  } catch {
+    return { status: 400, body: { error: 'invalid_json' } };
+  }
+  const data = payload.data && typeof payload.data === 'object'
+    ? payload.data as Record<string, unknown>
+    : {};
+  const jobId = cleanString(data.jobId, 200);
+  if (!jobId) return { status: 400, body: { error: 'missing_job_id' } };
+  const row = getGenDb()
+    .prepare(
+      `SELECT * FROM export_jobs
+       WHERE kind = 'editable' AND upstream_provider = 'image2ppt' AND upstream_task_id = ?
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(jobId) as ExportRow | undefined;
+  if (!row) {
+    console.warn(`[anppt-v2][image2ppt] webhook job not found: ${jobId}`);
+    return { status: 200, body: { ok: true } };
+  }
+  const status = cleanString(data.status, 40).toLowerCase();
+  const progress = Math.min(100, Math.max(0, Math.round(Number(data.progress) || 0)));
+  const total = Number(data.slideCount) || Number(row.page_count) || 0;
+  const completed = status === 'completed'
+    ? total
+    : Math.min(total, Math.round((progress / 100) * total));
+  updateExportRow(String(row.id), {
+    status: 'processing',
+    progress: status === 'completed' ? 100 : progress,
+    completedPages: completed,
+    stage: status === 'completed' ? 'downloading' : status === 'failed' ? 'failed' : 'converting',
+  });
+  if (status === 'completed' || status === 'failed') {
+    const latest = getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(String(row.id)) as ExportRow | undefined;
+    if (latest) {
+      await recoverEditableExport(latest, runDeps).catch((error) => {
+        console.error('[anppt-v2][image2ppt] webhook recovery failed:', error);
+      });
+    }
+  }
+  return { status: 200, body: { ok: true } };
 }
 
 // ---------- 轻量文字可编辑导出（editable_text_overlay 开关功能，beta） ----------
@@ -1180,7 +1421,7 @@ export function quoteExport(userId: string, body: Record<string, unknown>) {
   } catch {
     // CREDIT_ACTION_PRICES 被覆盖且不含 export_editable 时用默认 20🌟/页
   }
-  const editableAvailable = pageCount > 0 && Boolean(getGenerationConfig().codiaApiKey);
+  const editableAvailable = pageCount > 0 && isEditableExportConfigured(getGenerationConfig());
   return {
     pageCount,
     refType,

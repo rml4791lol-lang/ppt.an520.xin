@@ -5,6 +5,7 @@ import path from 'node:path';
 import { getEffectiveGenerationEnv } from '../admin-config';
 
 export type LlmReasoningEffort = 'low' | 'high' | 'max' | 'off';
+export type EditableProvider = 'codia' | 'image2ppt' | 'auto';
 
 const LLM_REASONING_EFFORTS: readonly LlmReasoningEffort[] = ['low', 'high', 'max', 'off'];
 
@@ -67,6 +68,12 @@ export interface GenerationConfig {
   /** Codia 开放 API（图片版 PPT 转可编辑 PPTX 上游） */
   codiaApiKey: string;
   codiaBaseUrl: string;
+  /** 可编辑转换主通道：codia / image2ppt / auto（auto 优先 image2ppt，失败回退 Codia） */
+  editableProvider: EditableProvider;
+  /** Image2PPT 开放 API（原生文字/形状/表格重建） */
+  image2pptApiKey: string;
+  image2pptBaseUrl: string;
+  image2pptWebhookSecret: string;
   /** 单页生成器单价（🌟/张）。env.ts 的 CREDIT_ACTION_PRICES 尚无 single 动作，
    *  这里自带默认值；deck 页价走 credits.estimateCredits('deck_page_generate')。 */
   singlePageCredits: number;
@@ -78,6 +85,7 @@ export interface GenerationConfig {
   costImageFenPerCall: number;
   costImageBackupFenPerCall: number;
   costCodiaFenPerCall: number;
+  costImage2PptFenPerPage: number;
   /** 项目保留天数（仅作为元信息透出给前端文案用，删除动作一律软删） */
   projectRetentionDays: number;
 }
@@ -105,6 +113,11 @@ function llmReasoningEffortFrom(value: unknown): LlmReasoningEffort {
   return (LLM_REASONING_EFFORTS as readonly string[]).includes(effort)
     ? (effort as LlmReasoningEffort)
     : 'low';
+}
+
+function editableProviderFrom(value: unknown): EditableProvider {
+  const provider = trim(value).toLowerCase();
+  return provider === 'image2ppt' || provider === 'auto' ? provider : 'codia';
 }
 
 export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): GenerationConfig {
@@ -155,6 +168,10 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     jobStaleMs: intFrom(effectiveEnv.ANPPT_V2_JOB_STALE_MS, Math.max(5 * 60_000, imageTimeoutMs + 120_000)),
     codiaApiKey: trim(effectiveEnv.ANPPT_V2_CODIA_API_KEY),
     codiaBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_CODIA_BASE_URL) || 'https://openapi.codia.ai'),
+    editableProvider: editableProviderFrom(effectiveEnv.ANPPT_V2_EDITABLE_PROVIDER),
+    image2pptApiKey: trim(effectiveEnv.ANPPT_V2_IMAGE2PPT_API_KEY),
+    image2pptBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_IMAGE2PPT_BASE_URL) || 'https://image2ppt.com'),
+    image2pptWebhookSecret: trim(effectiveEnv.ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET),
     singlePageCredits: intFrom(effectiveEnv.ANPPT_V2_SINGLE_PAGE_CREDITS, 10),
     costLlmInputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_INPUT_FEN_PER_MTOK, 0),
     costLlmOutputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_OUTPUT_FEN_PER_MTOK, 0),
@@ -163,6 +180,7 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     costImageFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE_FEN_PER_CALL, 0),
     costImageBackupFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL, 0),
     costCodiaFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_CODIA_FEN_PER_CALL, 0),
+    costImage2PptFenPerPage: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE2PPT_FEN_PER_PAGE, 0),
     projectRetentionDays: intFrom(effectiveEnv.ANPPT_V2_PROJECT_RETENTION_DAYS, 7),
   };
 }

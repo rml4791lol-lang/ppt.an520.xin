@@ -53,6 +53,7 @@ export async function checkAdminIntegration(
   const config = getGenerationConfig(mergeAdminConfigDraft(draftValues));
   let url = '';
   let apiKey = '';
+  let editableProvider: 'codia' | 'image2ppt' = 'codia';
   if (kind === 'llm') {
     url = endpoint(configured(config.llmBaseUrl, 'LLM API 地址'), '/models');
     apiKey = configured(config.llmApiKey, 'LLM API 密钥');
@@ -60,8 +61,18 @@ export async function checkAdminIntegration(
     url = endpoint(configured(config.imageBaseUrl, '生图 API 地址'), '/models');
     apiKey = configured(config.imageApiKey, '生图 API 密钥');
   } else {
-    url = endpoint(configured(config.codiaBaseUrl, 'Codia API 地址'), '/v2/open/credits');
-    apiKey = configured(config.codiaApiKey, 'Codia API 密钥');
+    editableProvider = config.editableProvider === 'image2ppt'
+      || (config.editableProvider === 'auto' && Boolean(config.image2pptApiKey))
+      || (!config.codiaApiKey && Boolean(config.image2pptApiKey))
+      ? 'image2ppt'
+      : 'codia';
+    if (editableProvider === 'image2ppt') {
+      url = endpoint(configured(config.image2pptBaseUrl, 'Image2PPT API 地址'), '/api/v1/account');
+      apiKey = configured(config.image2pptApiKey, 'Image2PPT API 密钥');
+    } else {
+      url = endpoint(configured(config.codiaBaseUrl, 'Codia API 地址'), '/v2/open/credits');
+      apiKey = configured(config.codiaApiKey, 'Codia API 密钥');
+    }
   }
 
   const controller = new AbortController();
@@ -101,6 +112,17 @@ export async function checkAdminIntegration(
   }
 
   if (kind === 'editable') {
+    if (editableProvider === 'image2ppt') {
+      const credits = finiteNumber(payload.credits);
+      return {
+        kind,
+        ok: true,
+        latencyMs,
+        endpoint: '/api/v1/account',
+        message: credits == null ? 'Image2PPT 连接正常，未创建任何转换任务' : `Image2PPT 连接正常，可用额度 ${credits}`,
+        details: { provider: 'image2ppt', credits },
+      };
+    }
     const code = payload.code;
     if (code != null && Number(code) !== 0) {
       throw new ApiError('INTEGRATION_CHECK_FAILED', 'Codia 返回业务错误，请检查账号状态', 502, false);
@@ -115,7 +137,7 @@ export async function checkAdminIntegration(
       latencyMs,
       endpoint: '/v2/open/credits',
       message: credits == null ? 'Codia 连接正常，未创建任何转换任务' : `Codia 连接正常，可用额度 ${credits}`,
-      details: { credits },
+      details: { provider: 'codia', credits },
     };
   }
 
