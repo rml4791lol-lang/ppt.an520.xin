@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """AnPPT 健康监控：服务/API 检查，失败连续 2 次后 SMTP 告警，恢复后通知。"""
-import json, smtplib, ssl, subprocess, urllib.request, os, time
+import json, smtplib, ssl, subprocess, urllib.error, urllib.request, os, time
 from email.mime.text import MIMEText
 from email.utils import formataddr
 
@@ -20,6 +20,30 @@ def read_env(key):
     except OSError:
         return ''
     return ''
+
+
+def check_image2ppt_credits():
+    key = read_env('ANPPT_V2_IMAGE2PPT_API_KEY')
+    if not key:
+        return None
+    base = (read_env('ANPPT_V2_IMAGE2PPT_BASE_URL') or 'https://image2ppt.com').rstrip('/')
+    try:
+        req = urllib.request.Request(
+            base + '/api/v1/account',
+            headers={'Authorization': 'Bearer ' + key, 'Accept': 'application/json'},
+        )
+        with urllib.request.urlopen(req, timeout=10, context=ssl.create_default_context()) as resp:
+            data = json.loads(resp.read())
+        credits = int(data.get('credits') or 0)
+        if credits < 20:
+            return 'Image2PPT 剩余额度仅 %s，请及时充值' % credits
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403):
+            return 'Image2PPT API Key 鉴权失败'
+        return 'Image2PPT 额度检查失败: HTTP %s' % error.code
+    except Exception as error:
+        return 'Image2PPT 额度检查失败: ' + str(error)[:60]
+    return None
 
 
 def checks():
@@ -53,6 +77,10 @@ def checks():
                 problems.append('可编辑导出在途超过 45 分钟')
             if int(queue.get('failedLastHour') or 0) >= 3 and int(queue.get('succeededLastHour') or 0) == 0:
                 problems.append('可编辑导出一小时内连续失败且无成功')
+            if 'image2ppt' in providers:
+                credit_problem = check_image2ppt_credits()
+                if credit_problem:
+                    problems.append(credit_problem)
     except Exception as e:
         problems.append('health 请求失败: ' + str(e)[:80])
     # 3. 磁盘

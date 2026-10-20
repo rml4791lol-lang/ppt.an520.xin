@@ -344,6 +344,6 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 配置（只放 `shared/.env`，不进仓库）：`ANPPT_V2_EDITABLE_PROVIDER=image2ppt`、`ANPPT_V2_IMAGE2PPT_API_KEY`、`ANPPT_V2_IMAGE2PPT_BASE_URL=https://image2ppt.com`、`ANPPT_V2_IMAGE2PPT_WEBHOOK_SECRET=whsec_...`；财务估算可选 `ANPPT_V2_COST_IMAGE2PPT_FEN_PER_PAGE=100`。管理后台「可编辑」连接检查会按主通道调用只读 `/api/v1/account`，不会创建转换任务。
 - 机制：`image2ppt.ts` 负责 multipart 提交、`GET /api/v1/jobs/{id}` 轮询、带 Bearer 下载和 Standard Webhooks 验签；`editable.ts` 负责 provider 选择、主备切换、`upstream_provider` 记录、懒恢复与 webhook 去重。`export_jobs.upstream_provider` 由 `getGenDb()` 幂等迁移补齐。
 - 回调：`POST /api/webhooks/image2ppt` 只做验签和状态推进，最终下载仍走同一条管线；`saveEditableResult` 按 exportId 去重，避免 webhook 与 4s 轮询同时写文件。`PUBLIC_BASE_URL` 非 HTTPS 公网时自动省略 callback。
-- 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT 主通道未配置、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
+- 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT 主通道未配置、剩余额度 <20、额度接口 401/403、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
 - 测试：`scripts/tests/image2ppt.test.mjs`（段名 [6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/test-generation.mjs` 当前 440 断言，全部 mock，禁止真实付费调用。
 - 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。该验收命令不进测试套件。
