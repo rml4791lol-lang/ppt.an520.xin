@@ -15,7 +15,7 @@ import {
   StarIcon,
   TrashIcon,
 } from "@/components/icons";
-import { ApiClientError } from "@/lib/client/api";
+import { ApiClientError, getSession } from "@/lib/client/api";
 import {
   exportSinglePagesImagePptx,
   generateSinglePage,
@@ -123,11 +123,11 @@ export function SinglePageClient() {
       }
       setHydrated(true);
 
-      fetch("/api/auth/session", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((json) => {
+      getSession()
+        .catch(() => ({ authenticated: false, user: null }))
+        .then((session) => {
           if (cancelled) return;
-          const user = json?.ok && json.data?.authenticated ? json.data.user : null;
+          const user = session.user;
           setLoggedIn(!!user);
           if (user) void getCreditBalance().then((value) => {
             if (!cancelled) setBalance(value);
