@@ -14,15 +14,16 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-**Not created yet** — there is no GitHub repo behind this directory. Once the repo + remote exist, run this from the repo:
+**Created 2026-10-26** on `rml4791lol-lang/ppt.an520.xin`: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, each with a description. GitHub ships `bug`, `enhancement`, and `wontfix` on every new repo, so those three needed no creation.
+
+Re-running is safe if a label is ever deleted — `gh label create` only fails on an existing name:
 
 ```sh
-# A fresh GitHub repo already ships bug / enhancement / wontfix.
 for l in needs-triage needs-info ready-for-agent ready-for-human; do
-  gh label create "$l"
+  gh label create "$l" || true
 done
 ```
 
-Then add a `wayfinder:*` family only if `/wayfinder` is used: `wayfinder:map`, plus `wayfinder:research`, `wayfinder:prototype`, `wayfinder:grilling`, `wayfinder:task`.
+**Not created**: the `wayfinder:*` family (`wayfinder:map`, `wayfinder:research`, `wayfinder:prototype`, `wayfinder:grilling`, `wayfinder:task`). Add them only if `/wayfinder` gets used.
 
 Edit the "Label in our tracker" column to match whatever vocabulary you actually use.

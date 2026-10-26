@@ -2,14 +2,11 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
-## Setup status (read before running any command below)
+## Setup status
 
-- **`gh` is installed and authenticated** as `rml4791lol-lang` on `github.com`.
-- **This directory is not a git repository and has no remote yet.** `gh` infers the repo from
-  `git remote -v`, so `git init` + create the GitHub repo + add the remote must happen before any
-  `gh issue ...` call can work here. Until then this file is the agreed convention, not a working setup.
-- **Triage labels do not exist yet** (there is no repo to hold them). See
-  `docs/agents/triage-labels.md` for the exact create commands to run once the remote exists.
+- **Repo**: `rml4791lol-lang/ppt.an520.xin` via remote `origin` — public, default branch `main`.
+- **`gh` is installed and authenticated** as `rml4791lol-lang`; `git push` goes through the `osxkeychain` credential helper.
+- **Triage labels already exist** (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, created 2026-10-26). `bug`, `enhancement`, and `wontfix` ship with every new GitHub repo.
 
 ## Conventions
 
