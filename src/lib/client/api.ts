@@ -32,7 +32,7 @@ export class ApiClientError extends Error {
 }
 
 interface ApiFetchOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** JSON body（与 formData 二选一） */
   body?: unknown;
   /** multipart 表单（与 body 二选一） */
@@ -89,4 +89,36 @@ export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Pro
     );
   }
   return json.data as T;
+}
+
+export interface SessionInfo {
+  authenticated: boolean;
+  user: { id: string; username: string } | null;
+}
+
+let sessionPromise: Promise<SessionInfo> | null = null;
+
+/**
+ * 当前会话。同一页面生命周期内只请求一次 —— 壳、导出中心、项目列表、单页工作台、
+ * onlyoffice、可编辑转换各取一次会话时，原本会打出 6 次 /api/auth/session。
+ * 登录/登出后调用 resetSessionCache()，否则会读到旧会话。
+ */
+export function getSession(): Promise<SessionInfo> {
+  if (!sessionPromise) {
+    sessionPromise = apiFetch<{ authenticated?: boolean; user?: { id: string; username: string } | null }>(
+      "/api/auth/session",
+    ).then(
+      (data) => ({ authenticated: Boolean(data?.authenticated), user: data?.user ?? null }),
+      (error) => {
+        sessionPromise = null;
+        throw error;
+      },
+    );
+  }
+  return sessionPromise;
+}
+
+/** 登录/登出后清掉会话缓存。 */
+export function resetSessionCache(): void {
+  sessionPromise = null;
 }

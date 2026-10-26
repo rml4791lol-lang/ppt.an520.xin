@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PlusIcon } from "@/components/icons";
 import { DownloadIcon, Spinner } from "@/components/deck/ui";
+import { getSession } from "@/lib/client/api";
 import { listExportRecords, type ExportRecord } from "@/lib/client/deck-api";
 
 function statusChip(item: ExportRecord) {
@@ -37,9 +38,8 @@ export function ExportsClient() {
   const load = useCallback(async () => {
     setUnauthorized(false);
     try {
-      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
-      const session = await sessionResponse.json().catch(() => null);
-      if (!sessionResponse.ok || !session?.ok || !session.data?.authenticated) {
+      const session = await getSession();
+      if (!session.authenticated) {
         setUnauthorized(true);
         setItems(null);
         return;

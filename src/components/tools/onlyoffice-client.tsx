@@ -13,6 +13,7 @@ import {
   ShieldIcon,
   SparklesIcon,
 } from "@/components/icons";
+import { getSession } from "@/lib/client/api";
 
 interface MeView {
   loggedIn: boolean;
@@ -207,10 +208,10 @@ export function OnlyOfficeClient() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadMe = fetch("/api/auth/session", { cache: "no-store" })
-      .then(async (sessionResponse) => {
-        const session = await sessionResponse.json().catch(() => null);
-        if (!sessionResponse.ok || !session?.ok || !session.data?.authenticated) {
+    const loadMe = getSession()
+      .catch(() => ({ authenticated: false, user: null }))
+      .then(async (session) => {
+        if (!session.authenticated) {
           return { loggedIn: false, unlocked: false };
         }
         const meResponse = await fetch("/api/me", { cache: "no-store" });

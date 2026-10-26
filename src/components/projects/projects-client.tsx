@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PlusIcon } from "@/components/icons";
+import { getSession } from "@/lib/client/api";
 import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
 
 interface Project {
@@ -28,9 +29,8 @@ export function ProjectsClient() {
     setLoading(true);
     setUnauthorized(false);
     try {
-      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
-      const session = await sessionResponse.json().catch(() => null);
-      if (!sessionResponse.ok || !session?.ok || !session.data?.authenticated) {
+      const session = await getSession();
+      if (!session.authenticated) {
         setUnauthorized(true);
         setProjects(null);
         return;
