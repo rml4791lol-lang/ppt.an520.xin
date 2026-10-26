@@ -73,3 +73,20 @@ cd /tmp/anppt-v2-mirror.git && git filter-repo --strip-blobs-bigger-than 50M --f
 3. 本地首跑需 `npm ci`（node_modules 未随仓迁移）。
 4. 7 天后删除 `~/Desktop/Atlas/_cleanup-20261026/`（24G）。
 5. 未动的其它项目：`~/ZCodeProject/{an520-portal,an520-channels,image2-studio-v2,pi-desktop,an-hub,an-img}`、`~/Desktop/Atlas/{微信小程序,视频,three.js 建模 3d,个人生活,长理创客,DeepSeek harness,模型路由}`。
+
+## 第二批清理（23:06 用户批准：其余项目同套路）
+
+**规则**：先做不可再生的备份，再移入暂存区；有进程在跑的项目不动。
+
+已入暂存（`~/Desktop/Atlas/_cleanup-20261026/`，清单见其 `MANIFEST.md`）：
+
+- 冷数据：`视频`(6.2G)、`three.js 建模 3d`(2.6G)、`个人生活`(1.4G)、`模型路由`(380K)
+- ZCodeProject 全量归档：`image2-studio-v2`(1.2G)、`an520-portal`(104M)、`an-img`(69M)、`an-hub`(17M)、`pi-desktop`(2.9M)、`an520-channels`、`docs`、散落脚本/json/docx
+
+新增 bundle（`_backups/` + iCloud）：`image2-studio-v2`(73M)、`an-img`(26M)、`an-hub`(5.9M)、`pi-desktop`(780K)、`deepseek-harness`(2.2M) 及其 51 个未提交改动的 WIP 快照(27M tar.gz)。全部 `git bundle verify` 通过。
+
+**这 5 个仓库的远端同样是已失效的 `An-an-525`**，与 anppt-v2 一样此前无任何远端备份。
+
+刻意保留（未动）：`微信小程序`（洛小童上门体育，有进程）、`长理创客`（技术分享网站，有进程）、`DeepSeek harness`（当天仍在提交，仅备份）。
+
+暂存区总量：**35G**。磁盘可用 218Gi。
