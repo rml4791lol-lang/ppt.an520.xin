@@ -20,6 +20,23 @@ export async function runEditableExportTests(ctx) {
       credits.estimateCredits({ action: 'export_editable', pages: 3 }).credits === 60);
     credits.refundCredits(uid, 500, { reason: '测试补贴', idempotencyKey: 'test-topup-6b' });
 
+    // ---- 扣费键唯一来源（架构评审 C2）：扣费与退款必须拼出同一个键 ----
+    {
+      const keyLib = await import('../../src/modules/editable-export/server/charge-keys.ts');
+      const { chargeRefundKeys } = await import('../../src/lib/server/credits.ts');
+      const deckKey = keyLib.editableChargeKey({ kind: 'editable', refId: 'deck-1', exportId: 'exp-1' });
+      const textKey = keyLib.editableChargeKey({ kind: 'editable_text', refId: 'deck-1', exportId: 'exp-1' });
+      check('扣费键：editable 档前缀与历史账本一致', deckKey === 'export-editable:deck-1:exp-1', deckKey);
+      check('扣费键：editable_text 档前缀独立', textKey === 'export-editable-text:deck-1:exp-1', textKey);
+      check('扣费键：未知 kind 回落 editable 档，不凭空造前缀',
+        keyLib.editableChargeKey({ kind: 'mystery', refId: 'd', exportId: 'e' }) === 'export-editable:d:e');
+      check('扣费键：同输入同输出（幂等前提）',
+        keyLib.editableChargeKey({ kind: 'editable', refId: 'd', exportId: 'e' })
+          === keyLib.editableChargeKey({ kind: 'editable', refId: 'd', exportId: 'e' }));
+      check('退款键：由扣费键定长派生且不等于扣费键',
+        chargeRefundKeys(deckKey).refundKey !== deckKey && chargeRefundKeys(deckKey).chargeKey === deckKey);
+    }
+
     // ---- 已启动任务固定 Codia 配置快照：管理员中途切换只影响后续新任务 ----
     {
       const envKeys = ['ANPPT_V2_CODIA_BASE_URL', 'ANPPT_V2_CODIA_API_KEY'];
