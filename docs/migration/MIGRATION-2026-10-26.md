@@ -90,3 +90,38 @@ cd /tmp/anppt-v2-mirror.git && git filter-repo --strip-blobs-bigger-than 50M --f
 刻意保留（未动）：`微信小程序`（洛小童上门体育，有进程）、`长理创客`（技术分享网站，有进程）、`DeepSeek harness`（当天仍在提交，仅备份）。
 
 暂存区总量：**35G**。磁盘可用 218Gi。
+
+## 服务器切换（23:2x–23:45 完成）
+
+hk-hermes（43.161.198.195）已切到新仓库：
+
+| 项目 | 变更 |
+|---|---|
+| `/opt/anppt-v2/source` origin | `An-an-525/anppt-v2`（死）→ `rml4791lol-lang/ppt.an520.xin` |
+| fetch refspec | 由只拉 production 改为 `+refs/heads/*:refs/remotes/origin/*` |
+| `/opt/anppt-v2/git/github_token` | 换成 `rml4791lol-lang` 的 token；旧 token 备份为 `github_token.bak-20261026` |
+| 验证 | 服务器 `git ls-remote origin` 正常读到私有仓 |
+
+**GitHub `production` 分支已上线**：`573bb6c`，547 文件 / 100MB，由服务器直接推送（服务器到 GitHub 直连 0.1s，本机代理链路只有 ~100KB/s 且频繁 reset，大对象传不动）。默认分支已切到 `production`，临时分支 `main`、`import-batches` 已删除。
+
+## 本地与远端的现状（重要）
+
+- **远端 `production` = 线上运行版源码（547 文件）**，与本仓库 4 个后续提交（迁移文档、push 脚本、tools/htmlppt）**尚未合并**。
+- 本机当前无法 `git fetch`：拉取需要约 100MB，链路持续超时（23:40 三次重试全失败）。
+
+网络恢复后按下面顺序对齐（把本地独有的改动叠到远端主干上，而不是反过来）：
+
+```bash
+git fetch origin production
+git checkout -B production origin/production
+git checkout 488da66 -- docs/migration docs/research scripts AGENTS.md deploy .gitignore
+git commit -m "docs: migration records and push helpers"
+git checkout 488da66 -- tools/htmlppt
+git commit -m "feat(tools): import HTMLPPT toolchain"
+git push origin production          # 约 40MB
+```
+
+## 历史分支（L2）
+
+原计划把剔除大文件后的 22 个分支推 `legacy/*`。**改由本机 bundle 承担**：服务器上没有那份 85 提交历史（其 .git 仅 96M / 63 提交），且未装 `git-filter-repo`，本机又传不动 1.3G。
+完整历史已安全落盘：`_backups/anppt-v2-full-20261026.bundle` + iCloud。需要时用 `scripts/push-legacy-history.sh` 在网络好的机器上补推。
