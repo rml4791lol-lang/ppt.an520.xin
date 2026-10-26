@@ -1,0 +1,369 @@
+{
+ "generatedAt": "2026-10-19T14:12:25.515Z",
+ "command": "npm run build",
+ "delivery": {
+  "deck": "out/deck.pptx",
+  "bytes": 48933,
+  "slides": 1,
+  "htmlScreenshots": "out/html/slide-N.png",
+  "pptxRenders": "out/pptx/slide-N.png",
+  "diffImages": "out/diff/slide-N.png",
+  "contactSheet": "out/diff/contact-sheet.png",
+  "metrics": "out/metrics.json",
+  "editability": "out/editability.json"
+ },
+ "pipeline": [
+  "samples/deck.html (5 slides, fixed 1280x720)",
+  "headless Chrome (channel:chrome) measure: getBoundingClientRect + getComputedStyle + visual line boxes",
+  "px->inch /96, px->pt *0.75, native text boxes (margin 0, fit none, exact line spacing, hard line breaks)",
+  "PptxGenJS: text / roundRect+rect / picture / table; gradient + custGeom placeholders",
+  "postprocess: inject a:gradFill + a:custGeom, prune dangling Overrides, repack 100% DEFLATE",
+  "LibreOffice 26.8 headless -> PDF, pdftoppm -> 1280x720 PNG",
+  "numpy/Pillow pixel diff + per-object attribution + contact sheet"
+ ],
+ "text": {
+  "runs_a_t": 20,
+  "chars_pptx_nonws": 140,
+  "chars_html_nonws": 140,
+  "coverage": 1,
+  "note": "coverage = non-whitespace chars inside a:t / non-whitespace chars of measured HTML text + table cells"
+ },
+ "editability": {
+  "runs_a_t": 20,
+  "coverage": 1,
+  "slidesDetail": [
+   {
+    "slide": 1,
+    "runs_a_t": 20,
+    "chars_pptx": 140,
+    "chars_html": 140,
+    "coverage": 1,
+    "p_sp": 41,
+    "p_pic": 3,
+    "p_graphicFrame": 0,
+    "a_tbl": 0,
+    "custGeom": 5,
+    "gradFill": 0,
+    "fullPagePicture": false,
+    "biggestPictureAreaRatio": 0.026
+   }
+  ]
+ },
+ "pixel": {
+  "overall": {
+   "slides": 1,
+   "pixels": 921600,
+   "pixelDiffRatio": 0.0747,
+   "majorDiffRatio": 0.0584,
+   "mae": 7.06
+  },
+  "byKind": {
+   "image": {
+    "area": 23956,
+    "changedPixels": 6230,
+    "ratio": 0.2601
+   },
+   "shape": {
+    "area": 1385208,
+    "changedPixels": 104889,
+    "ratio": 0.0757
+   },
+   "svg": {
+    "area": 8832,
+    "changedPixels": 1181,
+    "ratio": 0.1337
+   },
+   "text": {
+    "area": 255888,
+    "changedPixels": 48363,
+    "ratio": 0.189
+   }
+  },
+  "textVerticalOffsetPx": {
+   "samples": 20,
+   "median": 3,
+   "mean": 3.1,
+   "histogram": {
+    "1": 1,
+    "2": 5,
+    "3": 5,
+    "4": 9
+   },
+   "note": "row-edge cross correlation, positive = PPTX text sits lower than HTML"
+  },
+  "slides": [
+   {
+    "slide": 1,
+    "mae": 7.06,
+    "pixelDiffRatio": 0.0747,
+    "majorDiffRatio": 0.0584,
+    "textDys": {
+     "samples": 20,
+     "median": 3,
+     "min": 1,
+     "max": 4
+    },
+    "worstRegions": [
+     {
+      "id": "s1-o25",
+      "kind": "text",
+      "tag": "div",
+      "label": "div.abs",
+      "x": 348,
+      "y": 296,
+      "w": 276,
+      "h": 66,
+      "ratio": 0.2654,
+      "mae": 32.87
+     },
+     {
+      "id": "s1-o26",
+      "kind": "text",
+      "tag": "div",
+      "label": "div.abs",
+      "x": 664,
+      "y": 296,
+      "w": 276,
+      "h": 66,
+      "ratio": 0.2627,
+      "mae": 27.94
+     },
+     {
+      "id": "s1-o7",
+      "kind": "image",
+      "tag": "img",
+      "label": "",
+      "x": 1046,
+      "y": 8,
+      "w": 226,
+      "h": 106,
+      "ratio": 0.2601,
+      "mae": 9.77
+     },
+     {
+      "id": "s1-o27",
+      "kind": "text",
+      "tag": "div",
+      "label": "div.abs",
+      "x": 980,
+      "y": 296,
+      "w": 276,
+      "h": 66,
+      "ratio": 0.2596,
+      "mae": 26.1
+     }
+    ]
+   }
+  ]
+ },
+ "structure": {
+  "objects": {
+   "text": 20,
+   "shape": 16,
+   "image": 1,
+   "svg": 6,
+   "table": 0
+  },
+  "svg": {
+   "total": 6,
+   "custgeom": 4,
+   "objectsNative": 4,
+   "pngFallback": 2
+  },
+  "gradients": 0,
+  "textRunsWritten": 20,
+  "paragraphs": 20,
+  "hardLines": true,
+  "postprocess": {
+   "total": 5,
+   "applied": 5,
+   "failed": 0,
+   "details": [
+    {
+     "slide": 1,
+     "kind": "custgeom",
+     "marker": "FE00E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 1,
+     "kind": "custgeom",
+     "marker": "FE01E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 1,
+     "kind": "custgeom",
+     "marker": "FE02E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 1,
+     "kind": "custgeom",
+     "marker": "FE03E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 1,
+     "kind": "custgeom",
+     "marker": "FE04E0",
+     "ok": true,
+     "reason": ""
+    }
+   ],
+   "prunedOverrides": [],
+   "zipBytes": 48933,
+   "compression": "DEFLATE (level 6)"
+  }
+ },
+ "package": {
+  "sldSzEMU": {
+   "cx": 12192000,
+   "cy": 6858000
+  },
+  "zip": {
+   "entries": 23,
+   "deflate": 23,
+   "store": 0,
+   "deflateRatio": 100
+  },
+  "contentTypes": {
+   "defaults": 11,
+   "overrides": 12,
+   "danglingOverrides": [],
+   "partsWithoutType": [],
+   "ok": true
+  },
+  "pdfBytes": 83436,
+  "embeddedFonts": [
+   "BAAAAA+PingFangSC-Semibold",
+   "CAAAAA+PingFangSC-Semibold",
+   "DAAAAA+PingFangSC-Semibold",
+   "EAAAAA+PingFangSC-Semibold",
+   "FAAAAA+PingFangSC-Semibold",
+   "GAAAAA+PingFangSC-Regular",
+   "HAAAAA+PingFangSC-Semibold"
+  ]
+ },
+ "fonts": {
+  "proxyNote": "LibreOffice is the verification proxy, not PowerPoint. Headless soffice only sees its bundled fonts unless FONTCONFIG_FILE points at the host fontconfig; render.mjs does that so both sides resolve PingFang SC.",
+  "fontConfig": "/opt/homebrew/etc/fonts/fonts.conf",
+  "embeddedFonts": [
+   "BAAAAA+PingFangSC-Semibold",
+   "CAAAAA+PingFangSC-Semibold",
+   "DAAAAA+PingFangSC-Semibold",
+   "EAAAAA+PingFangSC-Semibold",
+   "FAAAAA+PingFangSC-Semibold",
+   "GAAAAA+PingFangSC-Regular",
+   "HAAAAA+PingFangSC-Semibold"
+  ],
+  "probe": [
+   {
+    "label": "PingFang SC",
+    "htmlInkWidthPx": 557,
+    "pptxInkWidthPx": 580,
+    "deltaPx": 20,
+    "deltaPct": 3.6
+   },
+   {
+    "label": "Hiragino Sans GB",
+    "htmlInkWidthPx": 581,
+    "pptxInkWidthPx": 604,
+    "deltaPx": 20,
+    "deltaPct": 3.4
+   },
+   {
+    "label": "Heiti SC",
+    "htmlInkWidthPx": 530,
+    "pptxInkWidthPx": 552,
+    "deltaPx": 19,
+    "deltaPct": 3.6
+   },
+   {
+    "label": "Noto Sans SC",
+    "htmlInkWidthPx": 528,
+    "pptxInkWidthPx": 552,
+    "deltaPx": 20,
+    "deltaPct": 3.7
+   },
+   {
+    "label": "Arial",
+    "htmlInkWidthPx": 538,
+    "pptxInkWidthPx": 560,
+    "deltaPx": 19,
+    "deltaPct": 3.6
+   },
+   {
+    "label": "Helvetica Neue",
+    "htmlInkWidthPx": 543,
+    "pptxInkWidthPx": 565,
+    "deltaPx": 19,
+    "deltaPct": 3.5
+   },
+   {
+    "label": "Songti SC",
+    "htmlInkWidthPx": 517,
+    "pptxInkWidthPx": 540,
+    "deltaPx": 22,
+    "deltaPct": 4.3
+   },
+   {
+    "label": "control-latin",
+    "htmlInkWidthPx": 316,
+    "pptxInkWidthPx": 317,
+    "deltaPx": -3,
+    "deltaPct": -0.9
+   },
+   {
+    "label": "control-cjk",
+    "htmlInkWidthPx": 178,
+    "pptxInkWidthPx": 178,
+    "deltaPx": -2,
+    "deltaPct": -1.1
+   }
+  ],
+  "probeConclusion": "Pure-Latin and pure-CJK controls match within -3px/-2px (<1.2%); the mixed sample is +19..22px for every typeface, i.e. LibreOffice adds ~0.25em at each of the 3 CJK<->Latin boundaries. That residual is a LibreOffice text-layout difference, not font substitution."
+ },
+ "knownLimitations": [
+  "LibreOffice 26.8 is used as the objective render proxy; PowerPoint can render differently (baseline placement, CJK/Latin auto-spacing). All pixel numbers are proxy numbers, not PowerPoint guarantees.",
+  "LibreOffice adds ~0.25em spacing at every CJK<->Latin boundary. Measured text is therefore 3.4-4.3% wider in the proxy; hard-line text cannot drift vertically but the last glyphs of mixed lines sit a few px right.",
+  "Text baseline: the text box top = CSS content-box top; the proxy renders text 1-6px lower (median 3px, grows with line-height). This is reported per slide in pixel.json, not silently compensated.",
+  "Hard-lines mode writes wrap=\"none\" and one paragraph per visual line: visually exact, but re-flowing text in PowerPoint will not re-wrap (documented trade-off; use --no-hard-lines for reflow mode).",
+  "custGeom support is limited to straight-line SVG paths with a single fill/stroke style (our 8 icons). Curves (circle/ellipse/path C commands) fall back to 4x PNG and are counted in convert_stats.svg.pngFallback.",
+  "Only linear/radial CSS gradients are translated to a:gradFill; conic/repeating gradients fall back to their first stop. Element opacity is folded into fill transparency, parent opacity stacking is not multiplied.",
+  "Tables map cell text/fill/border/column widths/row heights; nested tables, merged cells (colspan>1) and cell-level vertical alignment nuances are not fully reproduced.",
+  "Images are stretched into their measured rect; CSS border-radius clipping on images, filters and blend modes are not applied.",
+  "box-shadow is approximated with one outer shadow; multiple shadows/inset shadows are ignored.",
+  "Semi-transparent text is flattened to an opaque colour blended against the measured backdrop, because PptxGenJS text colour has no alpha channel."
+ ],
+ "gates": {
+  "buildRan": true,
+  "deckExists": true,
+  "deckOpensWithLibreOffice": true,
+  "deckOpensWithPythonPptx": true,
+  "slideSize1280x720": true,
+  "textCharsCoverage90": true,
+  "noFullPagePicture": true,
+  "everySlideHasTextRuns": true,
+  "zipAllDeflate": true,
+  "contentTypesValid": true,
+  "svgCustGeomOrFallbackRecorded": true,
+  "gradientsPostProcessed": true
+ },
+ "verdict": "PASS",
+ "headline": {
+  "slides": 1,
+  "bytes": 48933,
+  "textCharsCoverage": 1,
+  "runs_a_t": 20,
+  "pixelDiffRatio": 0.0747,
+  "majorDiffRatio": 0.0584,
+  "mae": 7.06,
+  "fullPagePictures": 0,
+  "zipDeflateRatio": 100
+ }
+}

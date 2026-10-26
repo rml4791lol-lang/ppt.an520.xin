@@ -1,0 +1,137 @@
+{
+ "generatedAt": "2026-10-20T11:48:11.932Z",
+ "file": "out/deck.pptx",
+ "bytes": 172412,
+ "slides": 5,
+ "sldSz": {
+  "cx": 12192000,
+  "cy": 6858000
+ },
+ "expectedEMU": {
+  "cx": 12192000,
+  "cy": 6858000,
+  "note": "1280x720 px @ 96dpi"
+ },
+ "text": {
+  "runs_a_t": 68,
+  "chars_pptx_nonws": 1126,
+  "chars_html_nonws": 1126,
+  "coverage": 1,
+  "note": "coverage = non-whitespace chars inside a:t / non-whitespace chars of measured HTML text + table cells"
+ },
+ "zip": {
+  "entries": 39,
+  "deflate": 39,
+  "store": 0,
+  "deflateRatio": 100
+ },
+ "contentTypes": {
+  "defaults": 11,
+  "overrides": 20,
+  "danglingOverrides": [],
+  "partsWithoutType": [],
+  "ok": true
+ },
+ "slidesDetail": [
+  {
+   "slide": 1,
+   "runs_a_t": 7,
+   "chars_pptx": 157,
+   "chars_html": 157,
+   "coverage": 1,
+   "p_sp": 10,
+   "p_pic": 1,
+   "p_graphicFrame": 0,
+   "a_tbl": 0,
+   "custGeom": 1,
+   "gradFill": 1,
+   "biggestPictureAreaRatio": 0.003,
+   "fullPagePicture": false,
+   "screenshotOnly": false,
+   "minRunGate": true,
+   "objectsModeled": 11
+  },
+  {
+   "slide": 2,
+   "runs_a_t": 12,
+   "chars_pptx": 251,
+   "chars_html": 251,
+   "coverage": 1,
+   "p_sp": 17,
+   "p_pic": 0,
+   "p_graphicFrame": 0,
+   "a_tbl": 0,
+   "custGeom": 3,
+   "gradFill": 0,
+   "biggestPictureAreaRatio": 0,
+   "fullPagePicture": false,
+   "screenshotOnly": false,
+   "minRunGate": true,
+   "objectsModeled": 17
+  },
+  {
+   "slide": 3,
+   "runs_a_t": 16,
+   "chars_pptx": 268,
+   "chars_html": 268,
+   "coverage": 1,
+   "p_sp": 21,
+   "p_pic": 0,
+   "p_graphicFrame": 0,
+   "a_tbl": 0,
+   "custGeom": 3,
+   "gradFill": 0,
+   "biggestPictureAreaRatio": 0,
+   "fullPagePicture": false,
+   "screenshotOnly": false,
+   "minRunGate": true,
+   "objectsModeled": 21
+  },
+  {
+   "slide": 4,
+   "runs_a_t": 24,
+   "chars_pptx": 255,
+   "chars_html": 255,
+   "coverage": 1,
+   "p_sp": 6,
+   "p_pic": 0,
+   "p_graphicFrame": 1,
+   "a_tbl": 1,
+   "custGeom": 0,
+   "gradFill": 0,
+   "biggestPictureAreaRatio": 0,
+   "fullPagePicture": false,
+   "screenshotOnly": false,
+   "minRunGate": true,
+   "objectsModeled": 7
+  },
+  {
+   "slide": 5,
+   "runs_a_t": 9,
+   "chars_pptx": 195,
+   "chars_html": 195,
+   "coverage": 1,
+   "p_sp": 12,
+   "p_pic": 2,
+   "p_graphicFrame": 0,
+   "a_tbl": 0,
+   "custGeom": 1,
+   "gradFill": 1,
+   "biggestPictureAreaRatio": 0.261,
+   "fullPagePicture": false,
+   "screenshotOnly": false,
+   "minRunGate": true,
+   "objectsModeled": 14
+  }
+ ],
+ "gates": {
+  "slideSize1280x720": true,
+  "textCharsCoverage90": true,
+  "noFullPagePicture": true,
+  "noScreenshotOnlySlide": true,
+  "everySlideHasTextRuns": true,
+  "zipAllDeflate": true,
+  "contentTypesValid": true
+ },
+ "ok": true
+}

@@ -1,0 +1,9 @@
+name                                 type              encoding         emb sub uni object ID
+------------------------------------ ----------------- ---------------- --- --- --- ---------
+BAAAAA+PingFangSC-Semibold           Type 1            Builtin          yes yes yes     95  0
+CAAAAA+PingFangSC-Semibold           Type 1            Builtin          yes yes yes    110  0
+DAAAAA+PingFangSC-Semibold           Type 1            Builtin          yes yes yes     90  0
+EAAAAA+PingFangSC-Semibold           Type 1            Builtin          yes yes yes    105  0
+FAAAAA+PingFangSC-Semibold           Type 1            Builtin          yes yes yes     85  0
+GAAAAA+PingFangSC-Regular            Type 1            Builtin          yes yes yes     80  0
+HAAAAA+PingFangSC-Semibold           Type 1            Builtin          yes yes yes    100  0

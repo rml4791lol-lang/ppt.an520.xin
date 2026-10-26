@@ -1,0 +1,65 @@
+{
+ "total": 6,
+ "applied": 6,
+ "failed": 0,
+ "details": [
+  {
+   "slide": 1,
+   "kind": "gradient",
+   "marker": "FE00E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE01E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE02E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 2,
+   "kind": "custgeom",
+   "marker": "FE03E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 2,
+   "kind": "custgeom",
+   "marker": "FE04E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 2,
+   "kind": "custgeom",
+   "marker": "FE05E0",
+   "ok": true,
+   "reason": ""
+  }
+ ],
+ "cubicBezTo": {
+  "total": 0,
+  "bySlide": {
+   "1": 0,
+   "2": 0
+  },
+  "custGeomShapes": 5
+ },
+ "prunedOverrides": [
+  "/ppt/slideMasters/slideMaster2.xml",
+  "/ppt/slideMasters/slideMaster3.xml",
+  "/ppt/slideMasters/slideMaster4.xml",
+  "/ppt/slideMasters/slideMaster5.xml"
+ ],
+ "zipBytes": 167670,
+ "compression": "DEFLATE (level 6)"
+}

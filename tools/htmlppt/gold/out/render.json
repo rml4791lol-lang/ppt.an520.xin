@@ -1,0 +1,25 @@
+{
+ "engine": "LibreOffice + pdftoppm",
+ "fontConfig": "/opt/homebrew/etc/fonts/fonts.conf",
+ "embeddedFonts": [
+  "BAAAAA+PingFangSC-Semibold",
+  "CAAAAA+PingFangSC-Semibold",
+  "DAAAAA+PingFangSC-Semibold",
+  "EAAAAA+PingFangSC-Semibold",
+  "FAAAAA+PingFangSC-Semibold",
+  "GAAAAA+PingFangSC-Regular",
+  "HAAAAA+PingFangSC-Semibold"
+ ],
+ "soffice": "LibreOffice 26.8.0.3 bce0998afefdbc355585ca324285661a2170ba77",
+ "dpi": 96,
+ "pdfBytes": 83436,
+ "pages": [
+  {
+   "index": 1,
+   "file": "../gold/out/pptx/slide-1.png",
+   "width": 1280,
+   "height": 720
+  }
+ ],
+ "elapsedMs": 3001
+}

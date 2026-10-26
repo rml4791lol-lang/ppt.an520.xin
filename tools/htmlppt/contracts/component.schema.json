@@ -1,0 +1,53 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "htmlppt/component.schema.json",
+ "title": "htmlppt/component@1",
+ "type": "object",
+ "required": [
+  "schema",
+  "components"
+ ],
+ "properties": {
+  "schema": {
+   "const": "htmlppt/components@1"
+  },
+  "components": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "category"
+    ],
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+     },
+     "category": {
+      "type": "string"
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "params": {
+      "type": "object"
+     },
+     "source": {
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "seed",
+       "verified",
+       "deprecated"
+      ]
+     }
+    }
+   }
+  }
+ }
+}

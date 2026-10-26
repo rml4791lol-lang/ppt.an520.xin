@@ -1,0 +1,63 @@
+{
+ "generatedAt": "2026-10-19T14:12:18.055Z",
+ "file": "../gold/out/deck.pptx",
+ "bytes": 48933,
+ "slides": 1,
+ "sldSz": {
+  "cx": 12192000,
+  "cy": 6858000
+ },
+ "expectedEMU": {
+  "cx": 12192000,
+  "cy": 6858000,
+  "note": "1280x720 px @ 96dpi"
+ },
+ "text": {
+  "runs_a_t": 20,
+  "chars_pptx_nonws": 140,
+  "chars_html_nonws": 140,
+  "coverage": 1,
+  "note": "coverage = non-whitespace chars inside a:t / non-whitespace chars of measured HTML text + table cells"
+ },
+ "zip": {
+  "entries": 23,
+  "deflate": 23,
+  "store": 0,
+  "deflateRatio": 100
+ },
+ "contentTypes": {
+  "defaults": 11,
+  "overrides": 12,
+  "danglingOverrides": [],
+  "partsWithoutType": [],
+  "ok": true
+ },
+ "slidesDetail": [
+  {
+   "slide": 1,
+   "runs_a_t": 20,
+   "chars_pptx": 140,
+   "chars_html": 140,
+   "coverage": 1,
+   "p_sp": 41,
+   "p_pic": 3,
+   "p_graphicFrame": 0,
+   "a_tbl": 0,
+   "custGeom": 5,
+   "gradFill": 0,
+   "biggestPictureAreaRatio": 0.026,
+   "fullPagePicture": false,
+   "minRunGate": true,
+   "objectsModeled": 43
+  }
+ ],
+ "gates": {
+  "slideSize1280x720": true,
+  "textCharsCoverage90": true,
+  "noFullPagePicture": true,
+  "everySlideHasTextRuns": true,
+  "zipAllDeflate": true,
+  "contentTypesValid": true
+ },
+ "ok": true
+}

@@ -1,0 +1,40 @@
+{
+ "perSlide": [
+  {
+   "slide": 1,
+   "mae": 7.79,
+   "pct_gt16": 5.13,
+   "pct_gt48": 3.84
+  },
+  {
+   "slide": 2,
+   "mae": 4.03,
+   "pct_gt16": 3.85,
+   "pct_gt48": 2.48
+  },
+  {
+   "slide": 3,
+   "mae": 4.17,
+   "pct_gt16": 4.47,
+   "pct_gt48": 2.7
+  },
+  {
+   "slide": 4,
+   "mae": 5.07,
+   "pct_gt16": 4.18,
+   "pct_gt48": 3.04
+  },
+  {
+   "slide": 5,
+   "mae": 10.83,
+   "pct_gt16": 10.22,
+   "pct_gt48": 7.49
+  }
+ ],
+ "aggregate": {
+  "slides": 5,
+  "mae": 6.38,
+  "pct_gt16": 5.57,
+  "pct_gt48": 3.91
+ }
+}

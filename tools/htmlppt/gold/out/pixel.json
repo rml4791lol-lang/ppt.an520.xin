@@ -1,0 +1,171 @@
+{
+ "thresholds": {
+  "soft": 16,
+  "hard": 48
+ },
+ "overall": {
+  "slides": 1,
+  "pixels": 921600,
+  "pixelDiffRatio": 0.0747,
+  "majorDiffRatio": 0.0584,
+  "mae": 7.06
+ },
+ "byKind": {
+  "image": {
+   "area": 23956,
+   "changedPixels": 6230,
+   "ratio": 0.2601
+  },
+  "shape": {
+   "area": 1385208,
+   "changedPixels": 104889,
+   "ratio": 0.0757
+  },
+  "svg": {
+   "area": 8832,
+   "changedPixels": 1181,
+   "ratio": 0.1337
+  },
+  "text": {
+   "area": 255888,
+   "changedPixels": 48363,
+   "ratio": 0.189
+  }
+ },
+ "textVerticalOffsetPx": {
+  "samples": 20,
+  "median": 3.0,
+  "mean": 3.1,
+  "histogram": {
+   "1": 1,
+   "2": 5,
+   "3": 5,
+   "4": 9
+  },
+  "note": "row-edge cross correlation, positive = PPTX text sits lower than HTML"
+ },
+ "slides": [
+  {
+   "slide": 1,
+   "size": [
+    1280,
+    720
+   ],
+   "sizeMismatchResampled": null,
+   "mae": 7.06,
+   "pixelDiffRatio": 0.0747,
+   "majorDiffRatio": 0.0584,
+   "changedPixels": 68888,
+   "html": "/Users/an/Desktop/Atlas/PPT/HTML -ppt/gold/out/html/slide-1.png",
+   "pptx": "/Users/an/Desktop/Atlas/PPT/HTML -ppt/gold/out/pptx/slide-1.png",
+   "diff": "/Users/an/Desktop/Atlas/PPT/HTML -ppt/gold/out/diff/slide-1.png",
+   "objectsModeled": 43,
+   "regionsAnalyzed": 42,
+   "worstRegions": [
+    {
+     "id": "s1-o25",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 348,
+     "y": 296,
+     "w": 276,
+     "h": 66,
+     "ratio": 0.2654,
+     "mae": 32.87
+    },
+    {
+     "id": "s1-o26",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 664,
+     "y": 296,
+     "w": 276,
+     "h": 66,
+     "ratio": 0.2627,
+     "mae": 27.94
+    },
+    {
+     "id": "s1-o7",
+     "kind": "image",
+     "tag": "img",
+     "label": "",
+     "x": 1046,
+     "y": 8,
+     "w": 226,
+     "h": 106,
+     "ratio": 0.2601,
+     "mae": 9.77
+    },
+    {
+     "id": "s1-o27",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 980,
+     "y": 296,
+     "w": 276,
+     "h": 66,
+     "ratio": 0.2596,
+     "mae": 26.1
+    },
+    {
+     "id": "s1-o41",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 120,
+     "y": 614,
+     "w": 1040,
+     "h": 34,
+     "ratio": 0.2473,
+     "mae": 29.95
+    },
+    {
+     "id": "s1-o34",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 680,
+     "y": 418,
+     "w": 244,
+     "h": 22,
+     "ratio": 0.2422,
+     "mae": 17.03
+    },
+    {
+     "id": "s1-o33",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 364,
+     "y": 418,
+     "w": 244,
+     "h": 22,
+     "ratio": 0.2407,
+     "mae": 16.81
+    },
+    {
+     "id": "s1-o32",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 48,
+     "y": 418,
+     "w": 244,
+     "h": 22,
+     "ratio": 0.2396,
+     "mae": 16.87
+    }
+   ],
+   "textVerticalOffsetPx": {
+    "samples": 20,
+    "median": 3.0,
+    "min": 1,
+    "max": 4
+   }
+  }
+ ],
+ "contactSheet": "/Users/an/Desktop/Atlas/PPT/HTML -ppt/gold/out/diff/contact-sheet.png"
+}

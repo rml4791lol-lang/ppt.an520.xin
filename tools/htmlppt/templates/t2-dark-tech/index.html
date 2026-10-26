@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>T2 · Dark Tech — 5 页深色科技模板</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: #050B14; }
+  body {
+    font-family: "PingFang SC";
+    color: #E8F1FF;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+  #stage { position: relative; width: 1280px; height: 720px; }
+  section.slide {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 720px;
+    overflow: hidden; background: #050B14;
+  }
+  .abs { position: absolute; }
+  img { display: block; }
+
+  /* type scale */
+  .eyebrow { font-size: 12px; line-height: 16px; letter-spacing: 3px; color: #22D3EE; font-weight: 500; }
+  .eyebrow-dim { font-size: 11px; line-height: 16px; letter-spacing: 3px; color: #8FA6C2; }
+  .meta { font-size: 11px; line-height: 16px; letter-spacing: 2px; color: #5E7795; }
+  .lead { font-size: 16px; line-height: 28px; color: #8FA6C2; font-weight: 400; }
+  .h2 { font-size: 40px; line-height: 52px; color: #E8F1FF; font-weight: 600; }
+  .num { font-family: Arial; font-weight: 700; color: #E8F1FF; }
+  .cn-label { font-size: 11px; line-height: 16px; letter-spacing: 2px; color: #8FA6C2; }
+  .note { font-size: 11px; line-height: 16px; color: #5E7795; }
+  .hair { background: #1B3350; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- ==================================================================
+       01 / COVER
+       photo 1280x640 (kept < 90% of canvas so the export stays editable)
+       ================================================================== -->
+  <section class="slide" data-slide="1">
+    <img class="abs" src="../assets/cover-building.jpg" alt="总部大楼航拍"
+         style="left:0px;top:0px;width:1280px;height:640px;">
+    <div class="abs" style="left:0px;top:0px;width:1280px;height:640px;background:linear-gradient(rgba(5,11,20,.35), rgba(5,11,20,.92));"></div>
+    <div class="abs" style="left:0px;top:0px;width:1280px;height:640px;background:linear-gradient(90deg, rgba(5,11,20,.78) 0%, rgba(5,11,20,.30) 54%, rgba(5,11,20,0) 100%);"></div>
+
+    <!-- micro mark -->
+    <div class="abs" style="left:96px;top:70px;width:22px;height:22px;border:1px solid #22D3EE;"></div>
+    <div class="abs" style="left:105px;top:79px;width:6px;height:6px;background:#22D3EE;"></div>
+    <p class="abs" data-slot="cover.brand" style="left:130px;top:68px;width:260px;height:18px;font-size:12px;line-height:18px;letter-spacing:3px;color:#E8F1FF;">ATLAS / HELIX</p>
+    <p class="abs" data-slot="cover.brandSub" style="left:130px;top:86px;width:260px;height:14px;font-size:9px;line-height:14px;letter-spacing:2px;color:#8FA6C2;">EDGE INTELLIGENCE</p>
+
+    <p class="abs" data-slot="cover.coords" style="left:884px;top:74px;width:300px;height:16px;font-size:10px;line-height:16px;letter-spacing:2px;color:#8FA6C2;text-align:right;">31.2304&deg; N / 121.4737&deg; E</p>
+    <div class="abs" style="left:96px;top:122px;width:1088px;height:1px;background:rgba(232,241,255,.14);"></div>
+
+    <p class="abs" data-slot="cover.eyebrow" style="left:96px;top:212px;width:720px;height:16px;font-size:12px;line-height:16px;letter-spacing:3px;color:#22D3EE;">PRODUCT RELEASE / 2026.10</p>
+    <h1 class="abs" data-slot="cover.title" style="left:96px;top:244px;width:940px;height:176px;font-size:68px;line-height:84px;color:#E8F1FF;font-weight:700;">把算力推近现场<br>让决策发生在毫秒之间</h1>
+    <p class="abs" data-slot="cover.subtitle" style="left:98px;top:446px;width:640px;height:64px;font-size:20px;line-height:32px;color:#8FA6C2;">HELIX 边缘智能平台正式发布：从芯片、运行时到全局编排，一套为现场而生的实时计算栈。</p>
+
+    <!-- data strip -->
+    <div class="abs" style="left:96px;top:552px;width:1088px;height:1px;background:rgba(232,241,255,.20);"></div>
+
+    <p class="abs" data-slot="cover.metric1.label" style="left:96px;top:566px;width:300px;height:16px;font-size:11px;line-height:16px;letter-spacing:2px;color:#8FA6C2;">01 / 节点规模</p>
+    <p class="abs" data-slot="cover.metric1.value" style="left:96px;top:586px;width:300px;height:34px;font-family:Arial;font-size:28px;line-height:34px;font-weight:700;color:#E8F1FF;">128<span style="font-family:'PingFang SC';font-size:13px;font-weight:400;color:#8FA6C2;"> 座</span></p>
+    <p class="abs" data-slot="cover.metric1.note" style="left:96px;top:622px;width:300px;height:16px;font-size:11px;line-height:16px;color:#7C93AF;">覆盖 6 个国家 · 12 个行业</p>
+
+    <div class="abs" style="left:443px;top:566px;width:1px;height:66px;background:rgba(143,166,194,.24);"></div>
+    <p class="abs" data-slot="cover.metric2.label" style="left:470px;top:566px;width:300px;height:16px;font-size:11px;line-height:16px;letter-spacing:2px;color:#8FA6C2;">02 / 端到端时延</p>
+    <p class="abs" data-slot="cover.metric2.value" style="left:470px;top:586px;width:300px;height:34px;font-family:Arial;font-size:28px;line-height:34px;font-weight:700;color:#E8F1FF;">1.8<span style="font-family:'PingFang SC';font-size:13px;font-weight:400;color:#8FA6C2;"> ms</span></p>
+    <p class="abs" data-slot="cover.metric2.note" style="left:470px;top:622px;width:300px;height:16px;font-size:11px;line-height:16px;color:#7C93AF;">P99 · 现场实测</p>
+
+    <div class="abs" style="left:817px;top:566px;width:1px;height:66px;background:rgba(143,166,194,.24);"></div>
+    <p class="abs" data-slot="cover.metric3.label" style="left:844px;top:566px;width:300px;height:16px;font-size:11px;line-height:16px;letter-spacing:2px;color:#8FA6C2;">03 / 可用性</p>
+    <p class="abs" data-slot="cover.metric3.value" style="left:844px;top:586px;width:320px;height:34px;font-family:Arial;font-size:28px;line-height:34px;font-weight:700;color:#E8F1FF;">99.99<span style="font-family:'PingFang SC';font-size:13px;font-weight:400;color:#8FA6C2;"> %</span></p>
+    <p class="abs" data-slot="cover.metric3.note" style="left:844px;top:622px;width:320px;height:16px;font-size:11px;line-height:16px;color:#7C93AF;">过去 12 个月 · 全部区域</p>
+
+    <!-- footer -->
+    <div class="abs" style="left:0px;top:640px;width:1280px;height:1px;background:#1B3350;"></div>
+    <p class="abs" data-slot="cover.footnote" style="left:96px;top:672px;width:640px;height:16px;font-size:10px;line-height:16px;letter-spacing:2px;color:#5E7795;">ATLAS SYSTEMS &middot; 2026 AUTUMN RELEASE &middot; 仅限受邀嘉宾</p>
+    <p class="abs" data-slot="cover.page" style="left:1054px;top:670px;width:130px;height:18px;font-size:11px;line-height:18px;letter-spacing:2px;color:#8FA6C2;text-align:right;"><span style="color:#22D3EE;">01</span> / 05</p>
+  </section>
+
+  <!-- ==================================================================
+       02 / SECTION TRANSITION
+       ================================================================== -->
+  <section class="slide" data-slide="2">
+    <div class="abs" style="left:96px;top:70px;width:5px;height:5px;background:#22D3EE;"></div>
+    <p class="abs eyebrow" data-slot="section.eyebrow" style="left:112px;top:62px;width:560px;height:16px;">SECTION 02 / WHY NOW</p>
+    <p class="abs meta" data-slot="section.meta" style="left:884px;top:64px;width:300px;height:16px;text-align:right;">ATLAS HELIX / 2026</p>
+
+    <p class="abs" data-slot="section.number" style="left:88px;top:120px;width:420px;height:210px;font-family:Arial;font-size:200px;line-height:200px;font-weight:700;color:rgba(232,241,255,.10);">02</p>
+
+    <div class="abs" style="left:96px;top:360px;width:48px;height:3px;background:#22D3EE;"></div>
+    <h2 class="abs" data-slot="section.title" style="left:96px;top:386px;width:780px;height:68px;font-size:56px;line-height:68px;font-weight:600;color:#E8F1FF;">真正的瓶颈，不在模型</h2>
+    <p class="abs" data-slot="section.lead" style="left:98px;top:474px;width:580px;height:72px;font-size:20px;line-height:34px;color:#8FA6C2;">当节点从 8 个长到 128 个，延迟的敌人不再是算力，而是每一次跨域调度与版本漂移。我们把链路拆开，逐段重排。</p>
+    <p class="abs" data-slot="section.note" style="left:98px;top:574px;width:580px;height:24px;font-size:13px;line-height:24px;color:#5E7795;">从「能跑」到「敢在生产跑」，隔着的不是模型，是工程。</p>
+
+    <!-- right rail -->
+    <div class="abs hair" style="left:1000px;top:150px;width:1px;height:400px;"></div>
+
+    <div class="abs" style="left:997px;top:187px;width:6px;height:6px;background:#22D3EE;"></div>
+    <p class="abs" data-slot="section.rail1.no" style="left:1024px;top:176px;width:160px;height:16px;font-family:Arial;font-size:11px;line-height:16px;letter-spacing:2px;color:#22D3EE;">01</p>
+    <p class="abs" data-slot="section.rail1.title" style="left:1024px;top:196px;width:160px;height:24px;font-size:15px;line-height:24px;color:#E8F1FF;">信号采集</p>
+    <p class="abs" data-slot="section.rail1.note" style="left:1024px;top:220px;width:160px;height:16px;font-size:11px;line-height:16px;color:#5E7795;">每秒 12 万点位</p>
+
+    <div class="abs" style="left:997px;top:327px;width:6px;height:6px;background:#3B82F6;"></div>
+    <p class="abs" data-slot="section.rail2.no" style="left:1024px;top:316px;width:160px;height:16px;font-family:Arial;font-size:11px;line-height:16px;letter-spacing:2px;color:#22D3EE;">02</p>
+    <p class="abs" data-slot="section.rail2.title" style="left:1024px;top:336px;width:160px;height:24px;font-size:15px;line-height:24px;color:#E8F1FF;">跨域调度</p>
+    <p class="abs" data-slot="section.rail2.note" style="left:1024px;top:360px;width:160px;height:16px;font-size:11px;line-height:16px;color:#5E7795;">平均 3 跳，目标 1 跳</p>
+
+    <div class="abs" style="left:997px;top:467px;width:6px;height:6px;background:#3B82F6;"></div>
+    <p class="abs" data-slot="section.rail3.no" style="left:1024px;top:456px;width:160px;height:16px;font-family:Arial;font-size:11px;line-height:16px;letter-spacing:2px;color:#22D3EE;">03</p>
+    <p class="abs" data-slot="section.rail3.title" style="left:1024px;top:476px;width:160px;height:24px;font-size:15px;line-height:24px;color:#E8F1FF;">策略收敛</p>
+    <p class="abs" data-slot="section.rail3.note" style="left:1024px;top:500px;width:160px;height:16px;font-size:11px;line-height:16px;color:#5E7795;">5 分钟内全网一致</p>
+
+    <!-- dot matrix -->
+    <div class="abs" style="left:1024px;top:594px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1040px;top:594px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1056px;top:594px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1072px;top:594px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1088px;top:594px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1104px;top:594px;width:2px;height:2px;background:#22D3EE;"></div>
+    <div class="abs" style="left:1120px;top:594px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1136px;top:594px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1024px;top:610px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1040px;top:610px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1056px;top:610px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1072px;top:610px;width:2px;height:2px;background:#3B82F6;"></div>
+    <div class="abs" style="left:1088px;top:610px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1104px;top:610px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1120px;top:610px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1136px;top:610px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1024px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1040px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1056px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1072px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1088px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1104px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1120px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+    <div class="abs" style="left:1136px;top:626px;width:2px;height:2px;background:#1B3350;"></div>
+
+    <div class="abs hair" style="left:96px;top:664px;width:1088px;height:1px;"></div>
+    <p class="abs meta" data-slot="section.footnote" style="left:96px;top:676px;width:640px;height:16px;">ATLAS HELIX &middot; 边缘智能平台</p>
+    <p class="abs" data-slot="section.page" style="left:1054px;top:674px;width:130px;height:18px;font-size:11px;line-height:18px;letter-spacing:2px;color:#8FA6C2;text-align:right;"><span style="color:#22D3EE;">02</span> / 05</p>
+  </section>
+
+  <!-- ==================================================================
+       03 / THREE CAPABILITIES
+       ================================================================== -->
+  <section class="slide" data-slide="3">
+    <div class="abs" style="left:96px;top:70px;width:5px;height:5px;background:#22D3EE;"></div>
+    <p class="abs eyebrow" data-slot="ability.eyebrow" style="left:112px;top:62px;width:560px;height:16px;">CAPABILITY MAP / 03</p>
+    <p class="abs meta" data-slot="ability.meta" style="left:884px;top:64px;width:300px;height:16px;text-align:right;">按数据流顺序排列</p>
+
+    <h2 class="abs h2" data-slot="ability.title" style="left:96px;top:88px;width:820px;height:52px;">三层能力，一条链路</h2>
+    <p class="abs lead" data-slot="ability.lead" style="left:96px;top:152px;width:820px;height:28px;">从设备侧的一行配置，到控制面的一次灰度，Helix 把边缘的复杂度收进三个可替换的层次。</p>
+
+    <div class="abs hair" style="left:96px;top:204px;width:1088px;height:1px;"></div>
+    <div class="abs hair" style="left:443px;top:232px;width:1px;height:304px;"></div>
+    <div class="abs hair" style="left:837px;top:232px;width:1px;height:304px;"></div>
+
+    <p class="abs" data-slot="ability.col1.no" style="left:96px;top:236px;width:280px;height:16px;font-family:Arial;font-size:12px;line-height:16px;letter-spacing:2px;color:#22D3EE;">01</p>
+    <div class="abs" style="left:96px;top:266px;width:28px;height:2px;background:#22D3EE;"></div>
+    <h3 class="abs" data-slot="ability.col1.title" style="left:96px;top:286px;width:300px;height:36px;font-size:26px;line-height:36px;font-weight:600;color:#E8F1FF;">现场接入</h3>
+    <p class="abs" data-slot="ability.col1.body" style="left:96px;top:342px;width:296px;height:90px;font-size:16px;line-height:28px;color:#8FA6C2;">4 MB 内存的轻量探针常驻设备，兼容 Modbus、OPC-UA 与 MQTT，不改动既有产线。</p>
+    <p class="abs meta" data-slot="ability.col1.meta" style="left:96px;top:466px;width:300px;height:16px;">INGEST &middot; SDK 2.1</p>
+
+    <p class="abs" data-slot="ability.col2.no" style="left:490px;top:236px;width:280px;height:16px;font-family:Arial;font-size:12px;line-height:16px;letter-spacing:2px;color:#22D3EE;">02</p>
+    <div class="abs" style="left:490px;top:266px;width:28px;height:2px;background:#22D3EE;"></div>
+    <h3 class="abs" data-slot="ability.col2.title" style="left:490px;top:286px;width:300px;height:36px;font-size:26px;line-height:36px;font-weight:600;color:#E8F1FF;">实时推理</h3>
+    <p class="abs" data-slot="ability.col2.body" style="left:490px;top:342px;width:296px;height:90px;font-size:16px;line-height:28px;color:#8FA6C2;">模型按算子切分下沉，冷启动 80 ms；断网时本地策略继续闭环，恢复后自动对账。</p>
+    <p class="abs meta" data-slot="ability.col2.meta" style="left:490px;top:466px;width:300px;height:16px;">INFERENCE &middot; RUNTIME</p>
+
+    <p class="abs" data-slot="ability.col3.no" style="left:884px;top:236px;width:280px;height:16px;font-family:Arial;font-size:12px;line-height:16px;letter-spacing:2px;color:#22D3EE;">03</p>
+    <div class="abs" style="left:884px;top:266px;width:28px;height:2px;background:#22D3EE;"></div>
+    <h3 class="abs" data-slot="ability.col3.title" style="left:884px;top:286px;width:300px;height:36px;font-size:26px;line-height:36px;font-weight:600;color:#E8F1FF;">全局编排</h3>
+    <p class="abs" data-slot="ability.col3.body" style="left:884px;top:342px;width:300px;height:90px;font-size:16px;line-height:28px;color:#8FA6C2;">控制面统一下发版本与灰度策略，128 个节点在 30 秒内收敛到同一状态。</p>
+    <p class="abs meta" data-slot="ability.col3.meta" style="left:884px;top:466px;width:300px;height:16px;">ORCHESTRATION &middot; CONTROL</p>
+
+    <div class="abs" style="left:96px;top:562px;width:6px;height:6px;background:#22D3EE;"></div>
+    <p class="abs" data-slot="ability.note" style="left:114px;top:552px;width:900px;height:26px;font-size:14px;line-height:26px;color:#8FA6C2;">同一套策略，在云、边、端以一致的方式生效。</p>
+
+    <div class="abs hair" style="left:96px;top:664px;width:1088px;height:1px;"></div>
+    <p class="abs meta" data-slot="ability.footnote" style="left:96px;top:676px;width:640px;height:16px;">ATLAS HELIX &middot; CAPABILITY MAP</p>
+    <p class="abs" data-slot="ability.page" style="left:1054px;top:674px;width:130px;height:18px;font-size:11px;line-height:18px;letter-spacing:2px;color:#8FA6C2;text-align:right;"><span style="color:#22D3EE;">03</span> / 05</p>
+  </section>
+
+  <!-- ==================================================================
+       04 / METRICS + BAR CHART
+       ================================================================== -->
+  <section class="slide" data-slide="4">
+    <div class="abs" style="left:96px;top:70px;width:5px;height:5px;background:#22D3EE;"></div>
+    <p class="abs eyebrow" data-slot="data.eyebrow" style="left:112px;top:62px;width:560px;height:16px;">OPERATIONS / 04</p>
+    <p class="abs meta" data-slot="data.meta" style="left:884px;top:64px;width:300px;height:16px;text-align:right;">FY2026 / Q3</p>
+
+    <h2 class="abs h2" data-slot="data.title" style="left:96px;top:88px;width:900px;height:52px;">规模上来之后，效率来自结构</h2>
+    <p class="abs lead" data-slot="data.lead" style="left:96px;top:152px;width:820px;height:28px;">把节点数、请求量与成本放在同一张图上，才知道增长究竟靠规模，还是靠结构。</p>
+
+    <div class="abs hair" style="left:96px;top:204px;width:1088px;height:1px;"></div>
+
+    <!-- KPI 01 -->
+    <p class="abs cn-label" data-slot="data.kpi1.label" style="left:96px;top:224px;width:240px;height:16px;">节点在线率</p>
+    <p class="abs" data-slot="data.kpi1.delta" style="left:332px;top:224px;width:184px;height:16px;font-size:12px;line-height:16px;text-align:right;color:#22D3EE;">+0.04 pt / 30 天</p>
+    <p class="abs num" data-slot="data.kpi1.value" style="left:96px;top:246px;width:200px;height:72px;font-size:64px;line-height:72px;">99.98</p>
+    <p class="abs" data-slot="data.kpi1.unit" style="left:272px;top:281px;width:60px;height:30px;font-size:22px;line-height:30px;color:#8FA6C2;">%</p>
+    <p class="abs note" data-slot="data.kpi1.note" style="left:96px;top:320px;width:400px;height:16px;">128 个节点 &middot; 6 个国家</p>
+
+    <div class="abs hair" style="left:96px;top:350px;width:420px;height:1px;"></div>
+
+    <!-- KPI 02 -->
+    <p class="abs cn-label" data-slot="data.kpi2.label" style="left:96px;top:366px;width:240px;height:16px;">日均推理请求</p>
+    <p class="abs" data-slot="data.kpi2.delta" style="left:332px;top:366px;width:184px;height:16px;font-size:12px;line-height:16px;text-align:right;color:#22D3EE;">+38% / 同比</p>
+    <p class="abs num" data-slot="data.kpi2.value" style="left:96px;top:388px;width:120px;height:72px;font-size:64px;line-height:72px;">2.4</p>
+    <p class="abs" data-slot="data.kpi2.unit" style="left:200px;top:423px;width:100px;height:30px;font-size:22px;line-height:30px;color:#8FA6C2;">亿次</p>
+    <p class="abs note" data-slot="data.kpi2.note" style="left:96px;top:462px;width:400px;height:16px;">2025 年同期 1.7 亿次</p>
+
+    <div class="abs hair" style="left:96px;top:492px;width:420px;height:1px;"></div>
+
+    <!-- KPI 03 -->
+    <p class="abs cn-label" data-slot="data.kpi3.label" style="left:96px;top:508px;width:260px;height:16px;">单节点综合成本</p>
+    <p class="abs" data-slot="data.kpi3.delta" style="left:332px;top:508px;width:184px;height:16px;font-size:12px;line-height:16px;text-align:right;color:#22D3EE;">-59% / 对比自建</p>
+    <p class="abs num" data-slot="data.kpi3.value" style="left:96px;top:530px;width:170px;height:72px;font-size:64px;line-height:72px;">0.41</p>
+    <p class="abs" data-slot="data.kpi3.unit" style="left:236px;top:565px;width:60px;height:30px;font-size:22px;line-height:30px;color:#8FA6C2;">&times;</p>
+    <p class="abs note" data-slot="data.kpi3.note" style="left:96px;top:604px;width:400px;height:16px;">以自建方案为 1.00&times;</p>
+
+    <!-- chart -->
+    <p class="abs" data-slot="data.chart.title" style="left:600px;top:224px;width:360px;height:16px;font-size:12px;line-height:16px;letter-spacing:2px;color:#8FA6C2;">THROUGHPUT / 万次每秒</p>
+    <p class="abs" data-slot="data.chart.delta" style="left:1004px;top:224px;width:180px;height:16px;font-size:12px;line-height:16px;text-align:right;color:#22D3EE;">同比 +24.0%</p>
+
+    <div class="abs" style="left:700px;top:270px;width:1px;height:258px;background:#10233A;"></div>
+    <div class="abs" style="left:810px;top:270px;width:1px;height:258px;background:#10233A;"></div>
+    <div class="abs" style="left:920px;top:270px;width:1px;height:258px;background:#10233A;"></div>
+    <div class="abs" style="left:1030px;top:270px;width:1px;height:258px;background:#10233A;"></div>
+    <div class="abs" style="left:1140px;top:270px;width:1px;height:258px;background:#10233A;"></div>
+    <div class="abs" style="left:700px;top:528px;width:440px;height:1px;background:#1B3350;"></div>
+
+    <p class="abs" data-slot="data.chart.label1" style="left:600px;top:296px;width:90px;height:24px;font-size:13px;line-height:24px;color:#8FA6C2;">2023</p>
+    <div class="abs" style="left:700px;top:306px;width:440px;height:8px;background:#0B1524;"></div>
+    <div class="abs" style="left:700px;top:306px;width:150px;height:8px;background:#1B3350;"></div>
+    <p class="abs" data-slot="data.chart.value1" style="left:1148px;top:294px;width:36px;height:24px;font-family:Arial;font-size:13px;line-height:24px;font-weight:700;text-align:right;color:#8FA6C2;">34</p>
+
+    <p class="abs" data-slot="data.chart.label2" style="left:600px;top:362px;width:90px;height:24px;font-size:13px;line-height:24px;color:#8FA6C2;">2024</p>
+    <div class="abs" style="left:700px;top:372px;width:440px;height:8px;background:#0B1524;"></div>
+    <div class="abs" style="left:700px;top:372px;width:229px;height:8px;background:#2563EB;"></div>
+    <p class="abs" data-slot="data.chart.value2" style="left:1148px;top:360px;width:36px;height:24px;font-family:Arial;font-size:13px;line-height:24px;font-weight:700;text-align:right;color:#8FA6C2;">52</p>
+
+    <p class="abs" data-slot="data.chart.label3" style="left:600px;top:428px;width:90px;height:24px;font-size:13px;line-height:24px;color:#8FA6C2;">2025</p>
+    <div class="abs" style="left:700px;top:438px;width:440px;height:8px;background:#0B1524;"></div>
+    <div class="abs" style="left:700px;top:438px;width:312px;height:8px;background:#3B82F6;"></div>
+    <p class="abs" data-slot="data.chart.value3" style="left:1148px;top:426px;width:36px;height:24px;font-family:Arial;font-size:13px;line-height:24px;font-weight:700;text-align:right;color:#8FA6C2;">71</p>
+
+    <p class="abs" data-slot="data.chart.label4" style="left:600px;top:494px;width:90px;height:24px;font-size:13px;line-height:24px;color:#E8F1FF;">2026 YTD</p>
+    <div class="abs" style="left:700px;top:504px;width:440px;height:8px;background:#0B1524;"></div>
+    <div class="abs" style="left:700px;top:504px;width:387px;height:8px;background:#22D3EE;"></div>
+    <p class="abs" data-slot="data.chart.value4" style="left:1148px;top:492px;width:36px;height:24px;font-family:Arial;font-size:13px;line-height:24px;font-weight:700;text-align:right;color:#E8F1FF;">88</p>
+
+    <p class="abs" data-slot="data.chart.axis0" style="left:694px;top:540px;width:20px;height:14px;font-family:Arial;font-size:10px;line-height:14px;color:#5E7795;text-align:center;">0</p>
+    <p class="abs" data-slot="data.chart.axis1" style="left:804px;top:540px;width:20px;height:14px;font-family:Arial;font-size:10px;line-height:14px;color:#5E7795;text-align:center;">25</p>
+    <p class="abs" data-slot="data.chart.axis2" style="left:914px;top:540px;width:20px;height:14px;font-family:Arial;font-size:10px;line-height:14px;color:#5E7795;text-align:center;">50</p>
+    <p class="abs" data-slot="data.chart.axis3" style="left:1024px;top:540px;width:20px;height:14px;font-family:Arial;font-size:10px;line-height:14px;color:#5E7795;text-align:center;">75</p>
+    <p class="abs" data-slot="data.chart.axis4" style="left:1134px;top:540px;width:20px;height:14px;font-family:Arial;font-size:10px;line-height:14px;color:#5E7795;text-align:center;">100</p>
+
+    <p class="abs" data-slot="data.source" style="left:96px;top:636px;width:780px;height:16px;font-size:11px;line-height:16px;color:#5E7795;">数据来源：Helix 控制面 &middot; 2026-09-30 快照 &middot; 口径为单节点日均，已剔除灰度流量。</p>
+    <p class="abs" data-slot="data.unit" style="left:900px;top:636px;width:284px;height:16px;font-size:11px;line-height:16px;color:#5E7795;text-align:right;">单位：万次 / 节点 / 日</p>
+
+    <div class="abs hair" style="left:96px;top:664px;width:1088px;height:1px;"></div>
+    <p class="abs meta" data-slot="data.footnote" style="left:96px;top:676px;width:640px;height:16px;">ATLAS HELIX &middot; OPERATIONS REVIEW</p>
+    <p class="abs" data-slot="data.page" style="left:1054px;top:674px;width:130px;height:18px;font-size:11px;line-height:18px;letter-spacing:2px;color:#8FA6C2;text-align:right;"><span style="color:#22D3EE;">04</span> / 05</p>
+  </section>
+
+  <!-- ==================================================================
+       05 / CLOSING
+       ================================================================== -->
+  <section class="slide" data-slide="5">
+    <img class="abs" src="../assets/campus.png" alt="园区全景"
+         style="left:0px;top:0px;width:1280px;height:568px;">
+    <div class="abs" style="left:0px;top:0px;width:1280px;height:568px;background:linear-gradient(rgba(5,11,20,.35), rgba(5,11,20,.92));"></div>
+    <div class="abs" style="left:0px;top:0px;width:1280px;height:568px;background:linear-gradient(90deg, rgba(5,11,20,.80) 0%, rgba(5,11,20,.34) 56%, rgba(5,11,20,0) 100%);"></div>
+
+    <div class="abs" style="left:96px;top:94px;width:5px;height:5px;background:#22D3EE;"></div>
+    <p class="abs eyebrow" data-slot="closing.eyebrow" style="left:112px;top:86px;width:560px;height:16px;">NEXT / 2026</p>
+
+    <h2 class="abs" data-slot="closing.title" style="left:96px;top:148px;width:1000px;height:68px;font-size:56px;line-height:68px;font-weight:600;color:#E8F1FF;">下一步，从一条链路开始</h2>
+    <p class="abs" data-slot="closing.lead" style="left:98px;top:244px;width:620px;height:64px;font-size:20px;line-height:32px;color:#8FA6C2;">我们把这套栈交给你的团队：两周完成首个节点接入，三十天跑通一条产线。</p>
+    <p class="abs" data-slot="closing.cta" style="left:98px;top:326px;width:420px;height:20px;font-size:13px;line-height:20px;letter-spacing:2px;color:#22D3EE;">预约演示 / BOOK A DEMO</p>
+    <div class="abs" style="left:98px;top:354px;width:120px;height:1px;background:#22D3EE;"></div>
+
+    <!-- contact band -->
+    <div class="abs" style="left:0px;top:568px;width:1280px;height:1px;background:#1B3350;"></div>
+    <div class="abs" style="left:443px;top:592px;width:1px;height:74px;background:#1B3350;"></div>
+    <div class="abs" style="left:817px;top:592px;width:1px;height:74px;background:#1B3350;"></div>
+
+    <p class="abs cn-label" data-slot="closing.contact1.label" style="left:96px;top:590px;width:300px;height:16px;">01 / 商务合作</p>
+    <p class="abs" data-slot="closing.contact1.value" style="left:96px;top:612px;width:320px;height:30px;font-size:20px;line-height:30px;color:#E8F1FF;">business@atlas.example</p>
+    <p class="abs note" data-slot="closing.contact1.note" style="left:96px;top:648px;width:320px;height:16px;">+86 21 5088 0188</p>
+
+    <p class="abs cn-label" data-slot="closing.contact2.label" style="left:470px;top:590px;width:300px;height:16px;">02 / 技术文档</p>
+    <p class="abs" data-slot="closing.contact2.value" style="left:470px;top:612px;width:320px;height:30px;font-size:20px;line-height:30px;color:#E8F1FF;">docs.atlas.example/helix</p>
+    <p class="abs note" data-slot="closing.contact2.note" style="left:470px;top:648px;width:320px;height:16px;">开发者套件 &middot; SDK 2.1</p>
+
+    <p class="abs cn-label" data-slot="closing.contact3.label" style="left:844px;top:590px;width:300px;height:16px;">03 / 媒体联络</p>
+    <p class="abs" data-slot="closing.contact3.value" style="left:844px;top:612px;width:340px;height:30px;font-size:20px;line-height:30px;color:#E8F1FF;">press@atlas.example</p>
+    <p class="abs note" data-slot="closing.contact3.note" style="left:844px;top:648px;width:320px;height:16px;">品牌资料 &middot; 高清素材</p>
+
+    <div class="abs hair" style="left:96px;top:684px;width:1088px;height:1px;"></div>
+    <p class="abs meta" data-slot="closing.footnote" style="left:96px;top:694px;width:640px;height:16px;">&copy; 2026 ATLAS SYSTEMS &middot; 本资料仅供受邀对象使用</p>
+    <p class="abs" data-slot="closing.page" style="left:1054px;top:692px;width:130px;height:18px;font-size:11px;line-height:18px;letter-spacing:2px;color:#8FA6C2;text-align:right;"><span style="color:#22D3EE;">05</span> / 05</p>
+  </section>
+
+</div>
+</body>
+</html>

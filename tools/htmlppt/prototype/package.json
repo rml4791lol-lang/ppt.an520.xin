@@ -1,0 +1,36 @@
+{
+  "name": "html-pptx-prototype",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HTML slides (fixed 1280x720) -> native editable PPTX -> LibreOffice re-render -> objective pixel/editability metrics",
+  "main": "src/run.mjs",
+  "type": "commonjs",
+  "scripts": {
+    "build": "node src/run.mjs",
+    "measure": "node src/measure.mjs",
+    "convert": "node src/convert.mjs",
+    "postprocess": "node src/postprocess.mjs",
+    "inspect": "node src/inspect.mjs",
+    "render": "node src/render.mjs",
+    "diff": "/Users/an/Desktop/Atlas/PPT/PPT 复刻/.venv/bin/python src/diffstat.py",
+    "report": "node src/report.mjs",
+    "fontprobe": "node src/fontprobe.mjs",
+    "assets": "/Users/an/Desktop/Atlas/PPT/PPT 复刻/.venv/bin/python src/make_assets.py",
+    "lint": "node src/lint.mjs",
+    "lint:strict": "node src/lint.mjs --strict"
+  },
+  "keywords": [
+    "html",
+    "pptx",
+    "pptxgenjs",
+    "playwright",
+    "libreoffice"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "fonteditor-core": "^2.6.3",
+    "jszip": "^3.10.2",
+    "playwright": "^1.64.1",
+    "pptxgenjs": "^4.0.1"
+  }
+}

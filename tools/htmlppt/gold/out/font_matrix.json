@@ -1,0 +1,118 @@
+{
+ "generatedAt": "2026-10-19T14:12:25.404Z",
+ "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+ "fontSizePx": 30,
+ "fontConfig": "/opt/homebrew/etc/fonts/fonts.conf",
+ "note": "chromeWidthPx = layout width of the <div> (nowrap text). pptxInkWidthPx = ink run width measured from the LibreOffice render; htmlInkWidthPx from the Chrome screenshot.",
+ "fonts": [
+  {
+   "label": "PingFang SC",
+   "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+   "font": "PingFang SC",
+   "chromeRequestedFamily": "\"PingFang SC\"",
+   "chromeWidthPx": 560,
+   "pptxInkWidthPx": 580,
+   "deltaPx": 20,
+   "deltaPct": 3.6,
+   "htmlInkWidthPx": 557
+  },
+  {
+   "label": "Hiragino Sans GB",
+   "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+   "font": "Hiragino Sans GB",
+   "chromeRequestedFamily": "\"Hiragino Sans GB\"",
+   "chromeWidthPx": 584,
+   "pptxInkWidthPx": 604,
+   "deltaPx": 20,
+   "deltaPct": 3.4,
+   "htmlInkWidthPx": 581
+  },
+  {
+   "label": "Heiti SC",
+   "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+   "font": "Heiti SC",
+   "chromeRequestedFamily": "\"Heiti SC\"",
+   "chromeWidthPx": 533,
+   "pptxInkWidthPx": 552,
+   "deltaPx": 19,
+   "deltaPct": 3.6,
+   "htmlInkWidthPx": 530
+  },
+  {
+   "label": "Noto Sans SC",
+   "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+   "font": "Noto Sans SC",
+   "chromeRequestedFamily": "\"Noto Sans SC\"",
+   "chromeWidthPx": 532,
+   "pptxInkWidthPx": 552,
+   "deltaPx": 20,
+   "deltaPct": 3.7,
+   "htmlInkWidthPx": 528
+  },
+  {
+   "label": "Arial",
+   "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+   "font": "Arial",
+   "chromeRequestedFamily": "Arial",
+   "chromeWidthPx": 541,
+   "pptxInkWidthPx": 560,
+   "deltaPx": 19,
+   "deltaPct": 3.6,
+   "htmlInkWidthPx": 538
+  },
+  {
+   "label": "Helvetica Neue",
+   "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+   "font": "Helvetica Neue",
+   "chromeRequestedFamily": "\"Helvetica Neue\"",
+   "chromeWidthPx": 546,
+   "pptxInkWidthPx": 565,
+   "deltaPx": 19,
+   "deltaPct": 3.5,
+   "htmlInkWidthPx": 543
+  },
+  {
+   "label": "Songti SC",
+   "text": "HTML 幻灯片 AaBb 0123 → 90% 覆盖率",
+   "font": "Songti SC",
+   "chromeRequestedFamily": "\"Songti SC\"",
+   "chromeWidthPx": 518,
+   "pptxInkWidthPx": 540,
+   "deltaPx": 22,
+   "deltaPct": 4.3,
+   "htmlInkWidthPx": 517
+  },
+  {
+   "label": "control-latin",
+   "text": "HTML AaBb 0123 90%",
+   "font": "PingFang SC",
+   "chromeRequestedFamily": "\"PingFang SC\"",
+   "chromeWidthPx": 320,
+   "pptxInkWidthPx": 317,
+   "deltaPx": -3,
+   "deltaPct": -0.9,
+   "htmlInkWidthPx": 316
+  },
+  {
+   "label": "control-cjk",
+   "text": "幻灯片覆盖率",
+   "font": "PingFang SC",
+   "chromeRequestedFamily": "\"PingFang SC\"",
+   "chromeWidthPx": 180,
+   "pptxInkWidthPx": 178,
+   "deltaPx": -2,
+   "deltaPct": -1.1,
+   "htmlInkWidthPx": 178
+  }
+ ],
+ "spacingHypothesis": {
+  "boundariesInMixedText": 3,
+  "note": "mixed sample has 3 CJK<->Latin boundaries; LO adds ~0.25em per boundary = 7.5px @30px = 22.5px total",
+  "expectedInflationPx": 22.5
+ },
+ "pdfFonts": "name                                 type              encoding         emb sub uni object ID\n------------------------------------ ----------------- ---------------- --- --- --- ---------\nBAAAAA+PingFangSC-Regular            Type 1            Builtin          yes yes yes     52  0\nCAAAAA+HiraginoSansGB-W3             Type 1            Builtin          yes yes yes     42  0\nDAAAAA+STHeitiSC-Medium              TrueType          WinAnsi          yes yes yes     27  0\nEAAAAA+NotoSansSC-Regular            TrueType          WinAnsi          yes yes yes     47  0\nFAAAAA+ArialMT                       TrueType          WinAnsi          yes yes yes     62  0\nGAAAAA+HelveticaNeue                 TrueType          WinAnsi          yes yes yes     32  0\nHAAAAA+HiraMaruPro-W4                Type 1            Builtin          yes yes yes     37  0\nIAAAAA+STSongti-SC-Regular           TrueType          WinAnsi          yes yes yes     57  0\n",
+ "artifacts": {
+  "html": "../gold/out/fontprobe/html.png",
+  "pptx": "../gold/out/fontprobe/pptx-1.png"
+ }
+}

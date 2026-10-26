@@ -1,0 +1,170 @@
+{
+  "input": "bench/runs/ours/deck.pptx",
+  "output": "prototype/out/font-embed/ours-deck.pptx",
+  "bytesBefore": 252319,
+  "bytesAfter": 467516,
+  "deltaBytes": 215197,
+  "deltaPct": 85.3,
+  "fontsRequested": 2,
+  "fontsEmbedded": 2,
+  "skipped": [],
+  "remapped": {
+    "PingFang SC": 5
+  },
+  "fonts": [
+    {
+      "family": "Noto Sans SC",
+      "slot": "regular",
+      "file": "/Users/an/Library/Fonts/NotoSansSC-Regular.ttf",
+      "container": "ttf",
+      "fsType": "0x0000",
+      "license": {
+        "restricted": false,
+        "previewPrint": false,
+        "editable": false,
+        "noSubsetting": false,
+        "bitmapOnly": false
+      },
+      "chars": 528,
+      "glyphsBefore": 31036,
+      "glyphsAfter": 924,
+      "originalBytes": 10595876,
+      "ttfBytes": 10595876,
+      "subsetBytes": 177064,
+      "eotBytes": 177356,
+      "subsetRatio": 0.0167
+    },
+    {
+      "family": "Noto Sans SC",
+      "slot": "bold",
+      "file": "/Users/an/Library/Fonts/NotoSansSC-Bold.ttf",
+      "container": "ttf",
+      "fsType": "0x0000",
+      "license": {
+        "restricted": false,
+        "previewPrint": false,
+        "editable": false,
+        "noSubsetting": false,
+        "bitmapOnly": false
+      },
+      "chars": 528,
+      "glyphsBefore": 31036,
+      "glyphsAfter": 924,
+      "originalBytes": 10585400,
+      "ttfBytes": 10585400,
+      "subsetBytes": 177972,
+      "eotBytes": 178252,
+      "subsetRatio": 0.0168
+    }
+  ],
+  "rels": [
+    {
+      "id": "rId12",
+      "file": "1.fntdata",
+      "family": "Noto Sans SC",
+      "slot": "regular"
+    },
+    {
+      "id": "rId13",
+      "file": "2.fntdata",
+      "family": "Noto Sans SC",
+      "slot": "bold"
+    }
+  ],
+  "elapsedMs": 458,
+  "verification": [
+    {
+      "name": "① 解包结构 (fntdata + embeddedFontLst + rels + Content_Types)",
+      "ok": true,
+      "detail": {
+        "fntdataParts": 2,
+        "embeddedFonts": [
+          {
+            "typeface": "Noto Sans SC",
+            "slots": {
+              "regular": "rId12",
+              "bold": "rId13"
+            }
+          }
+        ],
+        "relsFontCount": 2,
+        "ridsResolve": true,
+        "targetsExist": true,
+        "contentTypeOk": true,
+        "fntdata": [
+          {
+            "part": "ppt/fonts/1.fntdata",
+            "bytes": 177356,
+            "magic": "0x504c",
+            "version": "0x20001",
+            "fontDataSize": 177064,
+            "family": "Noto Sans SC",
+            "style": "Regular",
+            "fsType": "0x0000",
+            "embeddedTtfSig": "....",
+            "ok": true
+          },
+          {
+            "part": "ppt/fonts/2.fntdata",
+            "bytes": 178252,
+            "magic": "0x504c",
+            "version": "0x20001",
+            "fontDataSize": 177972,
+            "family": "Noto Sans SC",
+            "style": "Bold",
+            "fsType": "0x0000",
+            "embeddedTtfSig": "....",
+            "ok": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "② zip 压缩方式 (全部 DEFLATE)",
+      "ok": true,
+      "detail": {
+        "entries": 40,
+        "deflate": 40,
+        "store": 0,
+        "storedEntries": []
+      }
+    },
+    {
+      "name": "③ python-pptx 重开",
+      "ok": true,
+      "detail": {
+        "exit": 0,
+        "out": "slides=5 size=12192000x6858000",
+        "err": ""
+      }
+    },
+    {
+      "name": "④ LibreOffice 回渲 (soffice --convert-to pdf)",
+      "ok": true,
+      "detail": {
+        "exit": 0,
+        "pdfBytes": 408992,
+        "err": "",
+        "fontsInPdf": [
+          "BAAAAA+NotoSansSC-Bold",
+          "CAAAAA+NotoSansSC-Bold",
+          "DAAAAA+NotoSansSC-Regular",
+          "EAAAAA+NotoSansSC-Regular",
+          "FAAAAA+NotoSansSC-Regular",
+          "GAAAAA+NotoSansSC-Bold",
+          "HAAAAA+NotoSansSC-Regular",
+          "IAAAAA+NotoSansSC-Bold",
+          "JAAAAA+NotoSansSC-Bold",
+          "KAAAAA+NotoSansSC-Bold",
+          "LAAAAA+NotoSansSC-Bold",
+          "MAAAAA+NotoSansSC-Bold"
+        ],
+        "matchesRequested": [
+          "Noto Sans SC",
+          "Noto Sans SC"
+        ]
+      }
+    }
+  ],
+  "verificationOk": true
+}

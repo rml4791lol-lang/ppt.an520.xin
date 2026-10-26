@@ -1,0 +1,239 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "htmlppt/describe.schema.json",
+ "title": "htmlppt/describe@1",
+ "type": "object",
+ "required": [
+  "schema",
+  "canvas",
+  "masters",
+  "layouts",
+  "themes",
+  "totals"
+ ],
+ "properties": {
+  "schema": {
+   "const": "htmlppt/describe@1"
+  },
+  "source": {
+   "type": "string"
+  },
+  "canvas": {
+   "type": "object",
+   "required": [
+    "w",
+    "h"
+   ],
+   "properties": {
+    "w": {
+     "const": 1280
+    },
+    "h": {
+     "const": 720
+    },
+    "cx": {
+     "type": "integer"
+    },
+    "cy": {
+     "type": "integer"
+    }
+   }
+  },
+  "masters": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "part"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "part": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "layouts": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/layout"
+   }
+  },
+  "themes": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "minItems": 1
+  },
+  "components": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/componentRef"
+   }
+  },
+  "totals": {
+   "type": "object",
+   "required": [
+    "layouts",
+    "slots",
+    "by_type"
+   ],
+   "properties": {
+    "layouts": {
+     "type": "integer"
+    },
+    "slots": {
+     "type": "integer"
+    },
+    "by_type": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer"
+     }
+    }
+   }
+  }
+ },
+ "$defs": {
+  "layout": {
+   "type": "object",
+   "required": [
+    "id",
+    "part",
+    "name",
+    "slots"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^S\\d{2}$"
+    },
+    "part": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "master": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "slot_count": {
+     "type": "integer"
+    },
+    "slots": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/slot"
+     }
+    }
+   }
+  },
+  "slot": {
+   "type": "object",
+   "required": [
+    "name",
+    "type",
+    "x",
+    "y",
+    "w",
+    "h"
+   ],
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "type": {
+     "enum": [
+      "title",
+      "body",
+      "pic",
+      "obj",
+      "sldNum",
+      "tbl",
+      "chart",
+      "media"
+     ]
+    },
+    "idx": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "x": {
+     "type": "number"
+    },
+    "y": {
+     "type": "number"
+    },
+    "w": {
+     "type": "number"
+    },
+    "h": {
+     "type": "number"
+    },
+    "sz_pt": {
+     "type": [
+      "number",
+      "null"
+     ]
+    },
+    "capacity": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "properties": {
+      "per_line": {
+       "type": "integer"
+      },
+      "lines": {
+       "type": "integer"
+      },
+      "text": {
+       "type": "string"
+      }
+     }
+    },
+    "sample": {
+     "type": "string"
+    },
+    "required": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    }
+   }
+  },
+  "componentRef": {
+   "type": "object",
+   "required": [
+    "id",
+    "category"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "category": {
+     "type": "string"
+    },
+    "variants": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   }
+  }
+ }
+}

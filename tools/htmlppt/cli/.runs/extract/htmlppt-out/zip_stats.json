@@ -1,0 +1,12 @@
+{
+ "file": "../cli/.runs/extract/htmlppt-out/deck.pptx",
+ "bytes": 167670,
+ "entries": 38,
+ "directoryEntries": 16,
+ "deflate": 38,
+ "store": 0,
+ "deflateRatio": 100,
+ "uncompressedBytes": 304602,
+ "storedEntries": [],
+ "ok": true
+}

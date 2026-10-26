@@ -1,0 +1,720 @@
+{
+ "generatedAt": "2026-10-20T04:10:33.997Z",
+ "command": "npm run build",
+ "delivery": {
+  "deck": "out/deck.pptx",
+  "bytes": 167670,
+  "slides": 5,
+  "htmlScreenshots": "out/html/slide-N.png",
+  "pptxRenders": "out/pptx/slide-N.png",
+  "diffImages": "out/diff/slide-N.png",
+  "contactSheet": "out/diff/contact-sheet.png",
+  "metrics": "out/metrics.json",
+  "editability": "out/editability.json"
+ },
+ "pipeline": [
+  "samples/deck.html (5 slides, fixed 1280x720)",
+  "headless Chrome (channel:chrome) measure: getBoundingClientRect + getComputedStyle + visual line boxes",
+  "px->inch /96, px->pt *0.75, native text boxes (margin 0, fit none, exact line spacing, hard line breaks)",
+  "PptxGenJS: text / roundRect+rect / picture / table; gradient + custGeom placeholders",
+  "postprocess: inject a:gradFill + a:custGeom, prune dangling Overrides, repack 100% DEFLATE",
+  "LibreOffice 26.8 headless -> PDF, pdftoppm -> 1280x720 PNG",
+  "numpy/Pillow pixel diff + per-object attribution + contact sheet"
+ ],
+ "text": {
+  "runs_a_t": 89,
+  "chars_pptx_nonws": 1173,
+  "chars_html_nonws": 1173,
+  "coverage": 1,
+  "note": "coverage = non-whitespace chars inside a:t / non-whitespace chars of measured HTML text + table cells"
+ },
+ "editability": {
+  "runs_a_t": 89,
+  "coverage": 1,
+  "slidesDetail": [
+   {
+    "slide": 1,
+    "runs_a_t": 7,
+    "chars_pptx": 128,
+    "chars_html": 128,
+    "coverage": 1,
+    "p_sp": 16,
+    "p_pic": 0,
+    "p_graphicFrame": 0,
+    "a_tbl": 0,
+    "custGeom": 2,
+    "gradFill": 1,
+    "fullPagePicture": false,
+    "biggestPictureAreaRatio": 0
+   },
+   {
+    "slide": 2,
+    "runs_a_t": 22,
+    "chars_pptx": 153,
+    "chars_html": 153,
+    "coverage": 1,
+    "p_sp": 42,
+    "p_pic": 0,
+    "p_graphicFrame": 0,
+    "a_tbl": 0,
+    "custGeom": 3,
+    "gradFill": 0,
+    "fullPagePicture": false,
+    "biggestPictureAreaRatio": 0
+   },
+   {
+    "slide": 3,
+    "runs_a_t": 12,
+    "chars_pptx": 159,
+    "chars_html": 159,
+    "coverage": 1,
+    "p_sp": 21,
+    "p_pic": 1,
+    "p_graphicFrame": 0,
+    "a_tbl": 0,
+    "custGeom": 0,
+    "gradFill": 0,
+    "fullPagePicture": false,
+    "biggestPictureAreaRatio": 0.243
+   },
+   {
+    "slide": 4,
+    "runs_a_t": 13,
+    "chars_pptx": 196,
+    "chars_html": 196,
+    "coverage": 1,
+    "p_sp": 22,
+    "p_pic": 1,
+    "p_graphicFrame": 0,
+    "a_tbl": 0,
+    "custGeom": 0,
+    "gradFill": 0,
+    "fullPagePicture": false,
+    "biggestPictureAreaRatio": 0.169
+   },
+   {
+    "slide": 5,
+    "runs_a_t": 35,
+    "chars_pptx": 537,
+    "chars_html": 537,
+    "coverage": 1,
+    "p_sp": 20,
+    "p_pic": 0,
+    "p_graphicFrame": 1,
+    "a_tbl": 1,
+    "custGeom": 0,
+    "gradFill": 0,
+    "fullPagePicture": false,
+    "biggestPictureAreaRatio": 0
+   }
+  ]
+ },
+ "pixel": {
+  "overall": {
+   "slides": 5,
+   "pixels": 4608000,
+   "pixelDiffRatio": 0.0508,
+   "majorDiffRatio": 0.0373,
+   "mae": 5.41
+  },
+  "byKind": {
+   "image": {
+    "area": 380400,
+    "changedPixels": 3819,
+    "ratio": 0.01
+   },
+   "shape": {
+    "area": 10717404,
+    "changedPixels": 538027,
+    "ratio": 0.0502
+   },
+   "svg": {
+    "area": 2770384,
+    "changedPixels": 99391,
+    "ratio": 0.0359
+   },
+   "table": {
+    "area": 46848,
+    "changedPixels": 9315,
+    "ratio": 0.1988
+   },
+   "text": {
+    "area": 972028,
+    "changedPixels": 202768,
+    "ratio": 0.2086
+   }
+  },
+  "textVerticalOffsetPx": {
+   "samples": 69,
+   "median": 3,
+   "mean": 3.32,
+   "histogram": {
+    "1": 7,
+    "2": 10,
+    "3": 24,
+    "4": 13,
+    "5": 12,
+    "6": 3
+   },
+   "note": "row-edge cross correlation, positive = PPTX text sits lower than HTML"
+  },
+  "slides": [
+   {
+    "slide": 1,
+    "mae": 6.06,
+    "pixelDiffRatio": 0.0461,
+    "majorDiffRatio": 0.0356,
+    "textDys": {
+     "samples": 7,
+     "median": 4,
+     "min": 1,
+     "max": 5
+    },
+    "worstRegions": [
+     {
+      "id": "s1-o11",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 420,
+      "w": 600,
+      "h": 34,
+      "ratio": 0.3536,
+      "mae": 34.37
+     },
+     {
+      "id": "s1-o9",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 92,
+      "y": 274,
+      "w": 680,
+      "h": 78,
+      "ratio": 0.2739,
+      "mae": 44.75
+     },
+     {
+      "id": "s1-o15",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 152,
+      "y": 570,
+      "w": 170,
+      "h": 24,
+      "ratio": 0.2686,
+      "mae": 23.17
+     },
+     {
+      "id": "s1-o12",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 454,
+      "w": 600,
+      "h": 34,
+      "ratio": 0.209,
+      "mae": 19.5
+     }
+    ]
+   },
+   {
+    "slide": 2,
+    "mae": 3.32,
+    "pixelDiffRatio": 0.0359,
+    "majorDiffRatio": 0.0232,
+    "textDys": {
+     "samples": 22,
+     "median": 3,
+     "min": 1,
+     "max": 4
+    },
+    "worstRegions": [
+     {
+      "id": "s2-o10",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 118,
+      "y": 310,
+      "w": 196,
+      "h": 20,
+      "ratio": 0.2571,
+      "mae": 16.98
+     },
+     {
+      "id": "s2-o20",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 630,
+      "y": 310,
+      "w": 196,
+      "h": 20,
+      "ratio": 0.2148,
+      "mae": 12.61
+     },
+     {
+      "id": "s2-o25",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 886,
+      "y": 310,
+      "w": 196,
+      "h": 20,
+      "ratio": 0.2056,
+      "mae": 13.88
+     },
+     {
+      "id": "s2-o24",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 886,
+      "y": 284,
+      "w": 196,
+      "h": 26,
+      "ratio": 0.2011,
+      "mae": 24.95
+     }
+    ]
+   },
+   {
+    "slide": 3,
+    "mae": 3.09,
+    "pixelDiffRatio": 0.0362,
+    "majorDiffRatio": 0.0232,
+    "textDys": {
+     "samples": 12,
+     "median": 3,
+     "min": 1,
+     "max": 4
+    },
+    "worstRegions": [
+     {
+      "id": "s3-o21",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 600,
+      "w": 820,
+      "h": 20,
+      "ratio": 0.3645,
+      "mae": 19.69
+     },
+     {
+      "id": "s3-o14",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 848,
+      "y": 246,
+      "w": 300,
+      "h": 22,
+      "ratio": 0.2073,
+      "mae": 15.02
+     },
+     {
+      "id": "s3-o5",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 118,
+      "w": 900,
+      "h": 26,
+      "ratio": 0.1975,
+      "mae": 15.4
+     },
+     {
+      "id": "s3-o4",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 120,
+      "y": 58,
+      "w": 780,
+      "h": 50,
+      "ratio": 0.1916,
+      "mae": 31.48
+     }
+    ]
+   },
+   {
+    "slide": 4,
+    "mae": 4.48,
+    "pixelDiffRatio": 0.0407,
+    "majorDiffRatio": 0.0304,
+    "textDys": {
+     "samples": 13,
+     "median": 3,
+     "min": 1,
+     "max": 6
+    },
+    "worstRegions": [
+     {
+      "id": "s4-o10",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 668,
+      "y": 246,
+      "w": 480,
+      "h": 28,
+      "ratio": 0.3854,
+      "mae": 36.26
+     },
+     {
+      "id": "s4-o13",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 668,
+      "y": 402,
+      "w": 480,
+      "h": 26,
+      "ratio": 0.3752,
+      "mae": 36.07
+     },
+     {
+      "id": "s4-o11",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 668,
+      "y": 274,
+      "w": 480,
+      "h": 28,
+      "ratio": 0.2827,
+      "mae": 26.71
+     },
+     {
+      "id": "s4-o22",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 844,
+      "y": 574,
+      "w": 300,
+      "h": 22,
+      "ratio": 0.2215,
+      "mae": 16.02
+     }
+    ]
+   },
+   {
+    "slide": 5,
+    "mae": 10.08,
+    "pixelDiffRatio": 0.095,
+    "majorDiffRatio": 0.0741,
+    "textDys": {
+     "samples": 15,
+     "median": 5,
+     "min": 2,
+     "max": 6
+    },
+    "worstRegions": [
+     {
+      "id": "s5-o18",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 522,
+      "w": 1088,
+      "h": 26,
+      "ratio": 0.4076,
+      "mae": 37.88
+     },
+     {
+      "id": "s5-o12",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 352,
+      "w": 520,
+      "h": 26,
+      "ratio": 0.3979,
+      "mae": 37.01
+     },
+     {
+      "id": "s5-o11",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 326,
+      "w": 520,
+      "h": 26,
+      "ratio": 0.3975,
+      "mae": 37.09
+     },
+     {
+      "id": "s5-o7",
+      "kind": "text",
+      "tag": "p",
+      "label": "p",
+      "x": 96,
+      "y": 196,
+      "w": 520,
+      "h": 26,
+      "ratio": 0.385,
+      "mae": 35.62
+     }
+    ]
+   }
+  ]
+ },
+ "structure": {
+  "objects": {
+   "text": 69,
+   "shape": 47,
+   "image": 2,
+   "svg": 5,
+   "table": 1
+  },
+  "svg": {
+   "total": 5,
+   "custgeom": 5,
+   "objectsNative": 5,
+   "pngFallback": 0
+  },
+  "gradients": 1,
+  "textRunsWritten": 69,
+  "paragraphs": 69,
+  "hardLines": true,
+  "postprocess": {
+   "total": 6,
+   "applied": 6,
+   "failed": 0,
+   "details": [
+    {
+     "slide": 1,
+     "kind": "gradient",
+     "marker": "FE00E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 1,
+     "kind": "custgeom",
+     "marker": "FE01E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 1,
+     "kind": "custgeom",
+     "marker": "FE02E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 2,
+     "kind": "custgeom",
+     "marker": "FE03E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 2,
+     "kind": "custgeom",
+     "marker": "FE04E0",
+     "ok": true,
+     "reason": ""
+    },
+    {
+     "slide": 2,
+     "kind": "custgeom",
+     "marker": "FE05E0",
+     "ok": true,
+     "reason": ""
+    }
+   ],
+   "cubicBezTo": {
+    "total": 0,
+    "bySlide": {
+     "1": 0,
+     "2": 0
+    },
+    "custGeomShapes": 5
+   },
+   "prunedOverrides": [
+    "/ppt/slideMasters/slideMaster2.xml",
+    "/ppt/slideMasters/slideMaster3.xml",
+    "/ppt/slideMasters/slideMaster4.xml",
+    "/ppt/slideMasters/slideMaster5.xml"
+   ],
+   "zipBytes": 167670,
+   "compression": "DEFLATE (level 6)"
+  }
+ },
+ "package": {
+  "sldSzEMU": {
+   "cx": 12192000,
+   "cy": 6858000
+  },
+  "zip": {
+   "entries": 38,
+   "deflate": 38,
+   "store": 0,
+   "deflateRatio": 100
+  },
+  "contentTypes": {
+   "defaults": 11,
+   "overrides": 20,
+   "danglingOverrides": [],
+   "partsWithoutType": [],
+   "ok": true
+  },
+  "pdfBytes": 382491,
+  "embeddedFonts": [
+   "BAAAAA+PingFangSC-Semibold",
+   "CAAAAA+PingFangSC-Semibold",
+   "DAAAAA+PingFangSC-Regular",
+   "EAAAAA+PingFangSC-Regular",
+   "FAAAAA+PingFangSC-Regular",
+   "GAAAAA+PingFangSC-Semibold",
+   "HAAAAA+PingFangSC-Regular",
+   "IAAAAA+PingFangSC-Semibold",
+   "JAAAAA+PingFangSC-Semibold",
+   "KAAAAA+PingFangSC-Semibold",
+   "LAAAAA+PingFangSC-Semibold",
+   "MAAAAA+PingFangSC-Semibold",
+   "NAAAAA+PingFangSC-Regular",
+   "OAAAAA+PingFangSC-Semibold",
+   "PAAAAA+PingFangSC-Regular"
+  ]
+ },
+ "fonts": {
+  "proxyNote": "LibreOffice is the verification proxy, not PowerPoint. Headless soffice only sees its bundled fonts unless FONTCONFIG_FILE points at the host fontconfig; render.mjs does that so both sides resolve PingFang SC.",
+  "fontConfig": "/opt/homebrew/etc/fonts/fonts.conf",
+  "embeddedFonts": [
+   "BAAAAA+PingFangSC-Semibold",
+   "CAAAAA+PingFangSC-Semibold",
+   "DAAAAA+PingFangSC-Regular",
+   "EAAAAA+PingFangSC-Regular",
+   "FAAAAA+PingFangSC-Regular",
+   "GAAAAA+PingFangSC-Semibold",
+   "HAAAAA+PingFangSC-Regular",
+   "IAAAAA+PingFangSC-Semibold",
+   "JAAAAA+PingFangSC-Semibold",
+   "KAAAAA+PingFangSC-Semibold",
+   "LAAAAA+PingFangSC-Semibold",
+   "MAAAAA+PingFangSC-Semibold",
+   "NAAAAA+PingFangSC-Regular",
+   "OAAAAA+PingFangSC-Semibold",
+   "PAAAAA+PingFangSC-Regular"
+  ],
+  "probe": [
+   {
+    "label": "PingFang SC",
+    "htmlInkWidthPx": 557,
+    "pptxInkWidthPx": 580,
+    "deltaPx": 20,
+    "deltaPct": 3.6
+   },
+   {
+    "label": "Hiragino Sans GB",
+    "htmlInkWidthPx": 581,
+    "pptxInkWidthPx": 604,
+    "deltaPx": 20,
+    "deltaPct": 3.4
+   },
+   {
+    "label": "Heiti SC",
+    "htmlInkWidthPx": 530,
+    "pptxInkWidthPx": 552,
+    "deltaPx": 19,
+    "deltaPct": 3.6
+   },
+   {
+    "label": "Noto Sans SC",
+    "htmlInkWidthPx": 528,
+    "pptxInkWidthPx": 552,
+    "deltaPx": 20,
+    "deltaPct": 3.7
+   },
+   {
+    "label": "Arial",
+    "htmlInkWidthPx": 538,
+    "pptxInkWidthPx": 560,
+    "deltaPx": 19,
+    "deltaPct": 3.6
+   },
+   {
+    "label": "Helvetica Neue",
+    "htmlInkWidthPx": 543,
+    "pptxInkWidthPx": 565,
+    "deltaPx": 19,
+    "deltaPct": 3.5
+   },
+   {
+    "label": "Songti SC",
+    "htmlInkWidthPx": 517,
+    "pptxInkWidthPx": 540,
+    "deltaPx": 22,
+    "deltaPct": 4.3
+   },
+   {
+    "label": "control-latin",
+    "htmlInkWidthPx": 316,
+    "pptxInkWidthPx": 317,
+    "deltaPx": -3,
+    "deltaPct": -0.9
+   },
+   {
+    "label": "control-cjk",
+    "htmlInkWidthPx": 178,
+    "pptxInkWidthPx": 178,
+    "deltaPx": -2,
+    "deltaPct": -1.1
+   }
+  ],
+  "probeConclusion": "Pure-Latin and pure-CJK controls match within -3px/-2px (<1.2%); the mixed sample is +19..22px for every typeface, i.e. LibreOffice adds ~0.25em at each of the 3 CJK<->Latin boundaries. That residual is a LibreOffice text-layout difference, not font substitution."
+ },
+ "knownLimitations": [
+  "LibreOffice 26.8 is used as the objective render proxy; PowerPoint can render differently (baseline placement, CJK/Latin auto-spacing). All pixel numbers are proxy numbers, not PowerPoint guarantees.",
+  "LibreOffice adds ~0.25em spacing at every CJK<->Latin boundary. Measured text is therefore 3.4-4.3% wider in the proxy; hard-line text cannot drift vertically but the last glyphs of mixed lines sit a few px right.",
+  "Text baseline: the text box top = CSS content-box top; the proxy renders text 1-6px lower (median 3px, grows with line-height). This is reported per slide in pixel.json, not silently compensated.",
+  "Hard-lines mode writes wrap=\"none\" and one paragraph per visual line: visually exact, but re-flowing text in PowerPoint will not re-wrap (documented trade-off; use --no-hard-lines for reflow mode).",
+  "custGeom support is limited to straight-line SVG paths with a single fill/stroke style (our 8 icons). Curves (circle/ellipse/path C commands) fall back to 4x PNG and are counted in convert_stats.svg.pngFallback.",
+  "Only linear/radial CSS gradients are translated to a:gradFill; conic/repeating gradients fall back to their first stop. Element opacity is folded into fill transparency, parent opacity stacking is not multiplied.",
+  "Tables map cell text/fill/border/column widths/row heights; nested tables, merged cells (colspan>1) and cell-level vertical alignment nuances are not fully reproduced.",
+  "Images are stretched into their measured rect; CSS border-radius clipping on images, filters and blend modes are not applied.",
+  "box-shadow is approximated with one outer shadow; multiple shadows/inset shadows are ignored.",
+  "Semi-transparent text is flattened to an opaque colour blended against the measured backdrop, because PptxGenJS text colour has no alpha channel."
+ ],
+ "gates": {
+  "buildRan": true,
+  "deckExists": true,
+  "deckOpensWithLibreOffice": true,
+  "deckOpensWithPythonPptx": true,
+  "slideSize1280x720": true,
+  "textCharsCoverage90": true,
+  "noFullPagePicture": true,
+  "everySlideHasTextRuns": true,
+  "zipAllDeflate": true,
+  "contentTypesValid": true,
+  "svgCustGeomOrFallbackRecorded": true,
+  "gradientsPostProcessed": true
+ },
+ "verdict": "PASS",
+ "headline": {
+  "slides": 5,
+  "bytes": 167670,
+  "textCharsCoverage": 1,
+  "runs_a_t": 89,
+  "pixelDiffRatio": 0.0508,
+  "majorDiffRatio": 0.0373,
+  "mae": 5.41,
+  "fullPagePictures": 0,
+  "zipDeflateRatio": 100
+ }
+}

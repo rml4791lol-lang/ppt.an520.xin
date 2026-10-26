@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>模板 T1 · 学院蓝</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: #FFFFFF; }
+  body { font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+  #stage { position: relative; width: 1280px; height: 720px; }
+  section.slide { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; overflow: hidden; background: #FFFFFF; }
+  .abs { position: absolute; }
+  p, h1, h2, h3 { margin: 0; }
+  img { display: block; }
+  .pain { color: #14386B; }
+  .muted { color: #7C8FA9; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- ================================================== P1 封面 -->
+<section class="slide" data-slide="1">
+  <!-- 右侧主楼照片 -->
+  <div class="abs" style="left:520px;top:0;width:760px;height:720px;overflow:hidden;">
+    <img class="abs" data-slot="cover.photo" src="../assets/cover-building.jpg" alt="科创港主楼" style="left:0;top:0;width:760px;height:720px;object-fit:cover;">
+  </div>
+  <!-- 左侧白色渐隐 -->
+  <div class="abs" style="left:400px;top:0;width:260px;height:720px;background:linear-gradient(90deg, #FFFFFF 0%, rgba(255,255,255,0) 100%);"></div>
+
+  <!-- 标识 -->
+  <img class="abs" data-slot="cover.wordmark" src="../assets/wordmark-blue.png" alt="长沙理工大学 科创港" style="left:40px;top:18px;width:330px;height:67px;object-fit:contain;">
+
+  <!-- 标题区 -->
+  <div class="abs" style="left:44px;top:150px;width:8px;height:26px;background:#1E6FD9;"></div>
+  <p class="abs" data-slot="cover.kicker" style="left:66px;top:150px;width:480px;height:28px;font-size:16px;line-height:28px;letter-spacing:3px;color:#1E6FD9;">科创港 · 成果转化价值共创方案</p>
+  <h1 class="abs" data-slot="cover.title" style="left:40px;top:186px;width:720px;height:84px;font-size:66px;line-height:84px;color:#14386B;font-weight:700;letter-spacing:1px;">从「书架」到「货架」</h1>
+  <p class="abs" data-slot="cover.subtitle" style="left:44px;top:292px;width:560px;height:40px;font-size:27px;line-height:40px;color:#1B4B86;font-weight:500;">高校科技成果转化的长沙理工实践</p>
+
+  <!-- 蓝色胶囊 -->
+  <div class="abs" style="left:44px;top:360px;width:520px;height:50px;border-radius:25px;background:linear-gradient(90deg, #0A5FD8 0%, #2E9BF0 100%);"></div>
+  <p class="abs" data-slot="cover.pill" style="left:44px;top:360px;width:520px;height:50px;font-size:20px;line-height:50px;color:#FFFFFF;text-align:center;font-weight:600;letter-spacing:2px;">首批入驻团队全球招募</p>
+
+  <!-- 汇报信息 -->
+  <p class="abs" data-slot="cover.meta1" style="left:46px;top:430px;width:470px;height:30px;font-size:18px;line-height:30px;color:#33445C;">汇报人：杨 晨　尹来容</p>
+  <p class="abs" data-slot="cover.meta2" style="left:46px;top:466px;width:470px;height:28px;font-size:17px;line-height:28px;color:#4A5C78;">创新创业教育学院（科技产业园）</p>
+  <p class="abs" data-slot="cover.meta3" style="left:46px;top:500px;width:470px;height:28px;font-size:17px;line-height:28px;color:#4A5C78;">技术经理人学院</p>
+
+  <!-- 底部联系 -->
+  <div class="abs" style="left:44px;top:606px;width:640px;height:1px;background:#DCE6F2;"></div>
+  <p class="abs" data-slot="cover.contact" style="left:46px;top:626px;width:600px;height:26px;font-size:15px;line-height:26px;color:#36496A;">电话：0731-85261296　　邮箱：clkgc@csust.edu.cn</p>
+  <div class="abs" style="left:1090px;top:556px;width:132px;height:132px;background:#FFFFFF;border-radius:8px;box-shadow:0 6px 18px rgba(15,40,80,0.16);"></div>
+  <img class="abs" data-slot="cover.qr" src="../assets/qr.jpg" alt="二维码" style="left:1098px;top:564px;width:116px;height:116px;object-fit:contain;">
+</section>
+
+<!-- ================================================== P2 目录 -->
+<section class="slide" data-slide="2">
+  <div class="abs" style="left:44px;top:92px;width:8px;height:58px;background:#1E6FD9;"></div>
+  <h2 class="abs" data-slot="toc.title" style="left:70px;top:82px;width:300px;height:78px;font-size:64px;line-height:78px;color:#14386B;font-weight:700;">目录</h2>
+  <p class="abs" data-slot="toc.en" style="left:72px;top:168px;width:240px;height:24px;font-size:14px;line-height:24px;letter-spacing:6px;color:#9BAEC6;">CONTENTS</p>
+  <div class="abs" style="left:44px;top:214px;width:360px;height:3px;background:linear-gradient(90deg,#1E6FD9 0%,rgba(30,111,217,0.05) 100%);"></div>
+  <div class="abs" style="left:44px;top:208px;width:12px;height:12px;background:#1E6FD9;transform:rotate(45deg);"></div>
+
+  <!-- 四个条目 -->
+  <div class="abs" style="left:540px;top:96px;width:700px;height:2px;background:#1E6FD9;"></div>
+
+  <div class="abs" style="left:540px;top:150px;width:96px;height:62px;background:#EAF2FE;border-radius:6px;"></div>
+  <p class="abs" data-slot="toc.1.no" style="left:540px;top:162px;width:96px;height:38px;font-size:24px;line-height:38px;color:#1E6FD9;text-align:center;font-weight:700;">01</p>
+  <h3 class="abs" data-slot="toc.1.title" style="left:660px;top:140px;width:520px;height:42px;font-size:28px;line-height:42px;color:#14386B;font-weight:600;">策 · 为什么是科创港</h3>
+  <p class="abs" data-slot="toc.1.desc" style="left:660px;top:186px;width:520px;height:26px;font-size:15px;line-height:26px;color:#7C8FA9;">政策、产业与人才的三个确定性</p>
+  <div class="abs" style="left:540px;top:234px;width:700px;height:1px;background:#E6EDF6;"></div>
+
+  <div class="abs" style="left:540px;top:274px;width:96px;height:62px;background:#EAF2FE;border-radius:6px;"></div>
+  <p class="abs" data-slot="toc.2.no" style="left:540px;top:286px;width:96px;height:38px;font-size:24px;line-height:38px;color:#1E6FD9;text-align:center;font-weight:700;">02</p>
+  <h3 class="abs" data-slot="toc.2.title" style="left:660px;top:264px;width:520px;height:42px;font-size:28px;line-height:42px;color:#14386B;font-weight:600;">算 · 来科创港降本增效</h3>
+  <p class="abs" data-slot="toc.2.desc" style="left:660px;top:310px;width:520px;height:26px;font-size:15px;line-height:26px;color:#7C8FA9;">场地、研发、人才、资金四项成本直降</p>
+  <div class="abs" style="left:540px;top:358px;width:700px;height:1px;background:#E6EDF6;"></div>
+
+  <div class="abs" style="left:540px;top:398px;width:96px;height:62px;background:#EAF2FE;border-radius:6px;"></div>
+  <p class="abs" data-slot="toc.3.no" style="left:540px;top:410px;width:96px;height:38px;font-size:24px;line-height:38px;color:#1E6FD9;text-align:center;font-weight:700;">03</p>
+  <h3 class="abs" data-slot="toc.3.title" style="left:660px;top:388px;width:520px;height:42px;font-size:28px;line-height:42px;color:#14386B;font-weight:600;">证 · 三年成绩单</h3>
+  <p class="abs" data-slot="toc.3.desc" style="left:660px;top:434px;width:520px;height:26px;font-size:15px;line-height:26px;color:#7C8FA9;">从 0 到 1 的跨越与关键数据</p>
+  <div class="abs" style="left:540px;top:482px;width:700px;height:1px;background:#E6EDF6;"></div>
+
+  <div class="abs" style="left:540px;top:522px;width:96px;height:62px;background:#EAF2FE;border-radius:6px;"></div>
+  <p class="abs" data-slot="toc.4.no" style="left:540px;top:534px;width:96px;height:38px;font-size:24px;line-height:38px;color:#1E6FD9;text-align:center;font-weight:700;">04</p>
+  <h3 class="abs" data-slot="toc.4.title" style="left:660px;top:512px;width:520px;height:42px;font-size:28px;line-height:42px;color:#14386B;font-weight:600;">邀 · 全球合伙人招募</h3>
+  <p class="abs" data-slot="toc.4.desc" style="left:660px;top:558px;width:520px;height:26px;font-size:15px;line-height:26px;color:#7C8FA9;">入驻流程、支持政策与联系方式</p>
+  <div class="abs" style="left:540px;top:606px;width:700px;height:1px;background:#E6EDF6;"></div>
+
+  <img class="abs" src="../assets/emblem.png" alt="" style="left:1120px;top:646px;width:70px;height:34px;object-fit:contain;opacity:0.5;">
+  <p class="abs" style="left:1196px;top:654px;width:50px;height:20px;font-size:12px;line-height:20px;color:#B7C5D8;">02 / 06</p>
+</section>
+
+<!-- ================================================== P3 战略（图文） -->
+<section class="slide" data-slide="3">
+  <div class="abs" style="left:44px;top:44px;width:8px;height:22px;background:#1E6FD9;"></div>
+  <p class="abs" data-slot="p3.kicker" style="left:68px;top:40px;width:420px;height:26px;font-size:17px;line-height:26px;letter-spacing:2px;color:#1E6FD9;font-weight:600;">第一部分 · 策</p>
+  <h2 class="abs" data-slot="p3.title" style="left:44px;top:74px;width:900px;height:52px;font-size:36px;line-height:52px;color:#14386B;font-weight:700;">科创港：教科人一体化的「长理方案」</h2>
+  <div class="abs" style="left:44px;top:130px;width:420px;height:3px;background:linear-gradient(90deg,#1E6FD9 0%,rgba(30,111,217,0.04) 100%);"></div>
+  <div class="abs" style="left:44px;top:124px;width:12px;height:12px;background:#1E6FD9;transform:rotate(45deg);"></div>
+
+  <!-- 左侧两块 -->
+  <div class="abs" style="left:40px;top:180px;width:508px;height:150px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;box-shadow:0 8px 20px rgba(20,56,107,0.06);"></div>
+  <div class="abs" style="left:64px;top:204px;width:64px;height:64px;background:linear-gradient(135deg,#0A5FD8 0%,#2E9BF0 100%);border-radius:10px;"></div>
+  <svg class="abs" width="34" height="34" viewBox="0 0 24 24" style="left:79px;top:219px;"><circle cx="12" cy="12" r="8" fill="none" stroke="#FFFFFF" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="#FFFFFF"/></svg>
+  <h3 class="abs" data-slot="p3.c1.title" style="left:148px;top:198px;width:380px;height:32px;font-size:21px;line-height:32px;color:#14386B;font-weight:600;">战略定位</h3>
+  <p class="abs" data-slot="p3.c1.body" style="left:148px;top:236px;width:376px;height:78px;font-size:15px;line-height:26px;color:#4A5C78;">新质生产力培育基地<br>师生创新创业基地<br>育人新范式实践基地</p>
+
+  <div class="abs" style="left:40px;top:352px;width:508px;height:150px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;box-shadow:0 8px 20px rgba(20,56,107,0.06);"></div>
+  <div class="abs" style="left:64px;top:376px;width:64px;height:64px;background:linear-gradient(135deg,#0A5FD8 0%,#2E9BF0 100%);border-radius:10px;"></div>
+  <svg class="abs" width="34" height="34" viewBox="0 0 24 24" style="left:79px;top:391px;"><path d="M12 3l4 9-4 9-4-9 4-9z" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linejoin="round"/></svg>
+  <h3 class="abs" data-slot="p3.c2.title" style="left:148px;top:370px;width:380px;height:32px;font-size:21px;line-height:32px;color:#14386B;font-weight:600;">创新模式</h3>
+  <p class="abs" data-slot="p3.c2.body" style="left:148px;top:408px;width:376px;height:78px;font-size:15px;line-height:26px;color:#4A5C78;">构建「产业链出题、校企共建交叉融合创新团队答题、市场主体判题」的机制</p>
+
+  <!-- 右侧照片 + 渐变蒙版条 -->
+  <div class="abs" style="left:588px;top:176px;width:652px;height:348px;border-radius:10px;overflow:hidden;">
+    <img class="abs" data-slot="p3.photo" src="../assets/meeting.jpg" alt="共建会议" style="left:0;top:0;width:652px;height:348px;object-fit:cover;">
+    <div class="abs" style="left:0;top:208px;width:652px;height:140px;background:linear-gradient(180deg, rgba(6,42,105,0) 0%, rgba(6,42,105,0.92) 100%);"></div>
+    <p class="abs" data-slot="p3.photo.caption" style="left:28px;top:262px;width:600px;height:44px;font-size:30px;line-height:44px;color:#FFFFFF;font-weight:600;">「聚焦一流 · 共创未来」</p>
+  </div>
+
+  <!-- 底部横条 -->
+  <div class="abs" style="left:40px;top:548px;width:1200px;height:132px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:12px;box-shadow:0 8px 20px rgba(20,56,107,0.05);"></div>
+  <img class="abs" src="../assets/handshake-circle.png" alt="" style="left:64px;top:570px;width:88px;height:88px;object-fit:contain;">
+  <h3 class="abs" data-slot="p3.band.title" style="left:176px;top:572px;width:420px;height:32px;font-size:21px;line-height:32px;color:#14386B;font-weight:600;">做科学家 / 企业家合伙人</h3>
+  <p class="abs" data-slot="p3.band.body" style="left:176px;top:610px;width:460px;height:56px;font-size:15px;line-height:28px;color:#4A5C78;">天心区与长理共建科创港<br><span style="color:#E07B24;">长理「十五五」三大战略性举措之一</span></p>
+  <div class="abs" style="left:720px;top:570px;width:1px;height:88px;background:#E2EAF5;"></div>
+  <p class="abs" data-slot="p3.k1" style="left:752px;top:578px;width:120px;height:28px;font-size:17px;line-height:28px;color:#14386B;font-weight:600;">战略平台</p>
+  <p class="abs" data-slot="p3.d1" style="left:752px;top:612px;width:120px;height:26px;font-size:14px;line-height:26px;color:#7C8FA9;">协同驱动发展</p>
+  <div class="abs" style="left:904px;top:570px;width:1px;height:88px;background:#E2EAF5;"></div>
+  <p class="abs" data-slot="p3.k2" style="left:936px;top:578px;width:120px;height:28px;font-size:17px;line-height:28px;color:#14386B;font-weight:600;">创新团队</p>
+  <p class="abs" data-slot="p3.d2" style="left:936px;top:612px;width:120px;height:26px;font-size:14px;line-height:26px;color:#7C8FA9;">汇聚高端人才</p>
+  <div class="abs" style="left:1088px;top:570px;width:1px;height:88px;background:#E2EAF5;"></div>
+  <p class="abs" data-slot="p3.k3" style="left:1120px;top:578px;width:110px;height:28px;font-size:17px;line-height:28px;color:#14386B;font-weight:600;">合作项目</p>
+  <p class="abs" data-slot="p3.d3" style="left:1120px;top:612px;width:110px;height:26px;font-size:14px;line-height:26px;color:#7C8FA9;">赋能产业升级</p>
+  <p class="abs" style="left:1196px;top:694px;width:50px;height:20px;font-size:12px;line-height:20px;color:#B7C5D8;">03 / 06</p>
+</section>
+
+<!-- ================================================== P4 四卡 -->
+<section class="slide" data-slide="4" style="background:#F6F9FD;">
+  <div class="abs" style="left:44px;top:44px;width:8px;height:22px;background:#1E6FD9;"></div>
+  <p class="abs" data-slot="p4.kicker" style="left:68px;top:40px;width:420px;height:26px;font-size:17px;line-height:26px;letter-spacing:2px;color:#1E6FD9;font-weight:600;">第二部分 · 算</p>
+  <h2 class="abs" data-slot="p4.title" style="left:44px;top:74px;width:960px;height:52px;font-size:36px;line-height:52px;color:#14386B;font-weight:700;">来科创港：四项成本直降</h2>
+  <div class="abs" style="left:44px;top:130px;width:420px;height:3px;background:linear-gradient(90deg,#1E6FD9 0%,rgba(30,111,217,0.04) 100%);"></div>
+  <div class="abs" style="left:44px;top:124px;width:12px;height:12px;background:#1E6FD9;transform:rotate(45deg);"></div>
+
+  <div class="abs" style="left:40px;top:196px;width:284px;height:330px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;box-shadow:0 10px 24px rgba(20,56,107,0.06);"></div>
+  <div class="abs" style="left:40px;top:196px;width:284px;height:4px;background:#0A5FD8;border-radius:10px 10px 0 0;"></div>
+  <p class="abs" data-slot="p4.1.label" style="left:68px;top:224px;width:200px;height:24px;font-size:14px;line-height:24px;letter-spacing:2px;color:#8FA3BC;">场地成本</p>
+  <p class="abs" data-slot="p4.1.value" style="left:68px;top:252px;width:230px;height:58px;font-size:42px;line-height:58px;color:#14386B;font-weight:700;">1-3 年</p>
+  <p class="abs" data-slot="p4.1.sub" style="left:68px;top:314px;width:200px;height:26px;font-size:17px;line-height:26px;color:#1E6FD9;font-weight:600;">租金全免</p>
+  <div class="abs" style="left:68px;top:356px;width:228px;height:1px;background:#E6EDF6;"></div>
+  <p class="abs" data-slot="p4.1.body" style="left:68px;top:376px;width:228px;height:120px;font-size:14px;line-height:25px;color:#5A6B85;">入驻前 1-3 年免租金，含工位、会议室与路演厅，实现拎包入驻。</p>
+
+  <div class="abs" style="left:344px;top:196px;width:284px;height:330px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;box-shadow:0 10px 24px rgba(20,56,107,0.06);"></div>
+  <div class="abs" style="left:344px;top:196px;width:284px;height:4px;background:#2E9BF0;border-radius:10px 10px 0 0;"></div>
+  <p class="abs" data-slot="p4.2.label" style="left:372px;top:224px;width:200px;height:24px;font-size:14px;line-height:24px;letter-spacing:2px;color:#8FA3BC;">研发成本</p>
+  <p class="abs" data-slot="p4.2.value" style="left:372px;top:252px;width:230px;height:58px;font-size:42px;line-height:58px;color:#14386B;font-weight:700;">100%</p>
+  <p class="abs" data-slot="p4.2.sub" style="left:372px;top:314px;width:200px;height:26px;font-size:17px;line-height:26px;color:#2E9BF0;font-weight:600;">加计扣除</p>
+  <div class="abs" style="left:372px;top:356px;width:228px;height:1px;background:#E6EDF6;"></div>
+  <p class="abs" data-slot="p4.2.body" style="left:372px;top:376px;width:228px;height:120px;font-size:14px;line-height:25px;color:#5A6B85;">研发费用税前加计扣除，叠加校地联合攻关专项，研发投入可再降三成。</p>
+
+  <div class="abs" style="left:648px;top:196px;width:284px;height:330px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;box-shadow:0 10px 24px rgba(20,56,107,0.06);"></div>
+  <div class="abs" style="left:648px;top:196px;width:284px;height:4px;background:#7C6FE0;border-radius:10px 10px 0 0;"></div>
+  <p class="abs" data-slot="p4.3.label" style="left:676px;top:224px;width:200px;height:24px;font-size:14px;line-height:24px;letter-spacing:2px;color:#8FA3BC;">人才成本</p>
+  <p class="abs" data-slot="p4.3.value" style="left:676px;top:252px;width:230px;height:58px;font-size:42px;line-height:58px;color:#14386B;font-weight:700;">500 万</p>
+  <p class="abs" data-slot="p4.3.sub" style="left:676px;top:314px;width:200px;height:26px;font-size:17px;line-height:26px;color:#7C6FE0;font-weight:600;">最高补贴</p>
+  <div class="abs" style="left:676px;top:356px;width:228px;height:1px;background:#E6EDF6;"></div>
+  <p class="abs" data-slot="p4.3.body" style="left:676px;top:376px;width:228px;height:120px;font-size:14px;line-height:25px;color:#5A6B85;">领军人才最高 500 万元项目资助，博士与硕士分别按标准给予生活补贴。</p>
+
+  <div class="abs" style="left:952px;top:196px;width:288px;height:330px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;box-shadow:0 10px 24px rgba(20,56,107,0.06);"></div>
+  <div class="abs" style="left:952px;top:196px;width:288px;height:4px;background:#E07B24;border-radius:10px 10px 0 0;"></div>
+  <p class="abs" data-slot="p4.4.label" style="left:980px;top:224px;width:200px;height:24px;font-size:14px;line-height:24px;letter-spacing:2px;color:#8FA3BC;">资金成本</p>
+  <p class="abs" data-slot="p4.4.value" style="left:980px;top:252px;width:230px;height:58px;font-size:42px;line-height:58px;color:#14386B;font-weight:700;">20 亿</p>
+  <p class="abs" data-slot="p4.4.sub" style="left:980px;top:314px;width:200px;height:26px;font-size:17px;line-height:26px;color:#E07B24;font-weight:600;">基金规模</p>
+  <div class="abs" style="left:980px;top:356px;width:230px;height:1px;background:#E6EDF6;"></div>
+  <p class="abs" data-slot="p4.4.body" style="left:980px;top:376px;width:230px;height:120px;font-size:14px;line-height:25px;color:#5A6B85;">校地共建 20 亿元成果转化基金，投早、投小、投硬科技，直投比例不低于四成。</p>
+
+  <div class="abs" style="left:40px;top:556px;width:1200px;height:70px;background:linear-gradient(90deg,#0A5FD8 0%,#2E9BF0 100%);border-radius:8px;"></div>
+  <p class="abs" data-slot="p4.band" style="left:68px;top:572px;width:1140px;height:38px;font-size:22px;line-height:38px;color:#FFFFFF;font-weight:500;">综合测算：同样的项目，前三年综合运营成本可下降 30% 以上。</p>
+  <p class="abs" style="left:1196px;top:694px;width:50px;height:20px;font-size:12px;line-height:20px;color:#B7C5D8;">04 / 06</p>
+</section>
+
+<!-- ================================================== P5 数据 -->
+<section class="slide" data-slide="5">
+  <div class="abs" style="left:44px;top:44px;width:8px;height:22px;background:#1E6FD9;"></div>
+  <p class="abs" data-slot="p5.kicker" style="left:68px;top:40px;width:420px;height:26px;font-size:17px;line-height:26px;letter-spacing:2px;color:#1E6FD9;font-weight:600;">第三部分 · 证</p>
+  <h2 class="abs" data-slot="p5.title" style="left:44px;top:74px;width:960px;height:52px;font-size:36px;line-height:52px;color:#14386B;font-weight:700;">三年成绩单：从 0 到 1</h2>
+  <div class="abs" style="left:44px;top:130px;width:420px;height:3px;background:linear-gradient(90deg,#1E6FD9 0%,rgba(30,111,217,0.04) 100%);"></div>
+  <div class="abs" style="left:44px;top:124px;width:12px;height:12px;background:#1E6FD9;transform:rotate(45deg);"></div>
+
+  <!-- 三个 KPI -->
+  <div class="abs" style="left:40px;top:196px;width:286px;height:148px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;"></div>
+  <p class="abs" data-slot="p5.k1.value" style="left:68px;top:214px;width:200px;height:62px;font-size:52px;line-height:62px;color:#0A5FD8;font-weight:700;">59</p>
+  <p class="abs" data-slot="p5.k1.label" style="left:68px;top:282px;width:200px;height:24px;font-size:15px;line-height:24px;color:#6A7C95;">家入驻企业</p>
+  <p class="abs" data-slot="p5.k1.delta" style="left:212px;top:226px;width:90px;height:22px;font-size:14px;line-height:22px;color:#E07B24;">较去年 +24</p>
+
+  <div class="abs" style="left:40px;top:360px;width:286px;height:148px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;"></div>
+  <p class="abs" data-slot="p5.k2.value" style="left:68px;top:378px;width:200px;height:62px;font-size:52px;line-height:62px;color:#2E9BF0;font-weight:700;">80</p>
+  <p class="abs" data-slot="p5.k2.label" style="left:68px;top:446px;width:200px;height:24px;font-size:15px;line-height:24px;color:#6A7C95;">个开放工位</p>
+  <p class="abs" data-slot="p5.k2.delta" style="left:212px;top:390px;width:90px;height:22px;font-size:14px;line-height:22px;color:#2E9BF0;">满租运营</p>
+
+  <div class="abs" style="left:40px;top:524px;width:286px;height:104px;background:linear-gradient(90deg,#0B2A5B 0%,#17457F 100%);border-radius:10px;"></div>
+  <p class="abs" data-slot="p5.k3.label" style="left:68px;top:542px;width:200px;height:22px;font-size:13px;line-height:22px;color:#8FC7F5;">研究院 / 实验室</p>
+  <p class="abs" data-slot="p5.k3.value" style="left:68px;top:566px;width:220px;height:34px;font-size:26px;line-height:34px;color:#FFFFFF;font-weight:700;">26 个</p>
+
+  <!-- 柱状图 -->
+  <div class="abs" style="left:362px;top:196px;width:878px;height:432px;background:#FFFFFF;border:1px solid #E2EAF5;border-radius:10px;"></div>
+  <p class="abs" data-slot="p5.chart.title" style="left:394px;top:222px;width:420px;height:28px;font-size:18px;line-height:28px;color:#14386B;font-weight:600;">入驻企业数量（家）</p>
+  <p class="abs" data-slot="p5.chart.sub" style="left:394px;top:256px;width:420px;height:22px;font-size:13px;line-height:22px;color:#8FA3BC;">2023 – 2026 累计</p>
+  <!-- 网格 -->
+  <div class="abs" style="left:420px;top:556px;width:770px;height:1px;background:#D5E2F2;"></div>
+  <div class="abs" style="left:420px;top:508px;width:770px;height:1px;background:#EEF3FA;"></div>
+  <div class="abs" style="left:420px;top:460px;width:770px;height:1px;background:#EEF3FA;"></div>
+  <div class="abs" style="left:420px;top:412px;width:770px;height:1px;background:#EEF3FA;"></div>
+  <div class="abs" style="left:420px;top:364px;width:770px;height:1px;background:#EEF3FA;"></div>
+  <!-- 柱：12/23/38/49/59 → 高 0-48-92-140-166 -->
+  <div class="abs" style="left:470px;top:507px;width:86px;height:49px;background:linear-gradient(180deg,#BBD7F5 0%,#9CC3EE 100%);border-radius:4px 4px 0 0;"></div>
+  <p class="abs" data-slot="p5.b1" style="left:470px;top:478px;width:86px;height:24px;font-size:15px;line-height:24px;color:#4A5C78;text-align:center;font-weight:600;">12</p>
+  <p class="abs" data-slot="p5.y1" style="left:470px;top:574px;width:86px;height:22px;font-size:13px;line-height:22px;color:#8FA3BC;text-align:center;">2023</p>
+
+  <div class="abs" style="left:616px;top:463px;width:86px;height:93px;background:linear-gradient(180deg,#7FB3EA 0%,#5E9AE0 100%);border-radius:4px 4px 0 0;"></div>
+  <p class="abs" data-slot="p5.b2" style="left:616px;top:434px;width:86px;height:24px;font-size:15px;line-height:24px;color:#4A5C78;text-align:center;font-weight:600;">23</p>
+  <p class="abs" data-slot="p5.y2" style="left:616px;top:574px;width:86px;height:22px;font-size:13px;line-height:22px;color:#8FA3BC;text-align:center;">2024</p>
+
+  <div class="abs" style="left:762px;top:416px;width:86px;height:140px;background:linear-gradient(180deg,#4F9AE6 0%,#3A85D6 100%);border-radius:4px 4px 0 0;"></div>
+  <p class="abs" data-slot="p5.b3" style="left:762px;top:387px;width:86px;height:24px;font-size:15px;line-height:24px;color:#3E5B7E;text-align:center;font-weight:600;">38</p>
+  <p class="abs" data-slot="p5.y3" style="left:762px;top:574px;width:86px;height:22px;font-size:13px;line-height:22px;color:#8FA3BC;text-align:center;">2025</p>
+
+  <div class="abs" style="left:908px;top:390px;width:86px;height:166px;background:linear-gradient(180deg,#2E7BD5 0%,#1E63BE 100%);border-radius:4px 4px 0 0;"></div>
+  <p class="abs" data-slot="p5.b4" style="left:908px;top:361px;width:86px;height:24px;font-size:15px;line-height:24px;color:#12305F;text-align:center;font-weight:600;">49</p>
+  <p class="abs" data-slot="p5.y4" style="left:908px;top:574px;width:86px;height:22px;font-size:13px;line-height:22px;color:#8FA3BC;text-align:center;">2026.9</p>
+
+  <div class="abs" style="left:1054px;top:374px;width:86px;height:182px;background:linear-gradient(180deg,#1E6FD9 0%,#0B2A5B 100%);border-radius:4px 4px 0 0;"></div>
+  <p class="abs" data-slot="p5.b5" style="left:1054px;top:344px;width:86px;height:26px;font-size:16px;line-height:26px;color:#0B2A5B;text-align:center;font-weight:700;">59</p>
+  <p class="abs" data-slot="p5.y5" style="left:1054px;top:574px;width:86px;height:22px;font-size:13px;line-height:22px;color:#8FA3BC;text-align:center;">2026.10</p>
+  <p class="abs" data-slot="p5.source" style="left:394px;top:606px;width:500px;height:20px;font-size:12px;line-height:20px;color:#A9B8CB;">数据来源：科创港运营月报（截至 2026 年 10 月）</p>
+  <p class="abs" style="left:1196px;top:694px;width:50px;height:20px;font-size:12px;line-height:20px;color:#B7C5D8;">05 / 06</p>
+</section>
+
+<!-- ================================================== P6 结语 -->
+<section class="slide" data-slide="6">
+  <div class="abs" style="left:44px;top:66px;width:8px;height:24px;background:#1E6FD9;"></div>
+  <p class="abs" data-slot="p6.kicker" style="left:68px;top:62px;width:420px;height:26px;font-size:16px;line-height:26px;letter-spacing:2px;color:#1E6FD9;font-weight:600;">第四部分 · 邀</p>
+  <h1 class="abs" data-slot="p6.title1" style="left:40px;top:118px;width:640px;height:70px;font-size:54px;line-height:70px;color:#14386B;font-weight:700;">把论文写在祖国大地上</h1>
+  <h1 class="abs" data-slot="p6.title2" style="left:40px;top:196px;width:640px;height:70px;font-size:54px;line-height:70px;color:#1E6FD9;font-weight:700;">把事业干在科创港里</h1>
+
+  <div class="abs" style="left:44px;top:292px;width:520px;height:44px;border-radius:22px;background:linear-gradient(90deg,#0A5FD8 0%,#2E9BF0 100%);"></div>
+  <p class="abs" data-slot="p6.pill" style="left:44px;top:292px;width:520px;height:44px;font-size:19px;line-height:44px;color:#FFFFFF;text-align:center;font-weight:600;letter-spacing:2px;">一站办入驻 · 科创踏新途</p>
+
+  <div class="abs" style="left:44px;top:372px;width:560px;height:1px;background:#DCE6F2;"></div>
+  <p class="abs" data-slot="p6.c1" style="left:46px;top:390px;width:560px;height:26px;font-size:15px;line-height:26px;color:#36496A;">联系电话：0731-85261296</p>
+  <p class="abs" data-slot="p6.c2" style="left:46px;top:420px;width:560px;height:26px;font-size:15px;line-height:26px;color:#36496A;">邮箱地址：clkgc@csust.edu.cn</p>
+  <p class="abs" data-slot="p6.c3" style="left:46px;top:450px;width:560px;height:26px;font-size:15px;line-height:26px;color:#36496A;">行政办公地址：长沙理工大学（云塘校区）一办 702</p>
+  <p class="abs" data-slot="p6.c4" style="left:46px;top:480px;width:560px;height:26px;font-size:15px;line-height:26px;color:#36496A;">科创港地址：湖南省长沙市天心区环保西路 165 号科创港 1-3 层</p>
+  <p class="abs" data-slot="p6.c5" style="left:46px;top:510px;width:560px;height:26px;font-size:15px;line-height:26px;color:#36496A;">网址：www.csust.edu.cn/clkcg/</p>
+
+  <!-- 右侧校园照片 -->
+  <div class="abs" style="left:660px;top:96px;width:580px;height:470px;border-radius:12px;overflow:hidden;">
+    <img class="abs" data-slot="p6.photo" src="../assets/campus.png" alt="校园" style="left:0;top:0;width:580px;height:470px;object-fit:cover;">
+    <div class="abs" style="left:0;top:286px;width:580px;height:184px;background:linear-gradient(180deg, rgba(6,42,105,0) 0%, rgba(6,42,105,0.82) 100%);"></div>
+    <p class="abs" data-slot="p6.photo.caption" style="left:24px;top:392px;width:530px;height:40px;font-size:22px;line-height:40px;color:#FFFFFF;font-weight:500;">长沙理工大学 · 科创港</p>
+  </div>
+  <div class="abs" style="left:1132px;top:588px;width:124px;height:124px;background:#FFFFFF;border-radius:8px;box-shadow:0 6px 18px rgba(15,40,80,0.14);"></div>
+  <img class="abs" data-slot="p6.qr" src="../assets/qr.jpg" alt="二维码" style="left:1140px;top:596px;width:108px;height:108px;object-fit:contain;">
+  <p class="abs" style="left:44px;top:620px;width:520px;height:24px;font-size:13px;line-height:24px;color:#9BAEC6;">长沙理工大学 · 创新创业教育学院　|　2026 年 10 月</p>
+</section>
+
+</div>
+</body>
+</html>

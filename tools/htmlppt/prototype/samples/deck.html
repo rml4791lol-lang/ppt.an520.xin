@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>HTML → PPTX 原型样本</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: #111; }
+  body {
+    font-family: "PingFang SC";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+  #stage { position: relative; width: 1280px; height: 720px; }
+  section.slide {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 720px;
+    overflow: hidden;
+  }
+  .abs { position: absolute; }
+  img, svg { display: block; }
+  table { border-collapse: collapse; table-layout: fixed; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- ============ Slide 1: cover — gradient bg, big title, rule, translucent badge ============ -->
+  <section class="slide" data-slide="1" style="background: linear-gradient(135deg, #0B1F3A 0%, #134B73 55%, #0B1F3A 100%);">
+    <div class="abs" style="left:760px;top:90px;width:430px;height:540px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:28px;"></div>
+    <img class="abs" src="assets/logo-mark.png" alt="logo" style="left:1092px;top:120px;width:56px;height:56px;">
+    <div class="abs" style="left:96px;top:206px;width:520px;height:20px;font-size:14px;line-height:20px;letter-spacing:3px;color:#7DD3FC;font-weight:600;">PRODUCT PROTOTYPE &middot; 2026</div>
+    <h1 class="abs" style="left:92px;top:248px;width:660px;font-size:64px;line-height:78px;color:#FFFFFF;font-weight:700;">HTML 幻灯片<br>变成可编辑 PPTX</h1>
+    <div class="abs" style="left:96px;top:424px;width:520px;height:1px;background:rgba(255,255,255,0.35);"></div>
+    <p class="abs" style="left:96px;top:452px;width:600px;font-size:20px;line-height:34px;color:rgba(255,255,255,0.72);font-weight:400;">固定 1280&times;720 画布。量测每个元素，映射为原生文本、形状、图片与表格，再用 LibreOffice 回渲逐页比对。</p>
+    <div class="abs" style="left:96px;top:586px;width:226px;height:48px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.22);border-radius:24px;"></div>
+    <svg class="abs" width="20" height="20" viewBox="0 0 24 24" style="left:116px;top:600px;"><path d="M4 12h14M12 5l7 7-7 7" fill="none" stroke="#7DD3FC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="abs" style="left:148px;top:599px;width:160px;height:22px;font-size:15px;line-height:22px;color:#E2E8F0;font-weight:500;">一条命令跑通</div>
+    <div class="abs" style="left:96px;top:662px;width:560px;height:18px;font-size:13px;line-height:18px;color:rgba(255,255,255,0.5);">prototype/build &middot; Playwright &rarr; PptxGenJS &rarr; LibreOffice &rarr; pdftoppm</div>
+  </section>
+
+  <!-- ============ Slide 2: text-heavy — title, multiline body, thin rule, bullets, stat card ============ -->
+  <section class="slide" data-slide="2" style="background:#FFFFFF;">
+    <div class="abs" style="left:96px;top:88px;width:8px;height:44px;background:#2563EB;border-radius:4px;"></div>
+    <h2 class="abs" style="left:120px;top:82px;width:820px;height:52px;font-size:40px;line-height:52px;color:#0F172A;font-weight:700;">为什么是「量测式转换」</h2>
+    <p class="abs" style="left:96px;top:176px;width:720px;height:136px;font-size:20px;line-height:34px;color:#334155;font-weight:400;">浏览器已经知道每个元素最终落在哪里。与其让模型重新猜版式，不如直接把 getBoundingClientRect 与 getComputedStyle 的结果翻译成 PowerPoint 的坐标和字号，再让原生对象承担编辑能力。</p>
+    <div class="abs" style="left:96px;top:330px;width:1080px;height:1px;background:#E2E8F0;"></div>
+    <svg class="abs" width="20" height="20" viewBox="0 0 24 24" style="left:96px;top:367px;"><path d="M20 6L9 17l-5-5" fill="none" stroke="#2563EB" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="abs" style="left:128px;top:362px;width:640px;height:30px;font-size:19px;line-height:30px;color:#1E293B;">文本保持原生文本框：可选中、可改字、可换字体</div>
+    <svg class="abs" width="20" height="20" viewBox="0 0 24 24" style="left:96px;top:417px;"><path d="M20 6L9 17l-5-5" fill="none" stroke="#2563EB" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="abs" style="left:128px;top:412px;width:640px;height:30px;font-size:19px;line-height:30px;color:#1E293B;">形状、图片、表格各归其位，图层顺序与 DOM 一致</div>
+    <svg class="abs" width="20" height="20" viewBox="0 0 24 24" style="left:96px;top:467px;"><path d="M20 6L9 17l-5-5" fill="none" stroke="#2563EB" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="abs" style="left:128px;top:462px;width:640px;height:30px;font-size:19px;line-height:30px;color:#1E293B;">回渲后逐页比对像素，数字写进 metrics.json</div>
+    <div class="abs" style="left:860px;top:190px;width:324px;height:260px;background:#EFF6FF;border:1px solid #DBEAFE;border-radius:24px;"></div>
+    <div class="abs" style="left:892px;top:222px;width:260px;height:70px;font-size:56px;line-height:70px;color:#1D4ED8;font-weight:700;">&ge;90%</div>
+    <div class="abs" style="left:892px;top:304px;width:260px;height:26px;font-size:16px;line-height:26px;color:#1E40AF;font-weight:600;">文本字符覆盖率硬门槛</div>
+    <div class="abs" style="left:892px;top:354px;width:60px;height:3px;background:#93C5FD;"></div>
+    <div class="abs" style="left:892px;top:376px;width:256px;height:44px;font-size:13px;line-height:22px;color:#64748B;">按 HTML 文本非空白字符数与 pptx 的 a:t 字符数比对</div>
+    <div class="abs" style="left:96px;top:646px;width:560px;height:18px;font-size:13px;line-height:18px;color:#94A3B8;">slide 02 / 05 &middot; 排版与可编辑性并重</div>
+  </section>
+
+  <!-- ============ Slide 3: cards — rounded, borders, shadow, svg icons, translucent band ============ -->
+  <section class="slide" data-slide="3" style="background:#F8FAFC;">
+    <h2 class="abs" style="left:96px;top:60px;width:900px;height:46px;font-size:36px;line-height:46px;color:#0F172A;font-weight:700;">一张卡片需要的所有细节</h2>
+    <div class="abs" style="left:96px;top:116px;width:800px;height:24px;font-size:17px;line-height:24px;color:#64748B;">圆角、描边、投影、图标与多行说明文字，逐个映射成原生对象</div>
+
+    <div class="abs" style="left:104px;top:176px;width:344px;height:330px;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:20px;box-shadow:0 10px 24px rgba(15,23,42,0.06);"></div>
+    <div class="abs" style="left:136px;top:208px;width:56px;height:56px;background:#EFF6FF;border-radius:16px;"></div>
+    <svg class="abs" width="28" height="28" viewBox="0 0 24 24" style="left:150px;top:222px;"><path d="M5 7h14M5 12h14M5 17h9" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/></svg>
+    <div class="abs" style="left:136px;top:288px;width:280px;height:30px;font-size:22px;line-height:30px;color:#0F172A;font-weight:600;">原生文本</div>
+    <p class="abs" style="left:136px;top:326px;width:280px;height:104px;font-size:16px;line-height:26px;color:#64748B;">每个文本块都是 a:t run，可在 PowerPoint 里直接双击修改，字号与行距来自浏览器实测值。</p>
+
+    <div class="abs" style="left:468px;top:176px;width:344px;height:330px;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:20px;box-shadow:0 10px 24px rgba(15,23,42,0.06);"></div>
+    <div class="abs" style="left:500px;top:208px;width:56px;height:56px;background:#EFF6FF;border-radius:16px;"></div>
+    <svg class="abs" width="28" height="28" viewBox="0 0 24 24" style="left:514px;top:222px;"><path d="M4 17L17 4M8 8l3 3M11 5l3 3" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/></svg>
+    <div class="abs" style="left:500px;top:288px;width:280px;height:30px;font-size:22px;line-height:30px;color:#0F172A;font-weight:600;">精确几何</div>
+    <p class="abs" style="left:500px;top:326px;width:280px;height:104px;font-size:16px;line-height:26px;color:#64748B;">px &divide; 96 = 英寸，字号 px &times; 0.75 = pt。圆角按短边比例换算，1px 细线按 0.75pt 描边写入。</p>
+
+    <div class="abs" style="left:832px;top:176px;width:344px;height:330px;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:20px;box-shadow:0 10px 24px rgba(15,23,42,0.06);"></div>
+    <div class="abs" style="left:864px;top:208px;width:56px;height:56px;background:#EFF6FF;border-radius:16px;"></div>
+    <svg class="abs" width="28" height="28" viewBox="0 0 24 24" style="left:878px;top:222px;"><path d="M20 6L9 17l-5-5" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="abs" style="left:864px;top:288px;width:280px;height:30px;font-size:22px;line-height:30px;color:#0F172A;font-weight:600;">可验证</div>
+    <p class="abs" style="left:864px;top:326px;width:280px;height:104px;font-size:16px;line-height:26px;color:#64748B;">LibreOffice 转 PDF 再转 PNG，与 Chrome 截图逐页做像素差与区域差，所有指标落盘。</p>
+
+    <div class="abs" style="left:0px;top:596px;width:1280px;height:124px;background:rgba(15,23,42,0.04);"></div>
+    <div class="abs" style="left:104px;top:624px;width:860px;height:26px;font-size:15px;line-height:26px;color:#475569;">半透明层（rgba 4%）在 PPTX 里映射为形状填充透明度，而不是一层截图</div>
+    <div class="abs" style="left:104px;top:658px;width:860px;height:22px;font-size:13px;line-height:22px;color:#94A3B8;">slide 03 / 05 &middot; 卡片区 = 3 &times; roundRect + 3 &times; 图标 + 6 &times; 文本块</div>
+  </section>
+
+  <!-- ============ Slide 4: table — native table ============ -->
+  <section class="slide" data-slide="4" style="background:#FFFFFF;">
+    <h2 class="abs" style="left:96px;top:60px;width:900px;height:46px;font-size:36px;line-height:46px;color:#0F172A;font-weight:700;">表格也保持原生</h2>
+    <div class="abs" style="left:96px;top:116px;width:820px;height:24px;font-size:17px;line-height:24px;color:#64748B;">单元格文本可编辑，列宽与行高都来自浏览器实测，不是把表格截成图片</div>
+
+    <table class="abs" style="left:96px;top:176px;width:1088px;">
+      <colgroup>
+        <col style="width:380px"><col style="width:236px"><col style="width:236px"><col style="width:236px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th style="height:52px;background:#F1F5F9;border:1px solid #E2E8F0;font-size:15px;font-weight:600;color:#334155;text-align:left;padding:0 16px;">能力</th>
+          <th style="height:52px;background:#F1F5F9;border:1px solid #E2E8F0;font-size:15px;font-weight:600;color:#334155;text-align:left;padding:0 16px;">HTML 元素</th>
+          <th style="height:52px;background:#F1F5F9;border:1px solid #E2E8F0;font-size:15px;font-weight:600;color:#334155;text-align:left;padding:0 16px;">PPTX 对象</th>
+          <th style="height:52px;background:#F1F5F9;border:1px solid #E2E8F0;font-size:15px;font-weight:600;color:#334155;text-align:left;padding:0 16px;">可编辑</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">大标题 / 多行正文</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">h1 / p</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">原生文本框</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">是</td>
+        </tr>
+        <tr>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">圆角卡片 / 1px 细线</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">div / hr</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">roundRect / line</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">是</td>
+        </tr>
+        <tr>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">照片与矢量图标</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">img / svg</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">picture / custGeom</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">是</td>
+        </tr>
+        <tr>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">表格与渐变底板</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">table / gradient</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">graphicFrame / gradFill</td>
+          <td style="height:56px;border:1px solid #E2E8F0;font-size:15px;color:#334155;padding:0 16px;">是</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="abs" style="left:96px;top:492px;width:900px;height:22px;font-size:14px;line-height:22px;color:#64748B;">注：行高按实测写入 rowH，列宽按 colWidths 写入 colW，表头底色按单元格 fill 写入。</div>
+    <div class="abs" style="left:0px;top:672px;width:1280px;height:48px;background:#F8FAFC;"></div>
+    <div class="abs" style="left:96px;top:686px;width:700px;height:20px;font-size:13px;line-height:20px;color:#94A3B8;">slide 04 / 05 &middot; 5 行 &times; 4 列，全部为 a:tbl 单元格</div>
+  </section>
+
+  <!-- ============ Slide 5: image + overlay + caption ============ -->
+  <section class="slide" data-slide="5" style="background: linear-gradient(180deg, #0B1220 0%, #111C33 100%);">
+    <h2 class="abs" style="left:96px;top:64px;width:760px;height:44px;font-size:34px;line-height:44px;color:#FFFFFF;font-weight:700;">图片、叠层与说明文字</h2>
+    <svg class="abs" width="20" height="20" viewBox="0 0 24 24" style="left:1164px;top:88px;"><path d="M4 12h14M12 5l7 7-7 7" fill="none" stroke="#7DD3FC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+
+    <img class="abs" src="assets/photo-sky.png" alt="sky" style="left:96px;top:152px;width:620px;height:388px;">
+    <div class="abs" style="left:96px;top:472px;width:620px;height:68px;background:rgba(11,18,32,0.72);"></div>
+    <div class="abs" style="left:120px;top:490px;width:520px;height:30px;font-size:16px;line-height:30px;color:#F8FAFC;">半透明叠层压在图片上，保持 DOM 的 z 序</div>
+    <div class="abs" style="left:96px;top:556px;width:620px;height:20px;font-size:13px;line-height:20px;color:rgba(255,255,255,0.55);">photo-sky.png &middot; 1280&times;800 &middot; 由脚本生成，无外部素材</div>
+
+    <div class="abs" style="left:780px;top:152px;width:404px;height:388px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:24px;"></div>
+    <div class="abs" style="left:812px;top:186px;width:340px;height:32px;font-size:24px;line-height:32px;color:#F8FAFC;font-weight:600;">同一个 HTML，两种产出</div>
+    <p class="abs" style="left:812px;top:234px;width:340px;height:140px;font-size:16px;line-height:28px;color:rgba(255,255,255,0.72);">左边是浏览器截图，右边是 PowerPoint 回渲。差异图在 out/diff/，逐页数字在 out/metrics.json，可复跑。</p>
+    <img class="abs" src="assets/pixel-probe.png" alt="probe" style="left:812px;top:384px;width:96px;height:64px;">
+    <div class="abs" style="left:812px;top:472px;width:340px;height:1px;background:rgba(255,255,255,0.16);"></div>
+    <div class="abs" style="left:812px;top:490px;width:340px;height:22px;font-size:13px;line-height:22px;color:rgba(255,255,255,0.5);">pixel-probe.png 96&times;64 &middot; 透明 PNG</div>
+    <div class="abs" style="left:96px;top:660px;width:600px;height:20px;font-size:13px;line-height:20px;color:rgba(255,255,255,0.4);">slide 05 / 05 &middot; HTML / PPTX / diff 全部落盘</div>
+  </section>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,668 @@
+{
+ "file": "/tmp/rt-deck.pptx",
+ "ok": false,
+ "errors": 130,
+ "skipped": [],
+ "layers": {
+  "pkg": [],
+  "order": [
+   {
+    "code": "E_PRES_ORDER",
+    "part": "ppt/presentation.xml",
+    "detail": "sldMasterIdLst -> sldIdLst -> notesMasterIdLst -> sldSz -> notesSz -> defaultTextStyle"
+   },
+   {
+    "code": "E_ANG_RANGE",
+    "part": "ppt/slides/slide10.xml",
+    "detail": "ang=21600000 >= 21600000"
+   }
+  ],
+  "xsd": [
+   {
+    "code": "E_XSD",
+    "part": "ppt/presentation.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/presentation.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide10.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide10.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide11.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide11.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide13.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide13.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide14.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide14.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide15.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide15.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide6.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide6.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide7.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide7.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide8.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide8.xml fails to validate"
+   },
+   {
+    "code": "E_XSD",
+    "part": "ppt/slides/slide9.xml",
+    "detail": "/var/folders/xs/c1_lc37j2gd_45v7tfpjmh200000gn/T/tmpdrxu7b5y/ppt/slides/slide9.xml fails to validate"
+   }
+  ],
+  "sdk": [
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"format\": \"Microsoft365\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"sdkVersion\": \"3.5.1\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"results\": ["
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"file\": \"/tmp/rt-deck.pptx\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"valid\": false,"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"truncated\": false,"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"errors\": ["
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/presentationml/2006/main:notesMasterIdLst\\u0027. List of possible elements expected: \\u003Chttp://schemas.openxmlformats.org/presentationml/2006/main:notesSz\\u003E.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/presentation.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:presentation[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_AttributeValueDataTypeDetailed\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \" The MaxExclusive constraint failed. The value must be less than 21600000.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide10.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[3]/p:spPr[1]/a:gradFill[1]/a:lin[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide11.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[44]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide13.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[51]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide14.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[13]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide14.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[19]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide14.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[25]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide15.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[16]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide6.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[22]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide7.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[49]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide7.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[54]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide7.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[55]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide8.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[21]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide9.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[10]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "},"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "{"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"id\": \"Sch_UnexpectedElementContentExpectingComplex\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"type\": \"Schema\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"description\": \"The element has unexpected child element \\u0027http://schemas.openxmlformats.org/drawingml/2006/main:pPr\\u0027.\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"partUri\": \"/ppt/slides/slide9.xml\","
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "\"xpath\": \"/p:sld[1]/p:cSld[1]/p:spTree[1]/p:sp[8]/p:txBody[1]/a:p[1]\""
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "}"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "]"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "}"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "]"
+   },
+   {
+    "code": "E_SDK",
+    "part": "",
+    "detail": "}"
+   }
+  ],
+  "potx": [],
+  "fonts": [],
+  "lo": []
+ }
+}

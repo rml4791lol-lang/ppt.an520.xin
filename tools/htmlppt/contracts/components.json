@@ -1,0 +1,280 @@
+{
+ "schema": "htmlppt/components@1",
+ "components": [
+  {
+   "id": "header_band",
+   "category": "chrome",
+   "variants": [
+    "diagonal",
+    "straight"
+   ],
+   "params": {
+    "height_px": [
+     46,
+     64
+    ]
+   },
+   "source": "gold-base",
+   "status": "seed"
+  },
+  {
+   "id": "title_band",
+   "category": "chrome",
+   "variants": [
+    "gold_fill",
+    "outline"
+   ],
+   "params": {},
+   "source": "gold-base",
+   "status": "seed"
+  },
+  {
+   "id": "conclusion_bar",
+   "category": "chrome",
+   "variants": [
+    "deep_fill",
+    "outline_keyword"
+   ],
+   "params": {
+    "height_px": [
+     36,
+     48
+    ]
+   },
+   "source": "蓝海核卫士 p01-p13",
+   "status": "seed"
+  },
+  {
+   "id": "rail_steps",
+   "category": "navigation",
+   "variants": [
+    "4_step"
+   ],
+   "params": {
+    "label_count": [
+     3,
+     4
+    ]
+   },
+   "source": "蓝海核卫士 p04-p07",
+   "status": "seed"
+  },
+  {
+   "id": "card_column",
+   "category": "layout",
+   "variants": [
+    "4_card",
+    "3_card"
+   ],
+   "params": {
+    "columns": [
+     3,
+     4
+    ]
+   },
+   "source": "gold-base S2",
+   "status": "seed"
+  },
+  {
+   "id": "capsule",
+   "category": "atom",
+   "variants": [
+    "filled",
+    "outline"
+   ],
+   "params": {},
+   "source": "gold-base",
+   "status": "seed"
+  },
+  {
+   "id": "data_strip",
+   "category": "data",
+   "variants": [
+    "3_col",
+    "4_col"
+   ],
+   "params": {
+    "columns": [
+     3,
+     4
+    ]
+   },
+   "source": "gold-base S17",
+   "status": "seed"
+  },
+  {
+   "id": "mega_number",
+   "category": "data",
+   "variants": [
+    "4_up",
+    "3_up"
+   ],
+   "params": {
+    "digits_max": 4
+   },
+   "source": "gold-base S14",
+   "status": "seed"
+  },
+  {
+   "id": "quote_mark",
+   "category": "atom",
+   "variants": [
+    "east",
+    "west"
+   ],
+   "params": {},
+   "source": "gold-base S15/S16",
+   "status": "seed"
+  },
+  {
+   "id": "timeline",
+   "category": "layout",
+   "variants": [
+    "horizontal_5"
+   ],
+   "params": {
+    "nodes": [
+     5
+    ]
+   },
+   "source": "gold-base S26",
+   "status": "seed"
+  },
+  {
+   "id": "drawn_table",
+   "category": "data",
+   "variants": [
+    "6x5",
+    "4x3"
+   ],
+   "params": {
+    "cols": [
+     3,
+     6
+    ],
+    "rows": [
+     3,
+     5
+    ]
+   },
+   "source": "gold-base S4",
+   "status": "seed"
+  },
+  {
+   "id": "logo_wall",
+   "category": "asset",
+   "variants": [
+    "12_slot",
+    "26_slot",
+    "48_slot",
+    "full_width"
+   ],
+   "params": {
+    "slot_w": 89,
+    "slot_h": 46
+   },
+   "source": "award-replica",
+   "status": "seed"
+  },
+  {
+   "id": "certificate_grid",
+   "category": "asset",
+   "variants": [
+    "9_up",
+    "5_2_2"
+   ],
+   "params": {
+    "cell": [
+     254,
+     132
+    ]
+   },
+   "source": "gold-base S9",
+   "status": "seed"
+  },
+  {
+   "id": "team_card",
+   "category": "layout",
+   "variants": [
+    "6_member"
+   ],
+   "params": {
+    "photo": [
+     84,
+     106
+    ]
+   },
+   "source": "gold-base S13",
+   "status": "seed"
+  },
+  {
+   "id": "org_chart",
+   "category": "layout",
+   "variants": [
+    "4_group"
+   ],
+   "params": {},
+   "source": "gold-base S13",
+   "status": "seed"
+  },
+  {
+   "id": "bar_chart",
+   "category": "chart",
+   "variants": [
+    "5_year"
+   ],
+   "params": {
+    "bars": 5
+   },
+   "source": "gold-base S12",
+   "status": "seed"
+  },
+  {
+   "id": "pie_chart",
+   "category": "chart",
+   "variants": [
+    "3_pie"
+   ],
+   "params": {
+    "pies": 3
+   },
+   "source": "gold-base S28",
+   "status": "seed"
+  },
+  {
+   "id": "arrow_flow",
+   "category": "atom",
+   "variants": [
+    "horizontal",
+    "curved"
+   ],
+   "params": {},
+   "source": "gold-base S11/S19",
+   "status": "seed"
+  },
+  {
+   "id": "map_slot",
+   "category": "asset",
+   "variants": [
+    "740x190"
+   ],
+   "params": {
+    "w": 740,
+    "h": 190
+   },
+   "source": "gold-base S24",
+   "status": "seed"
+  },
+  {
+   "id": "film_strip",
+   "category": "decoration",
+   "variants": [
+    "east",
+    "gov"
+   ],
+   "params": {},
+   "source": "gold-base S16/S23",
+   "status": "seed"
+  }
+ ]
+}

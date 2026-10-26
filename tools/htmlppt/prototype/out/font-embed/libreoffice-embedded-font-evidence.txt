@@ -1,0 +1,17 @@
+A/B evidence that LibreOffice actually reads the embedded EOT (not a local font)
+==============================================================================
+Setup: fontconfig rejects every *Noto* font (rejectfont), so "Noto Sans SC" is
+NOT installable from the system.  fc-match "Noto Sans SC" then resolves to
+Hiragino.  Both decks use the same fixed fontconfig file.
+
+  control : bench/runs/ours/deck.pptx          (no embedded fonts, typeface PingFang SC)
+  test    : prototype/out/font-embed/ours-deck.pptx (PingFang remapped to Noto Sans SC, EOT embedded)
+
+  soffice --headless --convert-to pdf, then pdffonts:
+
+  control fonts: STSongti-SC-Bold, HiraginoSans-W7, HiraMaruPro-W4, ArialUnicodeMS   <- fallback
+  test    fonts: NotoSansSC-Regular, NotoSansSC-Bold                                 <- came from ppt/fonts/*.fntdata
+
+Conclusion: LibreOffice imports and uses the EOT containers; without them the same
+deck falls back to unrelated CJK faces.  This is the strongest end-to-end signal
+available on this machine (it is still not PowerPoint).

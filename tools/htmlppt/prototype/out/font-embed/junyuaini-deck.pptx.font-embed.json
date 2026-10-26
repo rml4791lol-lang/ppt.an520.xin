@@ -1,0 +1,128 @@
+{
+  "input": "bench/runs/junyuaini/deck.pptx",
+  "output": "prototype/out/font-embed/junyuaini-deck.pptx",
+  "bytesBefore": 40862,
+  "bytesAfter": 146467,
+  "deltaBytes": 105605,
+  "deltaPct": 258.4,
+  "fontsRequested": 1,
+  "fontsEmbedded": 1,
+  "skipped": [],
+  "remapped": {
+    "Microsoft YaHei": 5
+  },
+  "fonts": [
+    {
+      "family": "Noto Sans SC",
+      "slot": "regular",
+      "file": "/Users/an/Library/Fonts/NotoSansSC-Regular.ttf",
+      "container": "ttf",
+      "fsType": "0x0000",
+      "license": {
+        "restricted": false,
+        "previewPrint": false,
+        "editable": false,
+        "noSubsetting": false,
+        "bitmapOnly": false
+      },
+      "chars": 528,
+      "glyphsBefore": 31036,
+      "glyphsAfter": 924,
+      "originalBytes": 10595876,
+      "ttfBytes": 10595876,
+      "subsetBytes": 177064,
+      "eotBytes": 177356,
+      "subsetRatio": 0.0167
+    }
+  ],
+  "rels": [
+    {
+      "id": "rId12",
+      "file": "1.fntdata",
+      "family": "Noto Sans SC",
+      "slot": "regular"
+    }
+  ],
+  "elapsedMs": 307,
+  "verification": [
+    {
+      "name": "① 解包结构 (fntdata + embeddedFontLst + rels + Content_Types)",
+      "ok": true,
+      "detail": {
+        "fntdataParts": 1,
+        "embeddedFonts": [
+          {
+            "typeface": "Noto Sans SC",
+            "slots": {
+              "regular": "rId12"
+            }
+          }
+        ],
+        "relsFontCount": 1,
+        "ridsResolve": true,
+        "targetsExist": true,
+        "contentTypeOk": true,
+        "fntdata": [
+          {
+            "part": "ppt/fonts/1.fntdata",
+            "bytes": 177356,
+            "magic": "0x504c",
+            "version": "0x20001",
+            "fontDataSize": 177064,
+            "family": "Noto Sans SC",
+            "style": "Regular",
+            "fsType": "0x0000",
+            "embeddedTtfSig": "....",
+            "ok": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "② zip 压缩方式 (全部 DEFLATE)",
+      "ok": true,
+      "detail": {
+        "entries": 45,
+        "deflate": 45,
+        "store": 0,
+        "storedEntries": []
+      }
+    },
+    {
+      "name": "③ python-pptx 重开",
+      "ok": true,
+      "detail": {
+        "exit": 0,
+        "out": "slides=5 size=12192000x6858000",
+        "err": ""
+      }
+    },
+    {
+      "name": "④ LibreOffice 回渲 (soffice --convert-to pdf)",
+      "ok": true,
+      "detail": {
+        "exit": 0,
+        "pdfBytes": 239052,
+        "err": "",
+        "fontsInPdf": [
+          "BAAAAA+NotoSansSC-Bold",
+          "CAAAAA+NotoSansSC-Bold",
+          "DAAAAA+NotoSansSC-Regular",
+          "EAAAAA+NotoSansSC-Regular",
+          "FAAAAA+NotoSansSC-Regular",
+          "GAAAAA+NotoSansSC-Bold",
+          "HAAAAA+NotoSansSC-Regular",
+          "IAAAAA+NotoSansSC-Bold",
+          "JAAAAA+NotoSansSC-Bold",
+          "KAAAAA+NotoSansSC-Bold",
+          "LAAAAA+NotoSansSC-Bold",
+          "MAAAAA+TimesNewRomanPSMT"
+        ],
+        "matchesRequested": [
+          "Noto Sans SC"
+        ]
+      }
+    }
+  ],
+  "verificationOk": true
+}

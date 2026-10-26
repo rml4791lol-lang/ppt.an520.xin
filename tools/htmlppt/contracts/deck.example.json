@@ -1,0 +1,206 @@
+{
+ "schema": "htmlppt/deck@1",
+ "deck_id": "gold-template-demo",
+ "canvas": {
+  "w": 1280,
+  "h": 720
+ },
+ "theme": "ai",
+ "masters": [
+  "master1"
+ ],
+ "pages": [
+  {
+   "id": "S01",
+   "layout": "S01",
+   "source": "spec:S01",
+   "title": "封面（居中书法型）",
+   "theme_slots": [],
+   "content_ref": "content/S01.json"
+  },
+  {
+   "id": "S02",
+   "layout": "S02",
+   "source": "spec:S02",
+   "title": "难点攻坚（四卡片列）",
+   "theme_slots": [],
+   "content_ref": "content/S02.json"
+  },
+  {
+   "id": "S03",
+   "layout": "S03",
+   "source": "spec:S03",
+   "title": "关键技术（轨条+拓扑）",
+   "theme_slots": [],
+   "content_ref": "content/S03.json"
+  },
+  {
+   "id": "S04",
+   "layout": "S04",
+   "source": "spec:S04",
+   "title": "竞品对比表",
+   "theme_slots": [],
+   "content_ref": "content/S04.json"
+  },
+  {
+   "id": "S05",
+   "layout": "S05",
+   "source": "spec:S05",
+   "title": "封底（对仗口号）",
+   "theme_slots": [],
+   "content_ref": "content/S05.json"
+  },
+  {
+   "id": "S06",
+   "layout": "S06",
+   "source": "spec:S06",
+   "title": "行业背景与政策",
+   "theme_slots": [],
+   "content_ref": "content/S06.json"
+  },
+  {
+   "id": "S07",
+   "layout": "S07",
+   "source": "spec:S07",
+   "title": "解决方案总览（四层架构）",
+   "theme_slots": [],
+   "content_ref": "content/S07.json"
+  },
+  {
+   "id": "S08",
+   "layout": "S08",
+   "source": "spec:S08",
+   "title": "测试报告与数据验证",
+   "theme_slots": [],
+   "content_ref": "content/S08.json"
+  },
+  {
+   "id": "S09",
+   "layout": "S09",
+   "source": "spec:S09",
+   "title": "知识产权墙",
+   "theme_slots": [],
+   "content_ref": "content/S09.json"
+  },
+  {
+   "id": "S10",
+   "layout": "S10",
+   "source": "spec:S10",
+   "title": "应用案例墙",
+   "theme_slots": [],
+   "content_ref": "content/S10.json"
+  },
+  {
+   "id": "S11",
+   "layout": "S11",
+   "source": "spec:S11",
+   "title": "商业模式",
+   "theme_slots": [],
+   "content_ref": "content/S11.json"
+  },
+  {
+   "id": "S12",
+   "layout": "S12",
+   "source": "spec:S12",
+   "title": "市场规模与财务预测",
+   "theme_slots": [],
+   "content_ref": "content/S12.json"
+  },
+  {
+   "id": "S13",
+   "layout": "S13",
+   "source": "spec:S13",
+   "title": "团队介绍",
+   "theme_slots": [],
+   "content_ref": "content/S13.json"
+  },
+  {
+   "id": "S14",
+   "layout": "S14",
+   "source": "spec:S14",
+   "title": "数据大字页",
+   "theme_slots": [],
+   "content_ref": "content/S14.json"
+  },
+  {
+   "id": "S15",
+   "layout": "S15",
+   "source": "spec:S15",
+   "title": "专家推荐页",
+   "theme_slots": [],
+   "content_ref": "content/S15.json"
+  },
+  {
+   "id": "S16",
+   "layout": "S16",
+   "source": "spec:S16",
+   "title": "学术引用墙",
+   "theme_slots": [],
+   "content_ref": "content/S16.json"
+  },
+  {
+   "id": "S17",
+   "layout": "S17",
+   "source": "spec:S17",
+   "title": "三连数据条",
+   "theme_slots": [],
+   "content_ref": "content/S17.json"
+  },
+  {
+   "id": "S18",
+   "layout": "S18",
+   "source": "spec:S18",
+   "title": "中外现状对比页",
+   "theme_slots": [],
+   "content_ref": "content/S18.json"
+  },
+  {
+   "id": "S19",
+   "layout": "S19",
+   "source": "spec:S19",
+   "title": "融资历程与机构LOGO墙",
+   "theme_slots": [],
+   "content_ref": "content/S19.json"
+  },
+  {
+   "id": "S20",
+   "layout": "S20",
+   "source": "spec:S20",
+   "title": "产品迭代照片带",
+   "theme_slots": [],
+   "content_ref": "content/S20.json"
+  },
+  {
+   "id": "S21",
+   "layout": "S21",
+   "source": "spec:S21",
+   "title": "生态LOGO墙",
+   "theme_slots": [],
+   "content_ref": "content/S21.json"
+  },
+  {
+   "id": "S22",
+   "layout": "S22",
+   "source": "spec:S22",
+   "title": "演讲者立绘贯穿页",
+   "theme_slots": [],
+   "content_ref": "content/S22.json"
+  },
+  {
+   "id": "S23",
+   "layout": "S23",
+   "source": "spec:S23",
+   "title": "社会价值与政务风页",
+   "theme_slots": [],
+   "content_ref": "content/S23.json"
+  },
+  {
+   "id": "S24",
+   "layout": "S24",
+   "source": "spec:S24",
+   "title": "企业BP公司概况页",
+   "theme_slots": [],
+   "content_ref": "content/S24.json"
+  }
+ ]
+}

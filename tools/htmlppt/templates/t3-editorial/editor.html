@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>可编辑 · 参考稿 18 页</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230B2A5B'/></svg>">
+<style id="deck-style">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: #FAF8F3; }
+  body {
+    font-family: "PingFang SC", "Arial", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+  #stage { position: relative; width: 1280px; height: 720px; }
+  section.slide {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 720px;
+    overflow: hidden; background: #FAF8F3;
+  }
+  .abs { position: absolute; }
+  .serif { font-family: "Songti SC", "Source Han Serif SC", "STSong", serif; }
+  .sans { font-family: "PingFang SC", "Arial", sans-serif; }
+  .latin { font-family: "Arial", "PingFang SC", sans-serif; }
+  img { display: block; }
+</style>
+<style id="ed-style">
+html, body { width:100%; height:auto; overflow:auto; background:#E9EDF3; }
+#stage { position:static; width:100%; height:auto; padding:72px 0 60px; }
+section.slide { position:relative !important; left:auto !important; top:auto !important;
+  margin:0 auto 26px; box-shadow:0 6px 24px rgba(20,40,80,.16); }
+#ed-bar { position:fixed; z-index:99999; left:0; right:0; top:0; height:56px; background:#0B2A5B;
+  color:#fff; display:flex; align-items:center; gap:14px; padding:0 20px; font:14px/1 -apple-system,"PingFang SC",sans-serif; }
+#ed-bar b { font-size:16px; letter-spacing:.5px; }
+#ed-bar .sp { flex:1; }
+#ed-bar button { font:13px/1 -apple-system,"PingFang SC",sans-serif; color:#fff; background:rgba(255,255,255,.14);
+  border:1px solid rgba(255,255,255,.28); border-radius:8px; padding:9px 14px; cursor:pointer; }
+#ed-bar button:hover { background:rgba(255,255,255,.24); }
+#ed-bar .ok { background:#1E9E63; border-color:#1E9E63; }
+#ed-hint { position:fixed; z-index:99999; left:20px; bottom:16px; background:rgba(11,42,91,.92); color:#D8E6F7;
+  font:12px/1.7 -apple-system,"PingFang SC",sans-serif; padding:10px 14px; border-radius:10px; max-width:560px; }
+[contenteditable="true"] { cursor:text; }
+[contenteditable="true"]:hover { outline:1px dashed rgba(30,111,217,.6); }
+[contenteditable="true"]:focus { outline:2px solid #2E9BF0; background:rgba(46,155,240,.08); }
+.ed-overflow { outline:2px solid #E0483D !important; background:rgba(224,72,61,.08) !important; }
+img.ed-img { cursor:pointer; }
+img.ed-img:hover { outline:2px solid #2E9BF0; }
+.ed-badge { position:absolute; z-index:6; left:8px; top:8px; background:rgba(11,42,91,.82); color:#fff;
+  font:600 11px/1 -apple-system,"PingFang SC",sans-serif; padding:5px 8px; border-radius:6px; pointer-events:none; }
+#ed-modal { position:fixed; z-index:99999; inset:0; background:rgba(8,20,40,.55); display:none;
+  align-items:center; justify-content:center; }
+#ed-modal .box { width:540px; background:#fff; border-radius:14px; padding:22px 24px;
+  font:14px/1.7 -apple-system,"PingFang SC",sans-serif; color:#22344c; }
+#ed-modal h3 { margin:0 0 10px; font-size:17px; color:#14386B; }
+#ed-modal .row { margin:10px 0; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+#ed-modal label { display:flex; gap:8px; align-items:center; cursor:pointer; }
+#ed-modal .warn { color:#C2410C; font-size:12px; margin-top:6px; }
+#ed-modal .btns { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+#ed-modal button { font:13px/1 -apple-system,"PingFang SC",sans-serif; padding:9px 16px; border-radius:8px;
+  border:1px solid #D7E2F0; background:#fff; cursor:pointer; }
+#ed-modal button.primary { background:#1E6FD9; border-color:#1E6FD9; color:#fff; }
+</style>
+</head>
+<body><div id="stage">
+<section class="slide" data-slide="1">
+    <p class="abs serif" data-slot="cover.masthead" style="left:88px;top:30px;width:120px;height:34px;font-size:26px;line-height:34px;font-weight:700;color:#14110D;letter-spacing:3px;">北岸</p>
+    <p class="abs sans" data-slot="cover.wordmark" style="left:152px;top:43px;width:260px;height:16px;font-size:10px;line-height:16px;color:#6B6257;letter-spacing:3px;">NORTH BANK REVIEW</p>
+    <p class="abs sans" data-slot="cover.issue" style="left:1000px;top:43px;width:192px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">NO. 03 &nbsp;·&nbsp; 2026.10</p>
+    <div class="abs" style="left:88px;top:82px;width:1104px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs sans" data-slot="cover.kicker" style="left:88px;top:132px;width:420px;height:18px;font-size:11px;line-height:18px;color:#C2410C;letter-spacing:3px;">EDITORIAL · 年度成果册</p>
+
+    <h1 class="abs serif" data-slot="cover.title" style="left:88px;top:168px;width:680px;height:252px;font-size:74px;line-height:84px;font-weight:700;color:#14110D;letter-spacing:1px;"><span>把漫长的一年</span><br><span>装订成</span><br><span style="color:#C2410C;font-style:italic;">一册春天</span></h1>
+
+    <div class="abs" style="left:88px;top:446px;width:44px;height:2px;background:#C2410C;"></div>
+    <p class="abs sans" data-slot="cover.deck" style="left:88px;top:470px;width:620px;height:60px;font-size:17px;line-height:30px;color:#6B6257;">关于一座校园、三百二十七个清晨，以及那些被认真对待的小事。我们决定用纸，把它们留住。</p>
+
+    <p class="abs sans" data-slot="cover.keywords" style="left:88px;top:566px;width:560px;height:18px;font-size:11px;line-height:18px;color:#6B6257;letter-spacing:2px;">教学 &nbsp;·&nbsp; 城市 &nbsp;·&nbsp; 迁徙 &nbsp;·&nbsp; 留白</p>
+
+    <div class="abs" style="left:780px;top:100px;width:424px;height:524px;border:1px solid #D9D2C5;"></div>
+    <img class="abs" data-img-slot="cover.photo" src="../assets/cover-building.jpg" alt="主楼晨光" style="left:792px;top:112px;width:400px;height:500px;object-fit:cover;object-position:72% 50%;opacity:0.94;">
+    <p class="abs sans" data-slot="cover.caption" style="left:792px;top:630px;width:400px;height:18px;font-size:11px;line-height:18px;color:#6B6257;letter-spacing:1px;">主楼东侧 · 07:12 的晨光</p>
+
+    <div class="abs" style="left:88px;top:660px;width:1104px;height:1px;background:#D9D2C5;"></div>
+    <p class="abs sans" data-slot="cover.footer-left" style="left:88px;top:674px;width:460px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">卷首故事 / 校园与时间</p>
+    <p class="abs sans" data-slot="cover.footer-right" style="left:900px;top:674px;width:292px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">2026 · AUTUMN</p>
+  </section>
+<section class="slide" data-slide="2">
+    <p class="abs sans" data-slot="editor.running-head" style="left:88px;top:38px;width:440px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">北岸 · 卷首</p>
+    <p class="abs sans" data-slot="editor.running-right" style="left:900px;top:38px;width:292px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">NORTH BANK REVIEW / 03</p>
+    <div class="abs" style="left:88px;top:66px;width:1104px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs sans" data-slot="editor.kicker" style="left:88px;top:96px;width:420px;height:18px;font-size:11px;line-height:18px;color:#C2410C;letter-spacing:3px;">卷首语 · EDITOR'S LETTER</p>
+    <h2 class="abs serif" data-slot="editor.title" style="left:88px;top:130px;width:480px;height:120px;font-size:48px;line-height:60px;font-weight:700;color:#14110D;"><span>在喧闹之外，</span><br><span>留一页安静</span></h2>
+
+    <div class="abs" style="left:88px;top:278px;width:44px;height:2px;background:#C2410C;"></div>
+    <p class="abs serif" data-slot="editor.body-1" style="left:88px;top:302px;width:458px;height:128px;font-size:18px;line-height:32px;color:#14110D;">这一年，我们把镜头放低了一点：去看一张被改了十一次的课表，去听一场没有彩排的开学典礼，也去数清从校门到图书馆要走多少步。宏大叙事退后，具体的人走到纸面上来。</p>
+    <p class="abs serif" data-slot="editor.body-2" style="left:88px;top:440px;width:458px;height:64px;font-size:18px;line-height:32px;color:#6B6257;">于是有了这本册子。它不急着总结，只想把那些容易被忽略的瞬间，一页一页地留住。</p>
+
+    <p class="abs sans" data-slot="contents.label" style="left:640px;top:96px;width:300px;height:18px;font-size:11px;line-height:18px;color:#C2410C;letter-spacing:3px;">目录 / CONTENTS</p>
+    <div class="abs" style="left:640px;top:126px;width:552px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs latin" data-slot="contents.item1.num" style="left:640px;top:152px;width:32px;height:18px;font-size:13px;line-height:18px;font-weight:700;color:#C2410C;letter-spacing:1px;">01</p>
+    <p class="abs serif" data-slot="contents.item1.title" style="left:682px;top:144px;width:500px;height:38px;font-size:27px;line-height:38px;font-weight:700;color:#14110D;">一间教室，一百种打开方式</p>
+    <p class="abs sans" data-slot="contents.item1.summary" style="left:682px;top:188px;width:500px;height:24px;font-size:14px;line-height:24px;color:#6B6257;">一张课表的十一次修改，和它背后的四十六分钟。</p>
+    <div class="abs" style="left:640px;top:238px;width:552px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs latin" data-slot="contents.item2.num" style="left:640px;top:264px;width:32px;height:18px;font-size:13px;line-height:18px;font-weight:700;color:#C2410C;letter-spacing:1px;">02</p>
+    <p class="abs serif" data-slot="contents.item2.title" style="left:682px;top:256px;width:500px;height:38px;font-size:27px;line-height:38px;font-weight:700;color:#14110D;">八十七点四的答案</p>
+    <p class="abs sans" data-slot="contents.item2.summary" style="left:682px;top:300px;width:500px;height:24px;font-size:14px;line-height:24px;color:#6B6257;">一千二百零四份问卷，指向同一件小事。</p>
+    <div class="abs" style="left:640px;top:350px;width:552px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs latin" data-slot="contents.item3.num" style="left:640px;top:376px;width:32px;height:18px;font-size:13px;line-height:18px;font-weight:700;color:#C2410C;letter-spacing:1px;">03</p>
+    <p class="abs serif" data-slot="contents.item3.title" style="left:682px;top:368px;width:500px;height:38px;font-size:27px;line-height:38px;font-weight:700;color:#14110D;">雨天的开学典礼</p>
+    <p class="abs sans" data-slot="contents.item3.summary" style="left:682px;top:412px;width:500px;height:24px;font-size:14px;line-height:24px;color:#6B6257;">没有彩排的三十分钟，所有人都在场。</p>
+    <div class="abs" style="left:640px;top:462px;width:552px;height:1px;background:#D9D2C5;"></div>
+
+    <div class="abs" style="left:1010px;top:540px;width:182px;height:1px;background:#14110D;"></div>
+    <p class="abs serif" data-slot="editor.signature" style="left:1010px;top:554px;width:182px;height:26px;font-size:17px;line-height:26px;color:#14110D;text-align:right;">主编 / 林知远</p>
+    <p class="abs sans" data-slot="editor.date" style="left:1010px;top:586px;width:182px;height:18px;font-size:11px;line-height:18px;color:#6B6257;letter-spacing:1px;text-align:right;">二〇二六年十月 · 上海</p>
+
+    <div class="abs" style="left:88px;top:660px;width:1104px;height:1px;background:#D9D2C5;"></div>
+    <p class="abs sans" data-slot="editor.footer-left" style="left:88px;top:674px;width:460px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">北岸编辑部 · 第 03 期</p>
+    <p class="abs latin" data-slot="editor.page" style="left:1104px;top:674px;width:88px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">02 / 05</p>
+  </section>
+<section class="slide" data-slide="3">
+    <p class="abs sans" data-slot="feature.running-head" style="left:88px;top:38px;width:440px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">北岸 · 专题</p>
+    <p class="abs sans" data-slot="feature.running-right" style="left:900px;top:38px;width:292px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">FEATURE / 03</p>
+    <div class="abs" style="left:88px;top:66px;width:1104px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs sans" data-slot="feature.kicker" style="left:88px;top:92px;width:420px;height:18px;font-size:11px;line-height:18px;color:#C2410C;letter-spacing:3px;">专题 · FEATURE</p>
+    <h2 class="abs serif" data-slot="feature.title" style="left:88px;top:116px;width:780px;height:148px;font-size:64px;line-height:74px;font-weight:700;color:#14110D;"><span>一间教室的</span><br><span>一百种打开方式</span></h2>
+    <p class="abs sans" data-slot="feature.standfirst" style="left:900px;top:120px;width:292px;height:84px;font-size:15px;line-height:28px;color:#6B6257;">我们跟踪了一张课表三个月。<br>它被改了十一次，也被重新<br>相信了十一次。</p>
+
+    <div class="abs" style="left:88px;top:276px;width:1104px;height:1px;background:#D9D2C5;"></div>
+    <p class="abs sans" data-slot="feature.col1.label" style="left:88px;top:298px;width:180px;height:16px;font-size:11px;line-height:16px;color:#C2410C;letter-spacing:2px;">01 &nbsp;观察</p>
+    <p class="abs sans" data-slot="feature.col2.label" style="left:446px;top:298px;width:180px;height:16px;font-size:11px;line-height:16px;color:#C2410C;letter-spacing:2px;">02 &nbsp;方法</p>
+    <p class="abs sans" data-slot="feature.col3.label" style="left:820px;top:298px;width:180px;height:16px;font-size:11px;line-height:16px;color:#C2410C;letter-spacing:2px;">03 &nbsp;现场</p>
+
+    <p class="abs sans" data-slot="feature.col1.body" style="left:88px;top:332px;width:318px;height:128px;font-size:17px;line-height:32px;color:#14110D;">九月第一周，黑板上多了一行小字：今天可以换个位置坐。没有人解释为什么，教室却在十分钟内安静下来。那一刻，规则松动了一点。</p>
+    <p class="abs sans" data-slot="feature.col2.body" style="left:446px;top:332px;width:318px;height:128px;font-size:17px;line-height:32px;color:#14110D;">改变并不是从文件开始的。它先出现在一张课表的空白处，出现在老师多问的一句“你觉得呢”里，也出现在学生终于愿意抬头的那一秒。</p>
+
+    <div class="abs" style="left:426px;top:298px;width:1px;height:170px;background:#D9D2C5;"></div>
+    <div class="abs" style="left:784px;top:298px;width:1px;height:170px;background:#D9D2C5;"></div>
+
+    <img class="abs" data-img-slot="feature.photo" src="../assets/campus.png" alt="雨后的校园" style="left:820px;top:330px;width:372px;height:240px;object-fit:cover;object-position:50% 78%;opacity:0.95;">
+    <p class="abs sans" data-slot="feature.image-caption" style="left:820px;top:582px;width:372px;height:36px;font-size:11px;line-height:18px;color:#6B6257;letter-spacing:1px;">校门内的第一场秋雨。树比人先知道季节变了。<br>2026.09.18 · 摄影 / 校影像组</p>
+
+    <h3 class="abs serif" data-slot="feature.pullquote" style="left:88px;top:500px;width:680px;height:88px;font-size:30px;line-height:44px;font-weight:400;color:#14110D;"><span style="color:#C2410C;">“</span>课表不是约束，<br>而是对话的开始。<span style="color:#C2410C;">”</span></h3>
+    <p class="abs sans" data-slot="feature.pullquote-source" style="left:88px;top:602px;width:420px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">—— 受访教师，教龄十一年</p>
+
+    <div class="abs" style="left:88px;top:660px;width:1104px;height:1px;background:#D9D2C5;"></div>
+    <p class="abs sans" data-slot="feature.footer-left" style="left:88px;top:674px;width:460px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">LONGFORM · 12 MIN READ</p>
+    <p class="abs latin" data-slot="feature.page" style="left:1104px;top:674px;width:88px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">03 / 05</p>
+  </section>
+<section class="slide" data-slide="4">
+    <p class="abs sans" data-slot="data.running-head" style="left:88px;top:38px;width:440px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">北岸 · 数据</p>
+    <p class="abs sans" data-slot="data.running-right" style="left:900px;top:38px;width:292px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">DATA / 04</p>
+    <div class="abs" style="left:88px;top:66px;width:1104px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs sans" data-slot="data.kicker" style="left:88px;top:94px;width:420px;height:18px;font-size:11px;line-height:18px;color:#C2410C;letter-spacing:3px;">数据 · BY THE NUMBERS</p>
+    <p class="abs sans" data-slot="data.note" style="left:900px;top:94px;width:292px;height:18px;font-size:11px;line-height:18px;color:#6B6257;letter-spacing:1px;text-align:right;">2026 秋季问卷 · N = 1,204</p>
+
+    <p class="abs latin" data-slot="data.number" style="left:88px;top:128px;width:620px;height:128px;font-size:120px;line-height:124px;font-weight:700;color:#C2410C;letter-spacing:0px;">87.4%</p>
+    <p class="abs serif" data-slot="data.statement" style="left:88px;top:282px;width:580px;height:76px;font-size:26px;line-height:38px;color:#14110D;">的学生说，愿意把下一年的时间<br>继续交给这间教室。</p>
+    <div class="abs" style="left:88px;top:374px;width:44px;height:2px;background:#C2410C;"></div>
+
+    <p class="abs sans" data-slot="data.scale-label" style="left:88px;top:396px;width:520px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">愿意再来的比例 / WOULD RETURN</p>
+
+    <p class="abs sans" data-slot="data.scale1.label" style="left:88px;top:430px;width:90px;height:20px;font-size:14px;line-height:20px;color:#14110D;">学生</p>
+    <div class="abs" style="left:210px;top:440px;width:560px;height:1px;background:#D9D2C5;"></div>
+    <div class="abs" style="left:210px;top:438px;width:403px;height:3px;background:#C2410C;"></div>
+    <p class="abs latin" data-slot="data.scale1.value" style="left:790px;top:430px;width:54px;height:20px;font-size:15px;line-height:20px;color:#14110D;text-align:right;">72%</p>
+
+    <p class="abs sans" data-slot="data.scale2.label" style="left:88px;top:486px;width:90px;height:20px;font-size:14px;line-height:20px;color:#14110D;">教师</p>
+    <div class="abs" style="left:210px;top:496px;width:560px;height:1px;background:#D9D2C5;"></div>
+    <div class="abs" style="left:210px;top:494px;width:358px;height:3px;background:#C2410C;"></div>
+    <p class="abs latin" data-slot="data.scale2.value" style="left:790px;top:486px;width:54px;height:20px;font-size:15px;line-height:20px;color:#14110D;text-align:right;">64%</p>
+
+    <p class="abs sans" data-slot="data.scale3.label" style="left:88px;top:542px;width:90px;height:20px;font-size:14px;line-height:20px;color:#14110D;">校友</p>
+    <div class="abs" style="left:210px;top:552px;width:560px;height:1px;background:#D9D2C5;"></div>
+    <div class="abs" style="left:210px;top:550px;width:230px;height:3px;background:#C2410C;"></div>
+    <p class="abs latin" data-slot="data.scale3.value" style="left:790px;top:542px;width:54px;height:20px;font-size:15px;line-height:20px;color:#14110D;text-align:right;">41%</p>
+
+    <p class="abs sans" data-slot="data.footnote" style="left:88px;top:608px;width:600px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:1px;">样本来自三校区 · 匿名填写 · 有效回收 1,204 份</p>
+
+    <div class="abs" style="left:856px;top:132px;width:1px;height:488px;background:#D9D2C5;"></div>
+    <p class="abs sans" data-slot="data.aside-label" style="left:884px;top:132px;width:300px;height:16px;font-size:11px;line-height:16px;color:#C2410C;letter-spacing:3px;">方法 / METHOD</p>
+    <p class="abs sans" data-slot="data.aside" style="left:884px;top:162px;width:300px;height:135px;font-size:15px;line-height:27px;color:#6B6257;">我们在问卷末尾留了一道开放题：“如果再来一次，你希望改变什么？” 一千二百零四份回答里，最常见的词不是“课程”，而是“时间”。</p>
+
+    <img class="abs" data-img-slot="data.photo" src="../assets/meeting.jpg" alt="问卷访谈现场" style="left:884px;top:330px;width:260px;height:260px;object-fit:cover;object-position:50% 50%;opacity:0.96;">
+    <p class="abs sans" data-slot="data.caption" style="left:884px;top:602px;width:260px;height:36px;font-size:11px;line-height:18px;color:#6B6257;letter-spacing:1px;">开放题工作坊，第三校区。<br>每一条手写答案都被编号存档。</p>
+
+    <div class="abs" style="left:88px;top:660px;width:1104px;height:1px;background:#D9D2C5;"></div>
+    <p class="abs sans" data-slot="data.footer-left" style="left:88px;top:674px;width:460px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">METHODOLOGY / 2026</p>
+    <p class="abs latin" data-slot="data.page" style="left:1104px;top:674px;width:88px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">04 / 05</p>
+  </section>
+<section class="slide" data-slide="5">
+    <p class="abs sans" data-slot="closing.running-head" style="left:88px;top:38px;width:440px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;">北岸 · 结语</p>
+    <p class="abs sans" data-slot="closing.running-right" style="left:900px;top:38px;width:292px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">CODA / 05</p>
+    <div class="abs" style="left:88px;top:66px;width:1104px;height:1px;background:#D9D2C5;"></div>
+
+    <p class="abs sans" data-slot="closing.kicker" style="left:88px;top:96px;width:420px;height:18px;font-size:11px;line-height:18px;color:#C2410C;letter-spacing:3px;">结语 · CODA</p>
+    <p class="abs serif" data-slot="closing.mark" style="left:88px;top:144px;width:110px;height:90px;font-size:96px;line-height:90px;color:#C2410C;">“</p>
+
+    <h2 class="abs serif" data-slot="closing.quote" style="left:88px;top:248px;width:1100px;height:264px;font-size:64px;line-height:88px;font-weight:400;color:#14110D;"><span>所谓成果，不过是</span><br><span>把一次次微小的坚持，</span><br><span style="color:#C2410C;font-style:italic;">认真地装订成册。</span></h2>
+
+    <div class="abs" style="left:88px;top:534px;width:44px;height:2px;background:#C2410C;"></div>
+    <p class="abs sans" data-slot="closing.source" style="left:88px;top:550px;width:520px;height:18px;font-size:13px;line-height:18px;color:#6B6257;letter-spacing:1px;">——《北岸》编辑部 · 2026 年秋</p>
+
+    <p class="abs sans" data-slot="closing.colophon" style="left:940px;top:522px;width:252px;height:66px;font-size:11px;line-height:22px;color:#6B6257;letter-spacing:1px;text-align:right;">主编 / 林知远<br>摄影 / 校影像组<br>设计 / 北岸工作室</p>
+
+    <div class="abs" style="left:88px;top:640px;width:1104px;height:1px;background:#D9D2C5;"></div>
+    <p class="abs sans" data-slot="closing.contact" style="left:88px;top:656px;width:640px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:1px;">hello@northbank.studio &nbsp;·&nbsp; +86 21 5088 1204</p>
+    <p class="abs sans" data-slot="closing.end" style="left:900px;top:656px;width:292px;height:16px;font-size:11px;line-height:16px;color:#6B6257;letter-spacing:2px;text-align:right;">END / 05</p>
+  </section>
+</div>
+
+<div id="ed-bar">
+  <b>参考稿 18 页 · 可编辑模式</b>
+  <span id="ed-status">加载中…</span>
+  <span class="sp"></span>
+  <button id="ed-fitall">全部自动适配</button>
+  <button id="ed-reset">重置</button>
+  <button id="ed-export" class="ok">导出 HTML</button>
+</div>
+<div id="ed-hint">
+  点文字直接改（超框自动缩字并标红）· 点图片换图（可穿透遮罩，含整页背景图）· 画布固定 1280×720<br>
+  「导出 HTML」会下载包含你所有修改的完整文件；「重置」恢复初始状态。
+</div>
+<div id="ed-modal">
+  <div class="box">
+    <h3 id="ed-m-title">更换图片</h3>
+    <div id="ed-m-ratio" class="row"></div>
+    <div class="row"><input id="ed-m-file" type="file" accept="image/*"></div>
+    <div class="row">
+      <label><input type="radio" name="ed-fit" value="cover" checked> 裁切铺满（保持比例，推荐）</label>
+      <label><input type="radio" name="ed-fit" value="contain"> 完整显示（留白）</label>
+      <label><input type="radio" name="ed-fit" value="fill"> 拉伸填满</label>
+    </div>
+    <div class="warn">「拉伸填满」在比例不匹配时会变形，导出前请确认。</div>
+    <div class="btns">
+      <button id="ed-m-cancel">取消</button>
+      <button id="ed-m-ok" class="primary">替换</button>
+    </div>
+  </div>
+</div>
+
+<script id="ed-script">
+(function(){
+  const statusEl = document.getElementById('ed-status');
+  const modal = document.getElementById('ed-modal');
+  let currentImg = null;
+  let changes = 0;
+  const clamp = v => Math.max(0, Math.min(1, v));
+
+  /* ---------- 1. 找叶子文本元素并设为可编辑 ---------- */
+  function isLeafText(el){
+    if(!el || ['IMG','SVG','TABLE','TR','TD','TH','BR','STYLE','SCRIPT'].includes(el.tagName)) return false;
+    if(el.querySelector('img,svg,table,canvas')) return false;
+    const t = (el.textContent||'').trim(); if(!t) return false;
+    // 只取最内层：后代里没有别的含文字元素
+    for(const c of el.children){
+      if(c.tagName === 'BR') continue;
+      const ct = (c.textContent||'').trim();
+      if(ct) return false;
+      if(['IMG','SVG'].includes(c.tagName)) return false;
+    }
+    return true;
+  }
+  const textEls = [...document.querySelectorAll('section.slide *')].filter(isLeafText);
+  const baseline = new Set();   // 原稿自带的溢出（不标红，只统计）
+  function scanBaseline(){
+    baseline.clear();
+    textEls.forEach(el => { const b = boxOf(el); if(overflows(b)) baseline.add(b); });
+  }
+  textEls.forEach(el => {
+    el.setAttribute('contenteditable','true');
+    el.setAttribute('spellcheck','false');
+    el.dataset.edFont = getComputedStyle(el).fontSize;
+    el.addEventListener('focus', () => { el.dataset.edText0 = el.innerText; });
+    el.addEventListener('blur', () => {
+      if(el.innerText !== el.dataset.edText0){
+        changes++;
+        const b = boxOf(el);
+        baseline.delete(b);      // 编辑过的盒子按"用户新增"处理
+        autoFit(b);
+      }
+      checkAll();
+    });
+    el.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); el.blur(); }
+      if(e.key === 'Escape'){ el.innerText = el.dataset.edText0 || el.innerText; el.blur(); }
+    });
+  });
+
+  /* ---------- 2. 文本超框检测 + 自动缩字 ---------- */
+  function boxOf(el){
+    // 优先取带 data-pptx-id 的文本框容器（反向导出产物）
+    const idBox = el.closest('[data-pptx-id]');
+    if (idBox && idBox !== el) return idBox;
+    // 其次找带显式高度的祖先（模板产物：p.abs 自带 height）
+    let n = el;
+    while (n && n !== document.body) {
+      const cs = getComputedStyle(n);
+      const styleH = n.getAttribute('style') || '';
+      const h = parseFloat(cs.height);
+      if (/height\s*:/.test(styleH) && h > 0 && h < 700) return n;
+      n = n.parentElement;
+    }
+    return el;
+  }
+  function textRect(box){
+    const r = document.createRange();
+    r.selectNodeContents(box);
+    return r.getBoundingClientRect();
+  }
+  function overflows(box){
+    const br = box.getBoundingClientRect();
+    const tr = textRect(box);
+    if(tr.width === 0 && tr.height === 0) return false;
+    // 中英混排时文本行的边界通常比盒子略大，按盒内最大字号给容差，避免误报
+    let fs = 16;
+    [box, ...box.querySelectorAll('*')].forEach(n => {
+      const v = parseFloat(getComputedStyle(n).fontSize);
+      if (v && v > fs) fs = v;
+    });
+    const tolY = Math.max(8, fs * 0.6);
+    const tolX = Math.max(6, fs * 0.15);
+    return tr.bottom > br.bottom + tolY || tr.top < br.top - tolY || tr.right > br.right + tolX;
+  }
+  function autoFit(box){
+    box.classList.remove('ed-overflow');
+    let guard = 0;
+    while(guard++ < 40 && overflows(box)){
+      let changed = false;
+      const nodes = [box, ...box.querySelectorAll('*')].filter(n => (n.textContent||'').trim());
+      for(const n of nodes){
+        const fs = parseFloat(getComputedStyle(n).fontSize);
+        if(!fs || fs <= 8) continue;
+        const next = Math.max(8, fs * 0.94);
+        n.style.fontSize = next.toFixed(2) + 'px';
+        const lh = parseFloat(getComputedStyle(n).lineHeight);
+        if(lh) n.style.lineHeight = Math.max(1, Math.round(next * 1.38)) + 'px';
+        changed = true;
+      }
+      if(!changed) break;
+    }
+    box.classList.toggle('ed-overflow', overflows(box));
+  }
+  function stats(){ return { texts: textEls.length, over: document.querySelectorAll('.ed-overflow').length }; }
+
+  /* ---------- 3. 图片替换（穿透点击 + 背景图） ---------- */
+  let currentBg = null;
+  const contentImgs = [...document.querySelectorAll('section.slide img')].filter(im => {
+    const r = im.getBoundingClientRect();
+    return r.width > 60 && r.height > 60;
+  });
+  contentImgs.forEach(img => { img.classList.add('ed-img'); img.title = '点击更换图片（默认保持比例）'; });
+
+  function isBgEl(el){
+    return el && el.nodeType === 1 && (el.classList.contains('bg-image') ||
+      el.getAttribute('data-pptx-role') === 'background-image' ||
+      (el.classList.contains('pptx-bg') && getComputedStyle(el).backgroundImage !== 'none'));
+  }
+  // 按坐标向下穿透：找到最上层的 <img> 或背景图层（即使被遮罩盖住）
+  function pickAt(x, y){
+    const els = document.elementsFromPoint(x, y);
+    for(const el of els){
+      if(!el.closest || !el.closest('section.slide')) continue;
+      if(el.tagName === 'IMG') return { type:'img', el };
+      if(isBgEl(el)) return { type:'bg', el };
+    }
+    return null;
+  }
+  document.querySelectorAll('section.slide').forEach(sec => {
+    sec.addEventListener('click', (e) => {
+      if(e.target.closest('[contenteditable="true"]')) return;   // 点文字优先编辑
+      const t = pickAt(e.clientX, e.clientY);
+      if(!t) return;
+      e.preventDefault(); e.stopPropagation();
+      if(t.type === 'img'){ currentImg = t.el; currentBg = null; openModal(); }
+      else { currentBg = t.el; currentImg = null; openBgModal(t.el); }
+    }, true);
+  });
+  function ratioInfo(img){
+    const r = img.getBoundingClientRect();
+    const boxRatio = r.width / Math.max(r.height, 1);
+    const natRatio = (img.naturalWidth || 1) / Math.max(img.naturalHeight || 1, 1);
+    const diff = Math.abs(boxRatio - natRatio) / Math.max(boxRatio, natRatio);
+    return { boxRatio, natRatio, diff };
+  }
+  function openBgModal(bgEl){
+    document.getElementById('ed-m-title').textContent = '更换整页背景图';
+    const r = bgEl.getBoundingClientRect();
+    const boxRatio = r.width / Math.max(r.height, 1);
+    document.getElementById('ed-m-ratio').textContent =
+      `背景图层　槽位比例 ${boxRatio.toFixed(2)} : 1　（整页背景图，可整张替换）`;
+    document.getElementById('ed-m-file').value = '';
+    modal.dataset.mode = 'bg';
+    modal.style.display = 'flex';
+  }
+  function openModal(){
+    document.getElementById('ed-m-title').textContent = '更换图片';
+    const { boxRatio, natRatio, diff } = ratioInfo(currentImg);
+    document.getElementById('ed-m-ratio').textContent =
+      `槽位比例 ${boxRatio.toFixed(2)} : 1　原图比例 ${natRatio.toFixed(2)} : 1　` +
+      (diff > 0.06 ? `不匹配 ${(diff*100).toFixed(0)}%（建议裁切）` : '基本匹配');
+    document.getElementById('ed-m-file').value = '';
+    modal.dataset.mode = 'img';
+    modal.style.display = 'flex';
+  }
+  document.getElementById('ed-m-cancel').onclick = () => { modal.style.display = 'none'; };
+  document.getElementById('ed-m-ok').onclick = () => {
+    const f = document.getElementById('ed-m-file').files[0];
+    if(!f){ modal.style.display = 'none'; return; }
+    const mode = (document.querySelector('input[name="ed-fit"]:checked') || {}).value || 'cover';
+    const rd = new FileReader();
+    rd.onload = () => {
+      if(modal.dataset.mode === 'bg' && currentBg){
+        const map = { cover:'cover', contain:'contain', fill:'100% 100%' };
+        currentBg.style.backgroundImage = `url('${rd.result}')`;
+        currentBg.style.backgroundSize = map[mode];
+        currentBg.style.backgroundPosition = 'center';
+        currentBg.style.backgroundRepeat = 'no-repeat';
+        changes++; modal.style.display = 'none'; checkAll(); return;
+      }
+      currentImg.src = rd.result;
+      currentImg.removeAttribute('width'); currentImg.removeAttribute('height');
+      currentImg.style.objectFit = mode;      // cover 裁切 / contain 完整 / fill 拉伸
+      currentImg.dataset.edChanged = '1';
+      if(mode === 'fill') currentImg.dataset.edWarn = 'stretch';
+      changes++;
+      modal.style.display = 'none';
+      checkAll();
+    };
+    rd.readAsDataURL(f);
+  };
+
+  /* ---------- 4. 导出 ---------- */
+  function exportHtml(){
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll('#ed-bar,#ed-hint,#ed-modal,.ed-badge,#ed-style,#ed-script').forEach(n => n.remove());
+    clone.querySelectorAll('[contenteditable]').forEach(n => { n.removeAttribute('contenteditable'); n.removeAttribute('spellcheck'); });
+    clone.querySelectorAll('.ed-overflow').forEach(n => n.classList.remove('ed-overflow'));
+    clone.querySelectorAll('.ed-img').forEach(n => n.classList.remove('ed-img'));
+    const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'deck-edited.html';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  /* ---------- 5. 状态栏 ---------- */
+  let newOver = 0;
+  function checkAll(){
+    newOver = 0;
+    textEls.forEach(el => {
+      const b = boxOf(el);
+      const bad = overflows(b);
+      if(bad && !baseline.has(b)){ b.classList.add('ed-overflow'); newOver++; }
+      else if(!bad){ b.classList.remove('ed-overflow'); }
+    });
+    let badImgs = 0;
+    contentImgs.forEach(im => {
+      const { diff } = ratioInfo(im);
+      const r = im.getBoundingClientRect();
+      if(diff > 0.12 && (r.width*r.height)/(1280*720) > 0.02) badImgs++;
+    });
+    statusEl.textContent =
+      `已改 ${changes} 处 · 可编辑文本 ${textEls.length} · 可换图 ${contentImgs.length} · ` +
+      `编辑新增超框 ${newOver} · 原稿自带溢出 ${baseline.size} · 需裁切适配图 ${badImgs}`;
+  }
+
+  document.getElementById('ed-export').onclick = exportHtml;
+  document.getElementById('ed-fitall').onclick = () => { baseline.clear(); textEls.forEach(el => autoFit(boxOf(el))); checkAll(); };
+  document.getElementById('ed-reset').onclick = () => { if(confirm('刷新页面恢复初始状态？')) location.reload(); };
+  document.querySelectorAll('section.slide').forEach((s, i) => {
+    const b = document.createElement('div'); b.className = 'ed-badge'; b.textContent = 'P' + (i + 1);
+    s.appendChild(b);
+  });
+  scanBaseline();
+  checkAll();
+})();
+</script>
+</body></html>

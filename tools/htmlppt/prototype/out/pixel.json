@@ -1,0 +1,650 @@
+{
+ "thresholds": {
+  "soft": 16,
+  "hard": 48
+ },
+ "overall": {
+  "slides": 5,
+  "pixels": 4608000,
+  "pixelDiffRatio": 0.0406,
+  "majorDiffRatio": 0.0297,
+  "mae": 4.25
+ },
+ "byKind": {
+  "image": {
+   "area": 249840,
+   "changedPixels": 4153,
+   "ratio": 0.0166
+  },
+  "shape": {
+   "area": 5704860,
+   "changedPixels": 243271,
+   "ratio": 0.0426
+  },
+  "svg": {
+   "area": 4352,
+   "changedPixels": 332,
+   "ratio": 0.0763
+  },
+  "table": {
+   "area": 301653,
+   "changedPixels": 18284,
+   "ratio": 0.0606
+  },
+  "text": {
+   "area": 795584,
+   "changedPixels": 161206,
+   "ratio": 0.2026
+  }
+ },
+ "textVerticalOffsetPx": {
+  "samples": 35,
+  "median": 3.0,
+  "mean": 2.91,
+  "histogram": {
+   "1": 2,
+   "2": 12,
+   "3": 13,
+   "4": 5,
+   "5": 1,
+   "6": 2
+  },
+  "note": "row-edge cross correlation, positive = PPTX text sits lower than HTML"
+ },
+ "slides": [
+  {
+   "slide": 1,
+   "size": [
+    1280,
+    720
+   ],
+   "sizeMismatchResampled": null,
+   "mae": 5.35,
+   "pixelDiffRatio": 0.0426,
+   "majorDiffRatio": 0.0335,
+   "changedPixels": 39230,
+   "html": "out/html/slide-1.png",
+   "pptx": "out/pptx/slide-1.png",
+   "diff": "out/diff/slide-1.png",
+   "objectsModeled": 11,
+   "regionsAnalyzed": 10,
+   "worstRegions": [
+    {
+     "id": "s1-o7",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 96,
+     "y": 452,
+     "w": 600,
+     "h": 68,
+     "ratio": 0.2725,
+     "mae": 22.99
+    },
+    {
+     "id": "s1-o10",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 148,
+     "y": 599,
+     "w": 160,
+     "h": 22,
+     "ratio": 0.2366,
+     "mae": 18.83
+    },
+    {
+     "id": "s1-o11",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 662,
+     "w": 560,
+     "h": 18,
+     "ratio": 0.2059,
+     "mae": 10.75
+    },
+    {
+     "id": "s1-o5",
+     "kind": "text",
+     "tag": "h1",
+     "label": "h1.abs",
+     "x": 92,
+     "y": 248,
+     "w": 660,
+     "h": 156,
+     "ratio": 0.1979,
+     "mae": 30.76
+    },
+    {
+     "id": "s1-o4",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 206,
+     "w": 520,
+     "h": 20,
+     "ratio": 0.1561,
+     "mae": 14.53
+    },
+    {
+     "id": "s1-o8",
+     "kind": "shape",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 586,
+     "w": 226,
+     "h": 48,
+     "ratio": 0.1306,
+     "mae": 7.66
+    },
+    {
+     "id": "s1-o3",
+     "kind": "image",
+     "tag": "img",
+     "label": "",
+     "x": 1092,
+     "y": 120,
+     "w": 56,
+     "h": 56,
+     "ratio": 0.1036,
+     "mae": 4.63
+    },
+    {
+     "id": "s1-o9",
+     "kind": "svg",
+     "tag": "svg",
+     "label": "",
+     "x": 116,
+     "y": 600,
+     "w": 20,
+     "h": 20,
+     "ratio": 0.0825,
+     "mae": 2.84
+    }
+   ],
+   "textVerticalOffsetPx": {
+    "samples": 5,
+    "median": 2.0,
+    "min": 1,
+    "max": 6
+   }
+  },
+  {
+   "slide": 2,
+   "size": [
+    1280,
+    720
+   ],
+   "sizeMismatchResampled": null,
+   "mae": 5.85,
+   "pixelDiffRatio": 0.0535,
+   "majorDiffRatio": 0.0429,
+   "changedPixels": 49291,
+   "html": "out/html/slide-2.png",
+   "pptx": "out/pptx/slide-2.png",
+   "diff": "out/diff/slide-2.png",
+   "objectsModeled": 17,
+   "regionsAnalyzed": 16,
+   "worstRegions": [
+    {
+     "id": "s2-o14",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 892,
+     "y": 304,
+     "w": 260,
+     "h": 26,
+     "ratio": 0.2889,
+     "mae": 24.43
+    },
+    {
+     "id": "s2-o4",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 96,
+     "y": 176,
+     "w": 720,
+     "h": 102,
+     "ratio": 0.2879,
+     "mae": 30.62
+    },
+    {
+     "id": "s2-o9",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 128,
+     "y": 412,
+     "w": 640,
+     "h": 30,
+     "ratio": 0.2254,
+     "mae": 26.11
+    },
+    {
+     "id": "s2-o16",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 892,
+     "y": 376,
+     "w": 256,
+     "h": 44,
+     "ratio": 0.2199,
+     "mae": 14.66
+    },
+    {
+     "id": "s2-o7",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 128,
+     "y": 362,
+     "w": 640,
+     "h": 30,
+     "ratio": 0.2172,
+     "mae": 24.98
+    },
+    {
+     "id": "s2-o11",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 128,
+     "y": 462,
+     "w": 640,
+     "h": 30,
+     "ratio": 0.2062,
+     "mae": 23.61
+    },
+    {
+     "id": "s2-o3",
+     "kind": "text",
+     "tag": "h2",
+     "label": "h2.abs",
+     "x": 120,
+     "y": 82,
+     "w": 820,
+     "h": 52,
+     "ratio": 0.1632,
+     "mae": 24.37
+    },
+    {
+     "id": "s2-o13",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 892,
+     "y": 222,
+     "w": 260,
+     "h": 70,
+     "ratio": 0.1376,
+     "mae": 13.15
+    }
+   ],
+   "textVerticalOffsetPx": {
+    "samples": 9,
+    "median": 3.0,
+    "min": 1,
+    "max": 6
+   }
+  },
+  {
+   "slide": 3,
+   "size": [
+    1280,
+    720
+   ],
+   "sizeMismatchResampled": null,
+   "mae": 3.71,
+   "pixelDiffRatio": 0.0416,
+   "majorDiffRatio": 0.0294,
+   "changedPixels": 38361,
+   "html": "out/html/slide-3.png",
+   "pptx": "out/pptx/slide-3.png",
+   "diff": "out/diff/slide-3.png",
+   "objectsModeled": 21,
+   "regionsAnalyzed": 21,
+   "worstRegions": [
+    {
+     "id": "s3-o8",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 136,
+     "y": 326,
+     "w": 280,
+     "h": 78,
+     "ratio": 0.2752,
+     "mae": 20.03
+    },
+    {
+     "id": "s3-o18",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 864,
+     "y": 326,
+     "w": 280,
+     "h": 78,
+     "ratio": 0.2729,
+     "mae": 20.04
+    },
+    {
+     "id": "s3-o13",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 500,
+     "y": 326,
+     "w": 280,
+     "h": 78,
+     "ratio": 0.252,
+     "mae": 19.18
+    },
+    {
+     "id": "s3-o3",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 116,
+     "w": 800,
+     "h": 24,
+     "ratio": 0.2254,
+     "mae": 15.97
+    },
+    {
+     "id": "s3-o20",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 104,
+     "y": 624,
+     "w": 860,
+     "h": 26,
+     "ratio": 0.2128,
+     "mae": 18.18
+    },
+    {
+     "id": "s3-o7",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 136,
+     "y": 288,
+     "w": 280,
+     "h": 30,
+     "ratio": 0.1344,
+     "mae": 18.34
+    },
+    {
+     "id": "s3-o12",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 500,
+     "y": 288,
+     "w": 280,
+     "h": 30,
+     "ratio": 0.1299,
+     "mae": 15.51
+    },
+    {
+     "id": "s3-o2",
+     "kind": "text",
+     "tag": "h2",
+     "label": "h2.abs",
+     "x": 96,
+     "y": 60,
+     "w": 900,
+     "h": 46,
+     "ratio": 0.129,
+     "mae": 17.26
+    }
+   ],
+   "textVerticalOffsetPx": {
+    "samples": 10,
+    "median": 2.5,
+    "min": 2,
+    "max": 4
+   }
+  },
+  {
+   "slide": 4,
+   "size": [
+    1280,
+    720
+   ],
+   "sizeMismatchResampled": null,
+   "mae": 2.83,
+   "pixelDiffRatio": 0.0367,
+   "majorDiffRatio": 0.0224,
+   "changedPixels": 33829,
+   "html": "out/html/slide-4.png",
+   "pptx": "out/pptx/slide-4.png",
+   "diff": "out/diff/slide-4.png",
+   "objectsModeled": 7,
+   "regionsAnalyzed": 7,
+   "worstRegions": [
+    {
+     "id": "s4-o3",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 116,
+     "w": 820,
+     "h": 24,
+     "ratio": 0.2854,
+     "mae": 20.28
+    },
+    {
+     "id": "s4-o5",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 492,
+     "w": 900,
+     "h": 22,
+     "ratio": 0.2218,
+     "mae": 16.18
+    },
+    {
+     "id": "s4-o7",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 686,
+     "w": 700,
+     "h": 20,
+     "ratio": 0.1196,
+     "mae": 5.93
+    },
+    {
+     "id": "s4-o2",
+     "kind": "text",
+     "tag": "h2",
+     "label": "h2.abs",
+     "x": 96,
+     "y": 60,
+     "w": 900,
+     "h": 46,
+     "ratio": 0.0933,
+     "mae": 12.84
+    },
+    {
+     "id": "s4-o4",
+     "kind": "table",
+     "tag": "table",
+     "label": "",
+     "x": 96,
+     "y": 176,
+     "w": 1089,
+     "h": 277,
+     "ratio": 0.0606,
+     "mae": 4.21
+    },
+    {
+     "id": "s4-o1",
+     "kind": "shape",
+     "tag": "section",
+     "label": "section.slide",
+     "x": 0,
+     "y": 0,
+     "w": 1280,
+     "h": 720,
+     "ratio": 0.0367,
+     "mae": 2.83
+    },
+    {
+     "id": "s4-o6",
+     "kind": "shape",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 0,
+     "y": 672,
+     "w": 1280,
+     "h": 48,
+     "ratio": 0.0273,
+     "mae": 1.35
+    }
+   ],
+   "textVerticalOffsetPx": {
+    "samples": 4,
+    "median": 2.0,
+    "min": 2,
+    "max": 3
+   }
+  },
+  {
+   "slide": 5,
+   "size": [
+    1280,
+    720
+   ],
+   "sizeMismatchResampled": null,
+   "mae": 3.53,
+   "pixelDiffRatio": 0.0288,
+   "majorDiffRatio": 0.0205,
+   "changedPixels": 26532,
+   "html": "out/html/slide-5.png",
+   "pptx": "out/pptx/slide-5.png",
+   "diff": "out/diff/slide-5.png",
+   "objectsModeled": 14,
+   "regionsAnalyzed": 13,
+   "worstRegions": [
+    {
+     "id": "s5-o9",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 812,
+     "y": 186,
+     "w": 340,
+     "h": 32,
+     "ratio": 0.299,
+     "mae": 45.35
+    },
+    {
+     "id": "s5-o10",
+     "kind": "text",
+     "tag": "p",
+     "label": "p.abs",
+     "x": 812,
+     "y": 234,
+     "w": 340,
+     "h": 84,
+     "ratio": 0.2459,
+     "mae": 21.91
+    },
+    {
+     "id": "s5-o6",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 120,
+     "y": 490,
+     "w": 520,
+     "h": 30,
+     "ratio": 0.2006,
+     "mae": 24.14
+    },
+    {
+     "id": "s5-o13",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 812,
+     "y": 490,
+     "w": 340,
+     "h": 22,
+     "ratio": 0.1766,
+     "mae": 10.97
+    },
+    {
+     "id": "s5-o7",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 556,
+     "w": 620,
+     "h": 20,
+     "ratio": 0.1702,
+     "mae": 11.43
+    },
+    {
+     "id": "s5-o2",
+     "kind": "text",
+     "tag": "h2",
+     "label": "h2.abs",
+     "x": 96,
+     "y": 64,
+     "w": 760,
+     "h": 44,
+     "ratio": 0.1651,
+     "mae": 26.33
+    },
+    {
+     "id": "s5-o14",
+     "kind": "text",
+     "tag": "div",
+     "label": "div.abs",
+     "x": 96,
+     "y": 660,
+     "w": 600,
+     "h": 20,
+     "ratio": 0.1192,
+     "mae": 6.53
+    },
+    {
+     "id": "s5-o3",
+     "kind": "svg",
+     "tag": "svg",
+     "label": "",
+     "x": 1164,
+     "y": 88,
+     "w": 20,
+     "h": 20,
+     "ratio": 0.11,
+     "mae": 4.45
+    }
+   ],
+   "textVerticalOffsetPx": {
+    "samples": 7,
+    "median": 3.0,
+    "min": 2,
+    "max": 5
+   }
+  }
+ ],
+ "contactSheet": "out/diff/contact-sheet.png"
+}

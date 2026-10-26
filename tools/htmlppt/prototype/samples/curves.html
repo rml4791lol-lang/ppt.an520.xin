@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>HTML → PPTX 曲线样本：路径曲线</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: #111; }
+  body {
+    font-family: "PingFang SC";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+  #stage { position: relative; width: 1280px; height: 720px; }
+  section.slide {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 720px;
+    overflow: hidden;
+  }
+  .abs { position: absolute; }
+  img, svg { display: block; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- ================= Slide 1: cover — one big C+S curve arrow ================= -->
+  <section class="slide" data-slide="1" style="background: linear-gradient(135deg,#081A2E 0%,#12395A 55%,#081A2E 100%);">
+    <div class="abs" style="left:96px;top:150px;width:520px;height:20px;font-size:14px;line-height:20px;letter-spacing:3px;color:#7DD3FC;font-weight:600;">SVG CURVES &middot; 2026</div>
+    <h1 class="abs" style="left:92px;top:190px;width:620px;font-size:58px;line-height:72px;color:#FFFFFF;font-weight:700;">曲线路径<br>变成原生贝塞尔</h1>
+    <div class="abs" style="left:96px;top:360px;width:520px;height:1px;background:rgba(255,255,255,0.3);"></div>
+    <p class="abs" style="left:96px;top:386px;width:560px;font-size:19px;line-height:32px;color:rgba(255,255,255,0.74);">M / L / H / V / C / S / Q / T / A / Z 全部解析为绝对坐标，Q/T/A 折成三次贝塞尔，写入 DrawingML 的 a:cubicBezTo。</p>
+    <div class="abs" style="left:96px;top:520px;width:300px;height:44px;background:rgba(125,211,252,0.14);border:1px solid rgba(125,211,252,0.4);border-radius:22px;"></div>
+    <div class="abs" style="left:118px;top:532px;width:260px;height:20px;font-size:14px;line-height:20px;color:#BAE6FD;font-weight:600;">容差 0.1px &middot; 单位圆空间误差</div>
+    <div class="abs" style="left:96px;top:660px;width:560px;height:18px;font-size:13px;line-height:18px;color:rgba(255,255,255,0.45);">samples/curves.html &middot; 曲线图标 + 曲线箭头 + 拓扑连线</div>
+
+    <!-- curved arrow: C then S, plus a filled polygon head -->
+    <svg class="abs" width="560" height="300" viewBox="0 0 560 300" style="left:660px;top:190px;">
+      <path d="M20 250 C 90 120, 210 60, 320 60 S 520 130, 540 230" fill="none" stroke="#7DD3FC" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M60 236 C 130 130, 230 88, 330 90 S 500 152, 520 236" fill="none" stroke="rgba(125,211,252,0.35)" stroke-width="1.5" stroke-linecap="round"/>
+      <polygon points="548,250 512,224 542,214" fill="#7DD3FC"/>
+    </svg>
+    <div class="abs" style="left:700px;top:520px;width:520px;height:22px;font-size:15px;line-height:22px;color:#7DD3FC;font-weight:500;text-align:right;">两条 C 曲线 + 1 条 S 曲线 + 1 个三角箭头</div>
+  </section>
+
+  <!-- ================= Slide 2: curved icons (A / a / S / circle) ================= -->
+  <section class="slide" data-slide="2" style="background:#FFFFFF;">
+    <div class="abs" style="left:96px;top:64px;width:8px;height:40px;background:#2563EB;border-radius:4px;"></div>
+    <h2 class="abs" style="left:120px;top:58px;width:900px;height:50px;font-size:36px;line-height:50px;color:#0F172A;font-weight:700;">曲线图标：圆弧不再降级成 PNG</h2>
+    <p class="abs" style="left:96px;top:120px;width:1000px;height:26px;font-size:16px;line-height:26px;color:#64748B;">下面 6 个图标分别用到 A / 相对 a / S / Q / circle：圆和椭圆保留原生形状，其余全部写入 a:custGeom。</p>
+
+    <!-- card 1: A arcs (rotate-cw) -->
+    <div class="abs" style="left:96px;top:190px;width:320px;height:180px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;"></div>
+    <svg class="abs" width="44" height="44" viewBox="0 0 24 24" style="left:120px;top:214px;">
+      <path d="M23 4v6h-6" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="abs" style="left:180px;top:216px;width:210px;height:24px;font-size:19px;line-height:24px;color:#0F172A;font-weight:600;">A 绝对圆弧</div>
+    <div class="abs" style="left:120px;top:280px;width:272px;height:40px;font-size:13px;line-height:20px;color:#64748B;">9 半径大弧 + 小弧拼成一个刷新图标</div>
+    <div class="abs" style="left:120px;top:330px;width:272px;height:18px;font-size:11px;line-height:18px;color:#94A3B8;">A9 9 0 1 1 2.12 9.36</div>
+
+    <!-- card 2: large arc + reflected (moon) -->
+    <div class="abs" style="left:456px;top:190px;width:320px;height:180px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;"></div>
+    <svg class="abs" width="44" height="44" viewBox="0 0 24 24" style="left:480px;top:214px;">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="abs" style="left:540px;top:216px;width:210px;height:24px;font-size:19px;line-height:24px;color:#0F172A;font-weight:600;">大小弧混合</div>
+    <div class="abs" style="left:480px;top:280px;width:272px;height:40px;font-size:13px;line-height:20px;color:#64748B;">一个 A 分段成多个 cubicBezTo</div>
+    <div class="abs" style="left:480px;top:330px;width:272px;height:18px;font-size:11px;line-height:18px;color:#94A3B8;">A9 9 0 1 1 ... / A7 7 0 0 0 ...</div>
+
+    <!-- card 3: two arcs closing a shape (cloud) -->
+    <div class="abs" style="left:816px;top:190px;width:320px;height:180px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;"></div>
+    <svg class="abs" width="44" height="44" viewBox="0 0 24 24" style="left:840px;top:214px;">
+      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="abs" style="left:900px;top:216px;width:210px;height:24px;font-size:19px;line-height:24px;color:#0F172A;font-weight:600;">弧 + 闭合</div>
+    <div class="abs" style="left:840px;top:280px;width:272px;height:40px;font-size:13px;line-height:20px;color:#64748B;">Z 闭合后仍保留弧段，填充与描边分离</div>
+    <div class="abs" style="left:840px;top:330px;width:272px;height:18px;font-size:11px;line-height:18px;color:#94A3B8;">A8 8 0 1 0 ... z</div>
+
+    <!-- card 4: relative arcs (heart) -->
+    <div class="abs" style="left:96px;top:390px;width:320px;height:180px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;"></div>
+    <svg class="abs" width="44" height="44" viewBox="0 0 24 24" style="left:120px;top:414px;">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="none" stroke="#E11D48" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="abs" style="left:180px;top:416px;width:210px;height:24px;font-size:19px;line-height:24px;color:#0F172A;font-weight:600;">相对弧 a</div>
+    <div class="abs" style="left:120px;top:480px;width:272px;height:40px;font-size:13px;line-height:20px;color:#64748B;">相对坐标 + 弧标志位，心形是纯曲线</div>
+    <div class="abs" style="left:120px;top:530px;width:272px;height:18px;font-size:11px;line-height:18px;color:#94A3B8;">a5.5 5.5 0 0 0 ... z</div>
+
+    <!-- card 5: circle + S curve (smile) -->
+    <div class="abs" style="left:456px;top:390px;width:320px;height:180px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;"></div>
+    <svg class="abs" width="44" height="44" viewBox="0 0 24 24" style="left:480px;top:414px;">
+      <circle cx="12" cy="12" r="10" fill="none" stroke="#2563EB" stroke-width="2"/>
+      <path d="M8 14s1.5 2 4 2 4-2 4-2" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/>
+      <path d="M9 9h.01M15 9h.01" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div class="abs" style="left:540px;top:416px;width:210px;height:24px;font-size:19px;line-height:24px;color:#0F172A;font-weight:600;">圆 + S 曲线</div>
+    <div class="abs" style="left:480px;top:480px;width:272px;height:40px;font-size:13px;line-height:20px;color:#64748B;">&lt;circle&gt; 走原生椭圆，S 反射控制点</div>
+    <div class="abs" style="left:480px;top:530px;width:272px;height:18px;font-size:11px;line-height:18px;color:#94A3B8;">circle r=10 / s1.5 2 4 2</div>
+
+    <!-- card 6: polyline-ish + rounded rect -->
+    <div class="abs" style="left:816px;top:390px;width:320px;height:180px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;"></div>
+    <svg class="abs" width="44" height="44" viewBox="0 0 24 24" style="left:840px;top:414px;">
+      <rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#0EA5E9" stroke-width="2"/>
+      <path d="M7 15l3.5-3.5 3 3L17 9" fill="none" stroke="#0EA5E9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="abs" style="left:900px;top:416px;width:210px;height:24px;font-size:19px;line-height:24px;color:#0F172A;font-weight:600;">圆角矩形 + 折线</div>
+    <div class="abs" style="left:840px;top:480px;width:272px;height:40px;font-size:13px;line-height:20px;color:#64748B;">rect 的 rx 也走弧转贝塞尔</div>
+    <div class="abs" style="left:840px;top:530px;width:272px;height:18px;font-size:11px;line-height:18px;color:#94A3B8;">rect rx=4 / M7 15 l3.5 -3.5 ...</div>
+
+    <div class="abs" style="left:96px;top:660px;width:900px;height:18px;font-size:13px;line-height:18px;color:#94A3B8;">曲线图标保持矢量：可在 PowerPoint 里直接改顶点、线宽和颜色</div>
+  </section>
+
+  <!-- ================= Slide 3: curved arrows + topology + Q/T wave ================= -->
+  <section class="slide" data-slide="3" style="background:#FFFFFF;">
+    <div class="abs" style="left:96px;top:64px;width:8px;height:40px;background:#0EA5E9;border-radius:4px;"></div>
+    <h2 class="abs" style="left:120px;top:58px;width:900px;height:50px;font-size:36px;line-height:50px;color:#0F172A;font-weight:700;">曲线箭头与拓扑连线</h2>
+    <p class="abs" style="left:96px;top:118px;width:1000px;height:26px;font-size:16px;line-height:26px;color:#64748B;">四个节点的连接线都是 C 曲线，箭头是填充多边形；底部再用 Q/T 画一条波浪线。</p>
+
+    <div class="abs" style="left:120px;top:300px;width:200px;height:90px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:18px;"></div>
+    <div class="abs" style="left:140px;top:322px;width:160px;height:24px;font-size:16px;line-height:24px;color:#1D4ED8;font-weight:700;">数据采集</div>
+    <div class="abs" style="left:140px;top:350px;width:160px;height:20px;font-size:12px;line-height:20px;color:#64748B;">Sensors</div>
+
+    <div class="abs" style="left:560px;top:180px;width:200px;height:90px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:18px;"></div>
+    <div class="abs" style="left:580px;top:202px;width:160px;height:24px;font-size:16px;line-height:24px;color:#15803D;font-weight:700;">模型训练</div>
+    <div class="abs" style="left:580px;top:230px;width:160px;height:20px;font-size:12px;line-height:20px;color:#64748B;">Training</div>
+
+    <div class="abs" style="left:960px;top:300px;width:200px;height:90px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:18px;"></div>
+    <div class="abs" style="left:980px;top:322px;width:160px;height:24px;font-size:16px;line-height:24px;color:#C2410C;font-weight:700;">系统集成</div>
+    <div class="abs" style="left:980px;top:350px;width:160px;height:20px;font-size:12px;line-height:20px;color:#64748B;">Integration</div>
+
+    <div class="abs" style="left:560px;top:420px;width:200px;height:90px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:18px;"></div>
+    <div class="abs" style="left:580px;top:442px;width:160px;height:24px;font-size:16px;line-height:24px;color:#6D28D9;font-weight:700;">现场验证</div>
+    <div class="abs" style="left:580px;top:470px;width:160px;height:20px;font-size:12px;line-height:20px;color:#64748B;">Field test</div>
+
+    <!-- curved connectors: every C here becomes one a:cubicBezTo -->
+    <svg class="abs" width="1280" height="720" viewBox="0 0 1280 720" style="left:0;top:0;">
+      <path d="M320 345 C 380 345, 500 225, 560 225" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>
+      <polygon points="568,225 550,217 550,233" fill="#94A3B8"/>
+      <path d="M760 225 C 840 225, 880 345, 960 345" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>
+      <polygon points="968,345 950,337 950,353" fill="#94A3B8"/>
+      <path d="M1060 390 C 1000 465, 880 465, 760 465" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>
+      <polygon points="752,465 770,457 770,473" fill="#94A3B8"/>
+      <path d="M560 465 C 500 465, 380 390, 320 390" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>
+      <polygon points="312,390 330,382 330,398" fill="#94A3B8"/>
+    </svg>
+
+    <div class="abs" style="left:96px;top:570px;width:560px;height:1px;background:#E2E8F0;"></div>
+    <div class="abs" style="left:96px;top:588px;width:420px;height:22px;font-size:14px;line-height:22px;color:#334155;font-weight:600;">Q / T 平滑波浪（一条路径 4 段二次曲线）</div>
+    <svg class="abs" width="440" height="90" viewBox="0 0 440 90" style="left:96px;top:616px;">
+      <path d="M8 45 Q 62 -6 116 45 T 224 45 T 332 45 T 432 45" fill="none" stroke="#2563EB" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <div class="abs" style="left:600px;top:588px;width:300px;height:22px;font-size:14px;line-height:22px;color:#334155;font-weight:600;">A 大弧光环</div>
+    <svg class="abs" width="120" height="120" viewBox="0 0 120 120" style="left:600px;top:600px;">
+      <path d="M60 14 A46 46 0 1 1 14 60" fill="none" stroke="#0EA5E9" stroke-width="5" stroke-linecap="round"/>
+      <path d="M60 30 A30 30 0 1 0 30 60" fill="none" stroke="#BAE6FD" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <div class="abs" style="left:760px;top:640px;width:420px;height:60px;font-size:13px;line-height:22px;color:#64748B;">曲线在 PPTX 里是 a:cubicBezTo 顶点，可继续拖动控制柄；<br>不再是 4x 位图，放大不失真。</div>
+  </section>
+
+</div>
+</body>
+</html>

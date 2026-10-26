@@ -1,0 +1,850 @@
+{
+ "directives": [
+  {
+   "slide": 1,
+   "kind": "gradient",
+   "marker": "FE00E0",
+   "gradient": {
+    "kind": "linear",
+    "angle": 45,
+    "stops": [
+     {
+      "pos": 0,
+      "hex": "081A2E",
+      "a": 1
+     },
+     {
+      "pos": 0.55,
+      "hex": "0F3B5C",
+      "a": 1
+     },
+     {
+      "pos": 1,
+      "hex": "081A2E",
+      "a": 1
+     }
+    ]
+   },
+   "shape": {
+    "x": 0,
+    "y": 0,
+    "w": 1280,
+    "h": 720,
+    "shapeType": "rect",
+    "rectRadius": 0
+   }
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE01E0",
+   "group": {
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 3,
+        "y": 17
+       },
+       {
+        "t": "L",
+        "x": 9,
+        "y": 11
+       },
+       {
+        "t": "L",
+        "x": 13,
+        "y": 15
+       },
+       {
+        "t": "L",
+        "x": 21,
+        "y": 7
+       },
+       {
+        "t": "M",
+        "x": 15,
+        "y": 7
+       },
+       {
+        "t": "L",
+        "x": 21,
+        "y": 7
+       },
+       {
+        "t": "L",
+        "x": 21,
+        "y": 13
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "7DD3FC",
+    "strokeA": 1,
+    "strokeWidth": 1.8,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "geometry": {
+    "viewBox": [
+     24,
+     24
+    ],
+    "groups": [
+     {
+      "subpaths": [
+       {
+        "cmds": [
+         {
+          "t": "M",
+          "x": 3,
+          "y": 17
+         },
+         {
+          "t": "L",
+          "x": 9,
+          "y": 11
+         },
+         {
+          "t": "L",
+          "x": 13,
+          "y": 15
+         },
+         {
+          "t": "L",
+          "x": 21,
+          "y": 7
+         },
+         {
+          "t": "M",
+          "x": 15,
+          "y": 7
+         },
+         {
+          "t": "L",
+          "x": 21,
+          "y": 7
+         },
+         {
+          "t": "L",
+          "x": 21,
+          "y": 13
+         }
+        ]
+       }
+      ],
+      "fillHex": null,
+      "fillA": null,
+      "strokeHex": "7DD3FC",
+      "strokeA": 1,
+      "strokeWidth": 1.8,
+      "cap": "butt",
+      "join": "miter"
+     }
+    ],
+    "circles": [],
+    "hasText": false,
+    "supported": true,
+    "curves": 0,
+    "nodesTotal": 1,
+    "unsupportedReasons": [],
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 3,
+        "y": 17
+       },
+       {
+        "t": "L",
+        "x": 9,
+        "y": 11
+       },
+       {
+        "t": "L",
+        "x": 13,
+        "y": 15
+       },
+       {
+        "t": "L",
+        "x": 21,
+        "y": 7
+       },
+       {
+        "t": "M",
+        "x": 15,
+        "y": 7
+       },
+       {
+        "t": "L",
+        "x": 21,
+        "y": 7
+       },
+       {
+        "t": "L",
+        "x": 21,
+        "y": 13
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "7DD3FC",
+    "strokeA": 1,
+    "strokeWidth": 1.8,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "rect": {
+    "x": 863,
+    "y": 179,
+    "w": 72,
+    "h": 72
+   }
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE02E0",
+   "group": {
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 4,
+        "y": 12
+       },
+       {
+        "t": "L",
+        "x": 18,
+        "y": 12
+       },
+       {
+        "t": "M",
+        "x": 12,
+        "y": 5
+       },
+       {
+        "t": "L",
+        "x": 19,
+        "y": 12
+       },
+       {
+        "t": "L",
+        "x": 12,
+        "y": 19
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "7DD3FC",
+    "strokeA": 1,
+    "strokeWidth": 2.004,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "geometry": {
+    "viewBox": [
+     24,
+     24
+    ],
+    "groups": [
+     {
+      "subpaths": [
+       {
+        "cmds": [
+         {
+          "t": "M",
+          "x": 4,
+          "y": 12
+         },
+         {
+          "t": "L",
+          "x": 18,
+          "y": 12
+         },
+         {
+          "t": "M",
+          "x": 12,
+          "y": 5
+         },
+         {
+          "t": "L",
+          "x": 19,
+          "y": 12
+         },
+         {
+          "t": "L",
+          "x": 12,
+          "y": 19
+         }
+        ]
+       }
+      ],
+      "fillHex": null,
+      "fillA": null,
+      "strokeHex": "7DD3FC",
+      "strokeA": 1,
+      "strokeWidth": 2.004,
+      "cap": "butt",
+      "join": "miter"
+     }
+    ],
+    "circles": [],
+    "hasText": false,
+    "supported": true,
+    "curves": 0,
+    "nodesTotal": 1,
+    "unsupportedReasons": [],
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 4,
+        "y": 12
+       },
+       {
+        "t": "L",
+        "x": 18,
+        "y": 12
+       },
+       {
+        "t": "M",
+        "x": 12,
+        "y": 5
+       },
+       {
+        "t": "L",
+        "x": 19,
+        "y": 12
+       },
+       {
+        "t": "L",
+        "x": 12,
+        "y": 19
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "7DD3FC",
+    "strokeA": 1,
+    "strokeWidth": 2.004,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "rect": {
+    "x": 120,
+    "y": 572,
+    "w": 20,
+    "h": 20
+   }
+  },
+  {
+   "slide": 2,
+   "kind": "custgeom",
+   "marker": "FE03E0",
+   "group": {
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 336,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 352,
+        "y": 266
+       },
+       {
+        "t": "M",
+        "x": 592,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 608,
+        "y": 266
+       },
+       {
+        "t": "M",
+        "x": 848,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 864,
+        "y": 266
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "94A3B8",
+    "strokeA": 1,
+    "strokeWidth": 2,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "geometry": {
+    "viewBox": [
+     1280,
+     720
+    ],
+    "groups": [
+     {
+      "subpaths": [
+       {
+        "cmds": [
+         {
+          "t": "M",
+          "x": 336,
+          "y": 266
+         },
+         {
+          "t": "L",
+          "x": 352,
+          "y": 266
+         },
+         {
+          "t": "M",
+          "x": 592,
+          "y": 266
+         },
+         {
+          "t": "L",
+          "x": 608,
+          "y": 266
+         },
+         {
+          "t": "M",
+          "x": 848,
+          "y": 266
+         },
+         {
+          "t": "L",
+          "x": 864,
+          "y": 266
+         }
+        ]
+       }
+      ],
+      "fillHex": null,
+      "fillA": null,
+      "strokeHex": "94A3B8",
+      "strokeA": 1,
+      "strokeWidth": 2,
+      "cap": "butt",
+      "join": "miter"
+     }
+    ],
+    "circles": [],
+    "hasText": false,
+    "supported": true,
+    "curves": 0,
+    "nodesTotal": 1,
+    "unsupportedReasons": [],
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 336,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 352,
+        "y": 266
+       },
+       {
+        "t": "M",
+        "x": 592,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 608,
+        "y": 266
+       },
+       {
+        "t": "M",
+        "x": 848,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 864,
+        "y": 266
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "94A3B8",
+    "strokeA": 1,
+    "strokeWidth": 2,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "rect": {
+    "x": 0,
+    "y": 0,
+    "w": 1280,
+    "h": 720
+   }
+  },
+  {
+   "slide": 2,
+   "kind": "custgeom",
+   "marker": "FE04E0",
+   "group": {
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 344,
+        "y": 260
+       },
+       {
+        "t": "L",
+        "x": 352,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 344,
+        "y": 272
+       },
+       {
+        "t": "M",
+        "x": 600,
+        "y": 260
+       },
+       {
+        "t": "L",
+        "x": 608,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 600,
+        "y": 272
+       },
+       {
+        "t": "M",
+        "x": 856,
+        "y": 260
+       },
+       {
+        "t": "L",
+        "x": 864,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 856,
+        "y": 272
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "94A3B8",
+    "strokeA": 1,
+    "strokeWidth": 2,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "geometry": {
+    "viewBox": [
+     1280,
+     720
+    ],
+    "groups": [
+     {
+      "subpaths": [
+       {
+        "cmds": [
+         {
+          "t": "M",
+          "x": 344,
+          "y": 260
+         },
+         {
+          "t": "L",
+          "x": 352,
+          "y": 266
+         },
+         {
+          "t": "L",
+          "x": 344,
+          "y": 272
+         },
+         {
+          "t": "M",
+          "x": 600,
+          "y": 260
+         },
+         {
+          "t": "L",
+          "x": 608,
+          "y": 266
+         },
+         {
+          "t": "L",
+          "x": 600,
+          "y": 272
+         },
+         {
+          "t": "M",
+          "x": 856,
+          "y": 260
+         },
+         {
+          "t": "L",
+          "x": 864,
+          "y": 266
+         },
+         {
+          "t": "L",
+          "x": 856,
+          "y": 272
+         }
+        ]
+       }
+      ],
+      "fillHex": null,
+      "fillA": null,
+      "strokeHex": "94A3B8",
+      "strokeA": 1,
+      "strokeWidth": 2,
+      "cap": "butt",
+      "join": "miter"
+     }
+    ],
+    "circles": [],
+    "hasText": false,
+    "supported": true,
+    "curves": 0,
+    "nodesTotal": 1,
+    "unsupportedReasons": [],
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 344,
+        "y": 260
+       },
+       {
+        "t": "L",
+        "x": 352,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 344,
+        "y": 272
+       },
+       {
+        "t": "M",
+        "x": 600,
+        "y": 260
+       },
+       {
+        "t": "L",
+        "x": 608,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 600,
+        "y": 272
+       },
+       {
+        "t": "M",
+        "x": 856,
+        "y": 260
+       },
+       {
+        "t": "L",
+        "x": 864,
+        "y": 266
+       },
+       {
+        "t": "L",
+        "x": 856,
+        "y": 272
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "94A3B8",
+    "strokeA": 1,
+    "strokeWidth": 2,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "rect": {
+    "x": 0,
+    "y": 0,
+    "w": 1280,
+    "h": 720
+   }
+  },
+  {
+   "slide": 2,
+   "kind": "custgeom",
+   "marker": "FE05E0",
+   "group": {
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 216,
+        "y": 344
+       },
+       {
+        "t": "L",
+        "x": 216,
+        "y": 388
+       },
+       {
+        "t": "L",
+        "x": 856,
+        "y": 388
+       },
+       {
+        "t": "L",
+        "x": 856,
+        "y": 344
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "CBD5E1",
+    "strokeA": 1,
+    "strokeWidth": 2,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "geometry": {
+    "viewBox": [
+     1280,
+     720
+    ],
+    "groups": [
+     {
+      "subpaths": [
+       {
+        "cmds": [
+         {
+          "t": "M",
+          "x": 216,
+          "y": 344
+         },
+         {
+          "t": "L",
+          "x": 216,
+          "y": 388
+         },
+         {
+          "t": "L",
+          "x": 856,
+          "y": 388
+         },
+         {
+          "t": "L",
+          "x": 856,
+          "y": 344
+         }
+        ]
+       }
+      ],
+      "fillHex": null,
+      "fillA": null,
+      "strokeHex": "CBD5E1",
+      "strokeA": 1,
+      "strokeWidth": 2,
+      "cap": "butt",
+      "join": "miter"
+     }
+    ],
+    "circles": [],
+    "hasText": false,
+    "supported": true,
+    "curves": 0,
+    "nodesTotal": 1,
+    "unsupportedReasons": [],
+    "subpaths": [
+     {
+      "cmds": [
+       {
+        "t": "M",
+        "x": 216,
+        "y": 344
+       },
+       {
+        "t": "L",
+        "x": 216,
+        "y": 388
+       },
+       {
+        "t": "L",
+        "x": 856,
+        "y": 388
+       },
+       {
+        "t": "L",
+        "x": 856,
+        "y": 344
+       }
+      ]
+     }
+    ],
+    "fillHex": null,
+    "fillA": null,
+    "strokeHex": "CBD5E1",
+    "strokeA": 1,
+    "strokeWidth": 2,
+    "cap": "butt",
+    "join": "miter"
+   },
+   "rect": {
+    "x": 0,
+    "y": 0,
+    "w": 1280,
+    "h": 720
+   }
+  }
+ ],
+ "config": {
+  "hardLines": true,
+  "textYOffset": 0,
+  "textXOffset": 0,
+  "svgMode": "custgeom",
+  "fontFace": "PingFang SC"
+ }
+}

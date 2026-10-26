@@ -1,0 +1,57 @@
+{
+ "engine": "LibreOffice + pdftoppm",
+ "fontConfig": "/opt/homebrew/etc/fonts/fonts.conf",
+ "embeddedFonts": [
+  "BAAAAA+PingFangSC-Semibold",
+  "CAAAAA+PingFangSC-Semibold",
+  "DAAAAA+PingFangSC-Regular",
+  "EAAAAA+PingFangSC-Regular",
+  "FAAAAA+PingFangSC-Regular",
+  "GAAAAA+PingFangSC-Semibold",
+  "HAAAAA+PingFangSC-Regular",
+  "IAAAAA+PingFangSC-Semibold",
+  "JAAAAA+PingFangSC-Semibold",
+  "KAAAAA+PingFangSC-Semibold",
+  "LAAAAA+PingFangSC-Semibold",
+  "MAAAAA+PingFangSC-Semibold",
+  "NAAAAA+PingFangSC-Regular",
+  "OAAAAA+PingFangSC-Semibold",
+  "PAAAAA+PingFangSC-Regular"
+ ],
+ "soffice": "LibreOffice 26.8.0.3 bce0998afefdbc355585ca324285661a2170ba77",
+ "dpi": 96,
+ "pdfBytes": 382491,
+ "pages": [
+  {
+   "index": 1,
+   "file": "../cli/.runs/extract/htmlppt-out/pptx/slide-1.png",
+   "width": 1280,
+   "height": 720
+  },
+  {
+   "index": 2,
+   "file": "../cli/.runs/extract/htmlppt-out/pptx/slide-2.png",
+   "width": 1280,
+   "height": 720
+  },
+  {
+   "index": 3,
+   "file": "../cli/.runs/extract/htmlppt-out/pptx/slide-3.png",
+   "width": 1280,
+   "height": 720
+  },
+  {
+   "index": 4,
+   "file": "../cli/.runs/extract/htmlppt-out/pptx/slide-4.png",
+   "width": 1280,
+   "height": 720
+  },
+  {
+   "index": 5,
+   "file": "../cli/.runs/extract/htmlppt-out/pptx/slide-5.png",
+   "width": 1280,
+   "height": 720
+  }
+ ],
+ "elapsedMs": 3921
+}

@@ -1,0 +1,70 @@
+{
+ "file": "out/deck.pptx",
+ "ok": true,
+ "engine": "python-pptx 1.0.2",
+ "slides": 5,
+ "slideSizeEMU": {
+  "cx": 12192000,
+  "cy": 6858000
+ },
+ "expected": {
+  "cx": 12192000,
+  "cy": 6858000,
+  "note": "1280x720 px @96dpi"
+ },
+ "slideSizeOk": true,
+ "totalTextChars": 1263,
+ "slidesDetail": [
+  {
+   "slide": 1,
+   "shapes": 11,
+   "textFrames": 10,
+   "pictures": 1,
+   "tables": 0,
+   "groups": 0,
+   "autoshapes": 4,
+   "textChars": 174
+  },
+  {
+   "slide": 2,
+   "shapes": 17,
+   "textFrames": 17,
+   "pictures": 0,
+   "tables": 0,
+   "groups": 0,
+   "autoshapes": 5,
+   "textChars": 269
+  },
+  {
+   "slide": 3,
+   "shapes": 21,
+   "textFrames": 21,
+   "pictures": 0,
+   "tables": 0,
+   "groups": 0,
+   "autoshapes": 8,
+   "textChars": 306
+  },
+  {
+   "slide": 4,
+   "shapes": 7,
+   "textFrames": 6,
+   "pictures": 0,
+   "tables": 1,
+   "groups": 0,
+   "autoshapes": 2,
+   "textChars": 293
+  },
+  {
+   "slide": 5,
+   "shapes": 14,
+   "textFrames": 12,
+   "pictures": 2,
+   "tables": 0,
+   "groups": 0,
+   "autoshapes": 4,
+   "textChars": 221
+  }
+ ],
+ "notes": "independent parser: if this loads and inventories shapes, the package is structurally valid"
+}

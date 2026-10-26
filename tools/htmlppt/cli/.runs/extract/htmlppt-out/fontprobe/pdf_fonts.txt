@@ -1,0 +1,10 @@
+name                                 type              encoding         emb sub uni object ID
+------------------------------------ ----------------- ---------------- --- --- --- ---------
+BAAAAA+PingFangSC-Regular            Type 1            Builtin          yes yes yes     57  0
+CAAAAA+HiraginoSansGB-W3             Type 1            Builtin          yes yes yes     47  0
+DAAAAA+STHeitiSC-Medium              TrueType          WinAnsi          yes yes yes     32  0
+EAAAAA+NotoSansSC-Regular            TrueType          WinAnsi          yes yes yes     52  0
+FAAAAA+ArialMT                       TrueType          WinAnsi          yes yes yes     27  0
+GAAAAA+HelveticaNeue                 TrueType          WinAnsi          yes yes yes     37  0
+HAAAAA+HiraMaruPro-W4                Type 1            Builtin          yes yes yes     42  0
+IAAAAA+STSongti-SC-Regular           TrueType          WinAnsi          yes yes yes     62  0

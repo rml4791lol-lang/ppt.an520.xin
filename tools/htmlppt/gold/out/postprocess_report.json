@@ -1,0 +1,45 @@
+{
+ "total": 5,
+ "applied": 5,
+ "failed": 0,
+ "details": [
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE00E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE01E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE02E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE03E0",
+   "ok": true,
+   "reason": ""
+  },
+  {
+   "slide": 1,
+   "kind": "custgeom",
+   "marker": "FE04E0",
+   "ok": true,
+   "reason": ""
+  }
+ ],
+ "prunedOverrides": [],
+ "zipBytes": 48933,
+ "compression": "DEFLATE (level 6)"
+}

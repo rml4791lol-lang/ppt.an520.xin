@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body { width: 1280px; height: 720px; margin: 0; position: relative; font-family: Arial; }
+  .ok { position:absolute; left:40px; top:40px; width:600px; }
+  .tall { position:absolute; left:40px; top:120px; width:300px; height:40px; overflow:hidden; font-size:20px; line-height:24px; }
+  .bad-unit { position:absolute; left:50%; top:300px; width:20vw; font-size:2rem; }
+  .fx { position:absolute; left:40px; top:400px; filter: blur(2px); }
+  .bullet { position:absolute; left:40px; top:480px; }
+  .out { position:absolute; left:1200px; top:600px; width:200px; height:100px; background:#333; }
+</style></head>
+<body>
+  <div class="ok"><h1>标题测试</h1><p>正常段落</p></div>
+  <div class="tall">这段文字会超出固定高度并被裁掉，lint 应该报 overflow-text 错误，因为高度只有四十像素但内容有</div>
+  <div class="bad-unit">vw/rem 单位</div>
+  <div class="fx">模糊图层</div>
+  <p class="bullet">• 手打 bullet</p>
+  <div class="mixed">裸文本<b>加粗</b>混排</div>
+  <div class="out"></div>
+</body></html>

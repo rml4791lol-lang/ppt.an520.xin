@@ -1,0 +1,23 @@
+{
+ "slides": 5,
+ "objects": {
+  "text": 69,
+  "shape": 47,
+  "image": 2,
+  "svg": 5,
+  "table": 1
+ },
+ "svg": {
+  "total": 5,
+  "custgeom": 5,
+  "objectsNative": 5,
+  "pngFallback": 0
+ },
+ "gradients": 1,
+ "textObjects": 69,
+ "textRuns": 69,
+ "paragraphs": 69,
+ "textChars": 1095,
+ "hardLines": true,
+ "textYOffset": 0
+}
