@@ -20,6 +20,7 @@ import {
   verifyImage2PptWebhook,
   type Image2PptJobView,
 } from './image2ppt';
+import { editableChargeKey } from './charge-keys';
 import { withTransaction } from '@/lib/server/db';
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
@@ -304,9 +305,10 @@ async function prepareEditablePdf(row: ExportRow, config: GenerationConfig): Pro
 function refundEditableCharge(row: ExportRow): void {
   const charged = Number(row.charged_credits) || 0;
   if (charged <= 0) return;
-  const ledgerPrefix = String(row.kind) === 'editable_text' ? 'export-editable-text' : 'export-editable';
   try {
-    const { refundKey } = chargeRefundKeys(`${ledgerPrefix}:${row.ref_id}:${row.id}`);
+    const { refundKey } = chargeRefundKeys(
+      editableChargeKey({ kind: row.kind, refId: String(row.ref_id), exportId: String(row.id) }),
+    );
     refundCredits(String(row.user_id), charged, {
       reason: '可编辑导出失败退回',
       idempotencyKey: refundKey,
@@ -804,8 +806,7 @@ async function launchEditableExport(
       now,
       now,
     );
-    const ledgerPrefix = kind === 'editable_text' ? 'export-editable-text' : 'export-editable';
-    const { chargeKey } = chargeRefundKeys(`${ledgerPrefix}:${refId}:${exportId}`);
+    const { chargeKey } = chargeRefundKeys(editableChargeKey({ kind, refId, exportId }));
     debitCredits(userId, estimate.credits, {
       reason: kind === 'editable_text' ? `转文字可编辑 PPTX（${pageCount} 页）` : `转可编辑 PPTX（${pageCount} 页）`,
       idempotencyKey: chargeKey,
