@@ -62,6 +62,8 @@ const eslintConfig = defineConfig([
     "scripts/output/**",
     // pdfjs worker is copied from node_modules before dev/build.
     "public/pdf.worker.min.mjs",
+    // HTMLPPT 转换工具链（2026-10-26 迁入 tools/，Python + 独立脚本，不参与 Next 应用构建与类型检查）。
+    "tools/**",
   ]),
 ]);
 
