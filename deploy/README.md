@@ -21,9 +21,10 @@
 /opt/anppt-v2/bin/         服务端部署脚本（root 所属，团队只读执行）
 ```
 
-`production` 是线上分支，GitHub 仓库同分支是唯一代码事实源。服务器源码、发布目录和本地
-clean worktree `/Users/an/ZCodeProject/anppt-v2.production` 使用同一个提交；主开发工作区可以有
-未合并 WIP。launchd 每 5 分钟 `fetch + merge --ff-only`，脏工作区或分叉时只记日志、不覆盖本地改动。
+`production` 是线上分支，GitHub `rml4791lol-lang/ppt.an520.xin` 同分支是唯一代码事实源。
+服务器源码、发布目录与本地开发目录 `/Users/an/Desktop/Atlas/ppt.an520.xin网站` 使用同一个提交。
+2026-10-26 起只在这一个目录开发；原独立 clean worktree `anppt-v2.production` 与 launchd
+每 5 分钟同步已废弃（`deploy/install-local-sync.sh` 保留但不再安装）。
 
 ## 首次初始化（只做一次）
 

@@ -7,14 +7,14 @@
 
 ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Next.js 16.3.1 App Router + React 19 + TypeScript + better-sqlite3（WAL）+ 自研 lib 层。生图走 OpenAI 兼容图片接口，大纲/梳理走 LLM 模型链，转可编辑走 WPS AIPPT / Image2PPT / Codia 多通道。
 
-- 仓库：GitHub `An-an-525/anppt-v2` 分支 `production`；本地专用同步 worktree `/Users/an/ZCodeProject/anppt-v2.production`。
+- 仓库：GitHub `rml4791lol-lang/ppt.an520.xin`（private）分支 `production`；本地唯一开发目录 `/Users/an/Desktop/Atlas/ppt.an520.xin网站`（2026-10-26 起；旧 `anppt-v2.production` worktree 与 launchd 同步已下线）。
 - 站点：https://ppt.an520.xin
 
 ## 2. 服务器与部署
 
 - SSH：`ssh hk-hermes`（ubuntu，`sudo -n` 免密可用）。团队账号 `anppt-dev` 使用独立 SSH key，仅能写源码目录并执行受限部署命令。
 - 源码：`/opt/anppt-v2/source`（Git，分支 `production`，GitHub 同分支为唯一事实源）。发布目录 `/opt/anppt-v2/releases/<commit>-<timestamp>`，`/opt/anppt-v2/current` 是指向当前 release 的软链。
-- systemd 服务 `anppt-v2.service`，监听 `127.0.0.1:3100`。本地 `/Users/an/ZCodeProject/anppt-v2.production` 通过 launchd 每 5 分钟 fast-forward 同步；脏工作区分叉时只告警不覆盖。服务器端改动提交后可执行 `sudo -n -u ubuntu /opt/anppt-v2/bin/publish-production production`，一次完成 push + 发布。
+- systemd 服务 `anppt-v2.service`，监听 `127.0.0.1:3100`。本地开发目录即仓库根 `/Users/an/Desktop/Atlas/ppt.an520.xin网站`，直接推送 `production`；旧的每 5 分钟 fast-forward 同步 worktree 已下线。服务器端改动提交后可执行 `sudo -n -u ubuntu /opt/anppt-v2/bin/publish-production production`，一次完成 push + 发布。
 - 环境变量：`/opt/anppt-v2/shared/.env`（SMTP / epay / 微信 / LLM / IMAGE / ALIYUN_SMS_* / ANPPT_V2_CODIA_API_KEY / `ANPPT_V2_ADMIN_CONFIG_KEY` 等）。**密钥绝不打印进会话/日志/仓库**。
 - DB：`/opt/anppt-v2/shared/data/anppt-v2.db`（env `ANPPT_V2_DB_PATH`）；上传/生成/导出文件在 `/opt/anppt-v2/shared/data/` 下。
 - **每日备份**：root cron `25 3 * * * /usr/local/sbin/anppt-v2-backup.sh`（日志 `/var/log/anppt-v2-backup.log`）。
@@ -208,7 +208,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 - 背景：v1 时代自研"图片转可编辑 PPT"Node 服务（127.0.0.1:8014），可编辑链路已由 Codia 重转换档（§6）+ 轻量文字档（§16）完全替代；anppt-v2 代码与 Caddyfile 均无任何引用，删除无调用方风险。
 - 已执行：停+disable `img2pptx-v4-node.service` 并删 unit → 监控脚本 `/usr/local/sbin/anppt-health-monitor.py` 移除该检查项（备份 `.bak-20260822`，语法已验）→ 删除 `/opt/img2pptx-v4-node`、`/opt/img2pptx-fonts`、`/opt/img2pptx-v4-releases`、`/opt/img2pptx-v4-rollback-20260804-contract-v1`（释放 ~1.5G）→ transient 单元记录已 reset-failed。
-- 代码保全：GitHub `An-an-525/anppt-img2pptx-v4`（main + codex/font-match-v2 + codex/v4.2.2-font-quality）；服务器最终运行版源码归档在本地 `~/Documents/AI PPT/AnPPT-asset-archive/img2pptx-v4-retired-20260822/`（`img2pptx-v4-final-20260822.tar.gz` 508 项，含源码/docs/deploy/backups，排除 venv/cache/staging/qa 产物；releases 构建产物只留 manifest，按 commit hash 可重建）。**wip/qwen-normalize-2026-08-15 分支在本地、服务器、GitHub 三处均未找到**，若日后冒出可对照归档恢复。
+- 代码保全：原 GitHub `An-an-525/anppt-img2pptx-v4`（main + codex/font-match-v2 + codex/v4.2.2-font-quality）—— **该账号已失效、远端不可达**，现仅以本地归档为准；服务器最终运行版源码归档在本地 `~/Documents/AI PPT/AnPPT-asset-archive/img2pptx-v4-retired-20260822/`（`img2pptx-v4-final-20260822.tar.gz` 508 项，含源码/docs/deploy/backups，排除 venv/cache/staging/qa 产物；releases 构建产物只留 manifest，按 commit hash 可重建）。**wip/qwen-normalize-2026-08-15 分支在本地、服务器、GitHub 三处均未找到**，若日后冒出可对照归档恢复。
 - 删后验证：`/api/health` ok（llm/image/editable 全 configured）、anppt-v2 active、监控手动跑"全部正常"。
 
 ## 18. 金奖版式测试包（gold_layouts_beta，beta，2026-08-24）
