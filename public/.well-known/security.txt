@@ -1,5 +1,0 @@
-Contact: mailto:support@anppt.app
-Expires: 2027-10-19T00:00:00.000Z
-Preferred-Languages: zh, en
-Canonical: https://ppt.an520.xin/.well-known/security.txt
-Policy: https://ppt.an520.xin/legal/terms

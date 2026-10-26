@@ -1,7 +1,0 @@
-[Unit]
-Description=AnPPT v2 SQLite daily backup
-After=anppt-v2.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/bash /opt/anppt-v2/shared/backup-db.sh
