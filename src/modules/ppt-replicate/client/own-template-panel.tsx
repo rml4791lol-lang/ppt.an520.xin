@@ -16,7 +16,7 @@ export function OwnTemplatePanel() {
           <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-3">
             官方模板是灌内容；这条是保画面。把现成演示文稿当参考稿，构图和画风留下，文案换成新主题或大纲。
           </p>
-          <p className="mt-2 text-xs text-ink-4">PDF 或图片 · 一次最多 40 页 · PPTX 请先另存为 PDF · 生成 10🌟/页</p>
+          <p className="mt-2 text-xs text-ink-4">PDF 或图片 · 一次最多 40 页 · PPTX 请先另存为 PDF · 按页计费，确认前显示估价</p>
         </div>
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
           <Link
