@@ -108,7 +108,7 @@ export async function runPluginRuntimeTests(ctx) {
     sharedCtx === getDefaultCtx()
       && getPluginManifest() === manifest
       && manifest.profile === 'default'
-      && manifest.plugins.map((p) => `${p.key}@${p.version}`).join(',') === 'pricing@0.2.0,models@0.1.0'
+      && manifest.plugins.map((p) => `${p.key}@${p.version}`).join(',') === 'pricing@0.2.0,models@0.1.0,ppt-replicate@0.1.0'
       && manifest.services.join(',') === [HOST_CONFIG_KEY, 'pricing', 'models'].join(','));
   const health = await (await (await import('../../src/app/api/health/route.ts')).GET()).json();
   check('/api/health 读到当前装配清单：profile 名 + 插件版本',
