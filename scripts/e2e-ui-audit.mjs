@@ -86,13 +86,13 @@ let pageCount = 0;
   deckId = r.json?.data?.deckId || '';
   if (!deckId) process.exit(1);
 
-  const r1 = await api(`/api/deck/${deckId}`, { method: 'POST', body: { intent: { kind: 'generateOutline', params: {  } } } });
+  const r1 = await api(`/api/deck/${deckId}`, { method: 'POST', body: { intent: { kind: 'generateOutline', params: {} } } });
   check('outline 200', r1.status === 200, `实际 ${r1.status} ${JSON.stringify(r1.json)?.slice(0, 160)}`);
 
-  const r2 = await api(`/api/deck/${deckId}`, { method: 'POST', body: { intent: { kind: 'structureSlides', params: {  } } } });
+  const r2 = await api(`/api/deck/${deckId}`, { method: 'POST', body: { intent: { kind: 'structureSlides', params: {} } } });
   check('structure 200', r2.status === 200, `实际 ${r2.status}`);
 
-  const r3 = await api(`/api/deck/${deckId}`, { method: 'POST', body: { intent: { kind: 'confirmStructure', params: {  } } } });
+  const r3 = await api(`/api/deck/${deckId}`, { method: 'POST', body: { intent: { kind: 'confirmStructure', params: {} } } });
   check('confirm-structure 200', r3.status === 200, `实际 ${r3.status}`);
 
   const packs = await api('/api/style-packs');

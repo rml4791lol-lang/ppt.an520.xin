@@ -1,42 +1,6 @@
 // deck 工作台前端契约测试：意图请求体、按意图收窄的响应、可用性推导、链路静态约束。
 // 纯客户端：mock globalThis.fetch，不连数据库、不打真实接口。由 scripts/test-generation.mjs 汇总调用。
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
-
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify({ ok: true, data }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-function captureFetch(handler) {
-  const calls = [];
-  const original = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) => {
-    const call = {
-      url: String(url),
-      method: init.method || 'GET',
-      headers: init.headers || {},
-      body: init.body ?? null,
-    };
-    calls.push(call);
-    return handler(call);
-  };
-  return {
-    calls,
-    restore() {
-      globalThis.fetch = original;
-    },
-  };
-}
-
-function source(relPath) {
-  return readFileSync(path.join(repoRoot, relPath), 'utf8');
-}
+import { captureFetch, jsonResponse, source } from './client-test-helpers.mjs';
 
 // ts hooks 由 scripts/test-generation.mjs 在加载本文件前注册，动态引入才能解析 src 下的 .ts
 let deckGates = null;

@@ -1,58 +1,15 @@
 // [13] 前端统一客户端（src/lib/client/api.ts）：能力命名、URL 只留在客户端层。
 // 纯客户端契约测试：mock globalThis.fetch，不连数据库、不打真实接口。
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
-
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify({ ok: true, data }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-function errorResponse(status, error) {
-  return new Response(JSON.stringify({ ok: false, error }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-function captureFetch(handler) {
-  const calls = [];
-  const original = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) => {
-    const call = {
-      url: String(url),
-      method: init.method || 'GET',
-      headers: init.headers || {},
-      body: init.body ?? null,
-    };
-    calls.push(call);
-    return handler(call);
-  };
-  return {
-    calls,
-    restore() {
-      globalThis.fetch = original;
-    },
-  };
-}
-
-function walkSourceFiles(dir, output = []) {
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) walkSourceFiles(full, output);
-    else if (/\.(ts|tsx)$/.test(entry)) output.push(full);
-  }
-  return output;
-}
-
-function source(relPath) {
-  return readFileSync(path.join(repoRoot, relPath), 'utf8');
-}
+import {
+  captureFetch,
+  errorResponse,
+  jsonResponse,
+  repoRoot,
+  source,
+  walkSourceFiles,
+} from './client-test-helpers.mjs';
 
 // 票面范围外（管理员问题日志面板），手册 §7 已登记为刻意保留的豁免。
 const BARE_FETCH_ALLOWLIST = new Set(['src/components/admin/problems-client.tsx']);

@@ -16,6 +16,7 @@ src/components/     平台级共享客户端组件（图标/布局/通用 hook�
 src/lib/server/     平台件 —— auth / credits / recharge / payments / documents / exports /
                     generation/*(状态机/DSL/引擎/生图/调度/恢复/单页运行时)
 src/lib/client-api.ts  前端唯一 API 入口
+src/lib/*-intents.ts  前后端共用的意图契约，不含实现（信封形状在 intent-envelope.ts）
 src/data/           静态数据 —— 风格包/套餐/页型等，纯数据无逻辑
 src/lib/server/db.ts   持久层 —— node:sqlite（WAL），业务层不手写 SQL 之外的存储细节
 ```

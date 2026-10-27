@@ -40,7 +40,7 @@ const action = (body) => api(`/api/deck/${deckId}`, { method: 'POST', body });
 
 // structure：只重梳非 ok 页，最多 4 轮
 for (let round = 1; round <= 4; round += 1) {
-  const r = await action({ intent: { kind: 'structureSlides', params: {  } } });
+  const r = await action({ intent: { kind: 'structureSlides', params: {} } });
   if (r.status !== 200) throw new Error(`structure 失败 ${r.status} ${JSON.stringify(r.json)?.slice(0, 200)}`);
   const s = await deckState();
   const notOk = s.slides.filter((x) => x.structureStatus !== 'ok');
@@ -50,7 +50,7 @@ for (let round = 1; round <= 4; round += 1) {
 }
 
 {
-  const r = await action({ intent: { kind: 'confirmStructure', params: {  } } });
+  const r = await action({ intent: { kind: 'confirmStructure', params: {} } });
   if (r.status !== 200) throw new Error(`confirm 失败 ${r.status} ${JSON.stringify(r.json)?.slice(0, 200)}`);
   const r2 = await action({ intent: { kind: 'setStyle', params: { stylePackId } } });
   if (r2.status !== 200) throw new Error(`style 失败 ${r2.status} ${JSON.stringify(r2.json)?.slice(0, 200)}`);
@@ -59,7 +59,7 @@ for (let round = 1; round <= 4; round += 1) {
 
 const before = (await api('/api/credits/balance')).json.data.balance;
 {
-  const r = await action({ intent: { kind: 'generateSlides', params: {  } } });
+  const r = await action({ intent: { kind: 'generateSlides', params: {} } });
   if (r.status !== 202) throw new Error(`generate 失败 ${r.status} ${JSON.stringify(r.json)?.slice(0, 200)}`);
   console.log(`[3] 生成中…（开始前余额 ${before}）`);
   const deadline = Date.now() + 15 * 60_000;
