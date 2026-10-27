@@ -1,8 +1,8 @@
 // 单页生成器（创意页面生成器）：generate / refine / 导出图片版 PPTX。
-// 与 deck 共用生图上游与扣费语义：每张 singlePageCredits（默认 10🌟），失败自动退还。
+// 与 deck 共用生图上游与扣费语义：单价在任务启动时向 pricing 插件取一次快照，失败自动退还。
 import { ApiError, validationError } from '../http';
 import { withTransaction } from '../db';
-import { chargeRefundKeys, debitCredits, refundCredits } from '../credits';
+import { chargeRefundKeys, debitCredits, estimateCredits, refundCredits } from '../credits';
 import { logProblem } from '../problem-log';
 import { findUserById } from '../auth';
 import { assertFeatureVisible } from '../feature-flags';
@@ -261,7 +261,11 @@ export async function runSinglePageJob(
 ): Promise<SingleRunResult> {
   const config = deps.config ?? getGenerationConfig();
   const runDeps: SinglePageDeps = { ...deps, config };
-  const unitPrice = config.singlePageCredits;
+  // 一次任务一个单价快照：本页的扣费与失败退款都按它，不再二次读价
+  const unitPrice = estimateCredits({
+    action: opts.kind === 'single-refine' ? 'single_page_refine' : 'single_page_generate',
+    pages: 1,
+  }).unitPrice;
   const jobId = genId('job');
   // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费；
   // 退款键由扣费键定长派生（后缀式退款键在超长 requestId 下会被截回扣费键，退款静默失效）

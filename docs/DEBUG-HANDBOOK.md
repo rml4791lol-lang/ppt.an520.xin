@@ -62,10 +62,10 @@ NODE
 
 ## 5. 计费与支付
 
-- 价格表：`src/lib/server/env.ts` DEFAULT_ACTION_PRICES（`deck_page_generate:10`、`export_editable:20`、`export_editable_text:5`、outline/export_image:0）。可用 env `CREDIT_ACTION_PRICES` JSON 覆盖（整体覆盖缺 `export_editable_text` 时轻量档回退 5🌟/页）。
+- 价格表：**归 pricing 插件**（`src/plugins/pricing/prices.ts` 的 `DEFAULT_PRICES`；动作键与公开动作键的映射在 `src/lib/plugin/contracts/pricing.ts`）。默认 `deck_page_generate:10`、`deck_page_refine:5`、`export_editable:20`、`export_editable_text:5`、`ppt_to_base:5`、`single_page_generate`/`single_page_refine:10`、outline/export_image:0。env `CREDIT_ACTION_PRICES` 可整份覆盖（出现即不回落默认价，缺项 = 该动作未定价）；单页单价走独立旋钮 `ANPPT_V2_SINGLE_PAGE_CREDITS`，不受整份覆盖影响。**换价 = 换 pricing 插件的一份实现（如改从 DB 读价）并换进 profile，平台与业务代码零改动**（ADR-0001 G1，2026-10-27）。
 - 充值档：DEFAULT_RECHARGE_PLANS（¥9.9/100🌟、¥39.9/500🌟、¥79.9/1000🌟、¥149.9/2000🌟），env `RECHARGE_PLANS` 可覆盖。
 - 账：`credit_ledger` 幂等键防重；所有扣费先整单估价+余额预检（402）；失败自动退还（refund 键唯一）。**退款键（2026-10-11）**：扣费/退款成对键由 `credits.chargeRefundKeys` 生成——`chargeKey` 走 cleanKey（trim+截 128），退款键固定为 `refund:<sha256(chargeKey)[0:32]>`，两侧都断言两键不同；改为拼后缀会在超长 chargeKey 下退化成同一个键、退款静默失效。
-- 估价接口：`estimateCredits` 覆盖全部客户端可见单价；单页生成/改图用动作键 `single_page_generate` / `single_page_refine`（价源 `ANPPT_V2_SINGLE_PAGE_CREDITS`，不重复进动作价目表），美化工作台据此显示与预检，不再硬编码 10/20。
+- 估价接口：`estimateCredits` 覆盖全部客户端可见单价，**只经 `ctx.pricing` 读价**（估价与扣费同一来源，`credits.ts` 不 import 任何价格常量）；单页生成/改图用动作键 `single_page_generate` / `single_page_refine`，与 deck 同一张价格表。**任务启动时定格单价快照**：整套生成在 `startDeckGeneration` 估价一次、逐页扣费/退款都用该快照；单页在 `runSinglePageJob` 进入时取一次——任务跑动中换价不会造成估价与实扣漂移。
 - **幂等键口径（2026-08-24 修复）**：deck 生成/导出的键含服务端 jobId/exportId，客户端不可控；单页生成/改图接受客户端 `requestId`，命中幂等键（`duplicate`）一律 409 `DUPLICATE_REQUEST` 拒绝——此前只防重扣不防重生，重放可扣一次费无限生图且失败分支误退首笔。前端不传 `requestId`（永远落服务端 jobId），拒绝重放不影响第一方 UI。
 - 支付渠道：
   - **epay 支付宝收银台（活）**
@@ -279,11 +279,11 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 ## 22. 插件运行时三件与先锋插件（pricing / models，2026-09-06）
 
-- 定位：插件化路线（`docs/PLUGIN-ARCHITECTURE.md`）第一步。Phase 1 纯增量；**Phase 2（2026-09-06 下午）起生产读价接通**：`credits.estimateCredits` 经 `ctx.pricing` 读价（插件内部仍读同一 env 覆盖链，数字与报错语义不变；未映射插件动作键的自定义 env 键回退直读）。
+- 定位：插件化路线（`docs/PLUGIN-ARCHITECTURE.md`）第一步。Phase 1 纯增量；**Phase 2（2026-09-06 下午）起生产读价接通**：`credits.estimateCredits` 经 `ctx.pricing` 读价；**G1（2026-10-27）起价格表的存储与解析也归插件**——平台 `src/lib` 内不再有任何价格常量或 env 价格解析（`grep -r DEFAULT_ACTION_PRICES src/lib` = 0，ADR-0001 G1）。
 - **机制**：运行时三件在 `src/lib/plugin/`——`types.ts`（`AnPlugin` 接口 + 冻结数据契约 Ref/Page/Result 的唯一定义处）、`ctx.ts`（服务注册表 `register/use/has/reset`，`createCtx()` 造实例）、`profile.ts`（`boot(profile)` 异步 / `bootSync(profile)` 同步、遇异步 register 即 fail fast）、`default.ts`（组合根：懒同步 boot `defaultProfile`、全进程单例，生产高频同步读点从这里取服务）。系统 = 一张配置单：默认 profile 在 `src/plugins/default-profile.ts`，按 pricing → models 顺序 boot。
-- **契约层**：`src/lib/plugin/contracts/pricing.ts` 是动作 key ↔ env 键映射与 `PricingService` 类型的唯一定义处——平台（credits.ts）与插件（plugins/pricing）都只依赖契约，互不 import 实现。
+- **契约层**：`src/lib/plugin/contracts/pricing.ts` 是动作 key 清单、动作 key ↔ 公开动作键映射与 `PricingService` 类型的唯一定义处——平台（credits.ts）与插件（plugins/pricing）都只依赖契约，互不 import 实现。
 - **边界（lint 强制）**：`eslint.config.mjs` 的 `import/no-restricted-paths`——`src/plugins/*` 之间禁止直接 import（成对 zone）；`src/lib` 不得 import `src/plugins` / `src/modules`。登记例外仅一处：插件组合根 `src/lib/plugin/default.ts`（复刻分支已于 2026-10-27 搬回模块，见 §21）。
-- **pricing 插件**（`src/plugins/pricing/`）：暴露 `ctx.pricing` = `{ quote(actionKey), table() }`。动作 key（`generate.page`/`edit.page`/`export.editable`/`export.editable-text`/`export.image`/`outline`）映射到 env.ts 的 `creditActionPrices` 键；价格数字不写进插件，调用时现读 `getEnv()`，`CREDIT_ACTION_PRICES` 覆盖自动生效。**未定价动作 quote 返回 0 且不在表内——免费是合法形态，不许 throw。**
+- **pricing 插件**（`src/plugins/pricing/`）：暴露 `ctx.pricing` = `{ quote(actionKey), table() }`。**价格表的存储与解析都在插件内**（`prices.ts`：默认表 + `CREDIT_ACTION_PRICES` 整份覆盖 + `ANPPT_V2_SINGLE_PAGE_CREDITS`）；平台层不再存价格（2026-10-27 G1：`grep -r DEFAULT_ACTION_PRICES src/lib` 为 0）。动作 key 含 `generate.page`/`edit.page`/`export.editable`/`export.editable-text`/`export.image`/`outline`/`tool.ppt-to-base`/`generate.single-page`/`edit.single-page`。装配期定格价格表。**未定价动作 quote 返回 0 且不在表内——免费是合法形态，不许 throw。** 换实现即换价：替代实现换进默认上下文后 `estimateCredits` 与全站扣费随之变（`scripts/tests/plugin-runtime.test.mjs` + `scripts/test-generation.mjs` 真实生成链实证，业务代码零改动）。
 - **models 插件**（`src/plugins/models/`）：暴露 `ctx.models` = `{ text(), image(), fallback(model) }`。只读包装 `generation/config.ts`（含管理端覆盖）：文本链 = 主模型→fallbacks→跨站备份；图像按用途成对（文生图/改图各有灾备）。`fallback` 链尾或未知模型返回 null。
 - **失败语义**：`use` 未注册键启动期即 throw（信息含已注册键清单）；同键重复注册 / profile 内插件键重复即冲突报错——fail fast，不许运行期 undefined 漂移。**与 dsh 的有意偏离**：dsh inject 是持续跟踪（服务缺失则消费方 PENDING 等待），营收系统选启动期 fail fast。dsh 的 effect/disposer、`cordis.patch.yml` 三层格式（`{id, name, disabled, config}`、同 id 后写赢、config 整行替换）列入运行时下一版迭代。
 - **测试约束**：`scripts/tests/plugin-runtime.test.mjs`（套件内段名 [20]，18 断言）含**插拔实证**——同一消费函数 `c.use('pricing').quote('generate.page')` 在默认 profile 与替换 fake pricing 的测试 profile 上分别得 10 与 99，调用方代码零改动；Phase 2 起含生产读价路径（estimateCredits 经服务键 3 页=30）与 bootSync fail fast。全 mock，无真实上游。

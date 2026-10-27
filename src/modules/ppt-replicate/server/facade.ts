@@ -57,7 +57,7 @@ export function selectReplicatePageVersion(userId: string, pageId: string, versi
   return selectSinglePageVersion(userId, pageId, versionId);
 }
 
-/** 模块计费动作声明：单价仍由平台 config/env 现读，模块里不存价格。 */
+/** 模块计费动作声明：单价由平台 pricing 插件现读，模块里不存价格。 */
 export const REPLICATE_BILLING_ACTIONS = {
   pageGenerate: 'single_page_generate',
   pageRefine: 'single_page_refine',

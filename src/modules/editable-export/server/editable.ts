@@ -716,15 +716,6 @@ export async function startDeckEditableExport(
   );
 }
 
-/** 轻量文字档计价：独立动作 export_editable_text；CREDIT_ACTION_PRICES 被整体覆盖且缺该项时回退 5🌟/页 */
-function estimateTextEditable(pages: number) {
-  try {
-    return estimateCredits({ action: 'export_editable_text', pages });
-  } catch {
-    return { action: 'export_editable_text', unitPrice: 5, pages, credits: 5 * pages };
-  }
-}
-
 type LaunchDecision = { row: ExportRow; created: boolean };
 
 /**
@@ -747,9 +738,10 @@ async function launchEditableExport(
 ): Promise<StartedEditableExport> {
   const runDeps = snapshotEditableDeps(deps);
   const db = getGenDb();
-  const estimate = kind === 'editable_text'
-    ? estimateTextEditable(pageCount)
-    : estimateCredits({ action: 'export_editable', pages: pageCount });
+  const estimate = estimateCredits({
+    action: kind === 'editable_text' ? 'export_editable_text' : 'export_editable',
+    pages: pageCount,
+  });
   const decision = withTransaction(db, (): LaunchDecision => {
     const running = db
       .prepare(
@@ -1511,12 +1503,7 @@ export function quoteExport(userId: string, body: Record<string, unknown>) {
   } else {
     throw validationError('缺少 deckId / projectId / pageIds');
   }
-  let editableUnitPrice = 20;
-  try {
-    editableUnitPrice = estimateCredits({ action: 'export_editable', pages: 1 }).unitPrice;
-  } catch {
-    // CREDIT_ACTION_PRICES 被覆盖且不含 export_editable 时用默认 20🌟/页
-  }
+  const editableUnitPrice = estimateCredits({ action: 'export_editable', pages: 1 }).unitPrice;
   const config = getGenerationConfig();
   const providers = configuredEditableProviders(config);
   const editableAvailable = pageCount > 0 && providers.length > 0;
