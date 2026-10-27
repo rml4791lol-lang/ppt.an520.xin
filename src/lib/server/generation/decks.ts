@@ -18,7 +18,12 @@ import {
   type SlideRole,
   type StructureStatus,
 } from './types';
-import { availableIntentsOf, deckGateFacts, isDeckContentLocked } from '../../deck-gates';
+import {
+  availableIntentsOf,
+  deckGateFacts,
+  isDeckContentLocked,
+  type DeckGateFacts,
+} from '../../deck-gates';
 
 export interface DeckRow {
   id: string;
@@ -672,6 +677,27 @@ export function updateSlideGen(
 
 // ---------- 全量状态（前端 2.5s 轮询用） ----------
 
+function isActiveJob(job: GenerationJobRow | null): job is GenerationJobRow {
+  return job?.status === 'queued' || job?.status === 'running';
+}
+
+/**
+ * deck 门控事实的唯一构造点：dispatch 前置校验与 state.availableIntents 必须同源。
+ * activeJob 若只进展示面，会出现「前端隐藏按钮、服务端放行」的分叉。
+ */
+export function buildDeckFacts(
+  deck: Pick<DeckRow, 'id' | 'status' | 'stylePackId'>,
+  job: GenerationJobRow | null,
+  slides?: () => DeckSlideRow[],
+): DeckGateFacts {
+  return deckGateFacts({
+    status: deck.status,
+    stylePackId: deck.stylePackId,
+    slides: slides ?? (() => listSlides(deck.id)),
+    hasActiveJob: isActiveJob(job),
+  });
+}
+
 export function getDeckState(userId: string, deckId: string) {
   const deck = getOwnedDeck(userId, deckId);
   const slides = listSlides(deck.id);
@@ -716,9 +742,8 @@ export function getDeckState(userId: string, deckId: string) {
   for (const slide of slides) {
     if (slide.genStatus in summary) summary[slide.genStatus as keyof typeof summary] += 1;
   }
-  const activeJob =
-    job && (job.status === 'queued' || job.status === 'running')
-      ? {
+  const activeJob = isActiveJob(job)
+    ? {
           jobId: job.jobId,
           kind: job.kind,
           status: job.status,
@@ -730,14 +755,7 @@ export function getDeckState(userId: string, deckId: string) {
         }
       : null;
   // 顺序约束的展示面：哪些意图现在可执行由 deck-gates 同一份规则算出（客户端按钮读这份集合）
-  const availableIntents = availableIntentsOf(
-    deckGateFacts({
-      status: deck.status,
-      stylePackId: deck.stylePackId,
-      slides: () => slides,
-      hasActiveJob: Boolean(activeJob),
-    }),
-  );
+  const availableIntents = availableIntentsOf(buildDeckFacts(deck, job, () => slides));
   return {
     deck: {
       id: deck.id,

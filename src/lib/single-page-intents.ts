@@ -1,6 +1,7 @@
 // 单页生成/导出动作的 typed intent 契约：客户端与路由共用一份，动作名即既有路由。
 // 旧的无类型 body 完全保留；意图只把「合法动作 + 参数结构」表达进类型，
 // 由 toSinglePageActionCall 决定发往哪条路由（机制与取舍见 docs/DEBUG-HANDBOOK.md §30）。
+import { acceptParams, type IntentParamsTable } from './intent-envelope';
 
 export type SinglePageIntentParams = {
   /** 逐版本生成（10🌟/版）；requestId 用于幂等重放拒绝 */
@@ -32,8 +33,16 @@ export type SinglePageIntent = {
 export interface SinglePageActionCall {
   path: string;
   method: 'POST';
-  intent: SinglePageIntent;
 }
+
+/** kind → 参数校验器的唯一登记：服务端 readIntentParams 用这张表判本契约的 kind */
+export const SINGLE_PAGE_INTENT_PARAMS: IntentParamsTable<SinglePageIntentParams> = {
+  generatePage: acceptParams,
+  refinePage: acceptParams,
+  selectVersion: acceptParams,
+  exportImagePptx: acceptParams,
+  exportEditablePptx: acceptParams,
+};
 
 const SINGLE_PAGE_PATHS: Record<SinglePageIntentKind, string> = {
   generatePage: '/api/single-page/generate',
@@ -45,29 +54,5 @@ const SINGLE_PAGE_PATHS: Record<SinglePageIntentKind, string> = {
 
 /** 意图 → 路由：路径只在这里出现（客户端分发唯一入口） */
 export function toSinglePageActionCall(intent: SinglePageIntent): SinglePageActionCall {
-  return { path: SINGLE_PAGE_PATHS[intent.kind], method: 'POST', intent };
-}
-
-function isSinglePageIntentKind(value: string): value is SinglePageIntentKind {
-  return Object.prototype.hasOwnProperty.call(SINGLE_PAGE_PATHS, value);
-}
-
-/** 线上护栏：只认已知 kind，params 缺省按空对象；参数深校验留在动作自身 */
-export function parseSinglePageIntent(value: unknown): SinglePageIntent | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as { kind?: unknown; params?: unknown };
-  if (typeof raw.kind !== 'string' || !isSinglePageIntentKind(raw.kind)) return null;
-  const params = raw.params ?? {};
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
-  return { kind: raw.kind, params } as SinglePageIntent;
-}
-
-/** 路由侧取参数：只接受本条路由声明的 kind，错配返回 null（由服务器适配器转 400） */
-export function singlePageIntentParams<K extends SinglePageIntentKind>(
-  expected: K,
-  value: unknown,
-): SinglePageIntentParams[K] | null {
-  const intent = parseSinglePageIntent(value);
-  if (!intent || intent.kind !== expected) return null;
-  return intent.params as SinglePageIntentParams[K];
+  return { path: SINGLE_PAGE_PATHS[intent.kind], method: 'POST' };
 }

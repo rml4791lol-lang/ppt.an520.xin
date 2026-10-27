@@ -1,5 +1,6 @@
 // deck 动作 RPC 的类型化意图契约：客户端与路由共用一份，参数结构只在这里声明。
 // 唯一请求形态是 {intent:{kind,params}}；旧 {action,...params} 入口已删除（取舍见 docs/DEBUG-HANDBOOK.md §29）。
+import { acceptParams, type IntentParamsTable } from './intent-envelope';
 
 export type SlideRole = 'cover' | 'toc' | 'section' | 'content' | 'ending';
 
@@ -52,35 +53,34 @@ export type DeckIntent = {
   [K in DeckIntentKind]: { kind: K; params: DeckIntentParams[K] };
 }[DeckIntentKind];
 
-/** 运行时 kind 登记：Record 强制穷尽（新增 kind 忘记登记即编译失败），parseDeckIntent 用它做线上护栏 */
-const DECK_INTENT_KIND_REGISTRY: Record<DeckIntentKind, true> = {
-  generateOutline: true,
-  addSlide: true,
-  removeSlide: true,
-  reorderSlides: true,
-  splitSlide: true,
-  updateSlide: true,
-  commitVersion: true,
-  structureSlides: true,
-  structureSlide: true,
-  confirmStructure: true,
-  unlockStructure: true,
-  setStyle: true,
-  setReferenceImage: true,
-  generateSlides: true,
-  retryFailedSlides: true,
-  generateSlide: true,
-  refineSlide: true,
-  eraseSlide: true,
-  editSlideText: true,
-  fuseSlide: true,
+/**
+ * kind → 参数校验器的唯一登记：Record 强制穷尽（新增 kind 忘记登记即编译失败）。
+ * 服务端 readIntentParams 用这张表判「是不是 deck 的 kind」，不再另写解析函数。
+ */
+export const DECK_INTENT_PARAMS: IntentParamsTable<DeckIntentParams> = {
+  generateOutline: acceptParams,
+  addSlide: acceptParams,
+  removeSlide: acceptParams,
+  reorderSlides: acceptParams,
+  splitSlide: acceptParams,
+  updateSlide: acceptParams,
+  commitVersion: acceptParams,
+  structureSlides: acceptParams,
+  structureSlide: acceptParams,
+  confirmStructure: acceptParams,
+  unlockStructure: acceptParams,
+  setStyle: acceptParams,
+  setReferenceImage: acceptParams,
+  generateSlides: acceptParams,
+  retryFailedSlides: acceptParams,
+  generateSlide: acceptParams,
+  refineSlide: acceptParams,
+  eraseSlide: acceptParams,
+  editSlideText: acceptParams,
+  fuseSlide: acceptParams,
 };
 
-export const DECK_INTENT_KINDS = Object.keys(DECK_INTENT_KIND_REGISTRY) as DeckIntentKind[];
-
-export function isDeckIntentKind(value: string): value is DeckIntentKind {
-  return Object.prototype.hasOwnProperty.call(DECK_INTENT_KIND_REGISTRY, value);
-}
+export const DECK_INTENT_KINDS = Object.keys(DECK_INTENT_PARAMS) as DeckIntentKind[];
 
 /** 生成类意图返回的 job 句柄（只暴露前端要用的摘要，done 留在服务端） */
 export interface DeckJobHandle {
@@ -115,16 +115,3 @@ export type DeckIntentExtra = {
   editSlideText: { job: DeckJobHandle };
   fuseSlide: { job: DeckJobHandle };
 };
-
-/**
- * 线上护栏：只认已知 kind，params 缺省按空对象。
- * 参数内的深校验留在动作自身；路由边界只把「不是合法意图」挡在门外。
- */
-export function parseDeckIntent(value: unknown): DeckIntent | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as { kind?: unknown; params?: unknown };
-  if (typeof raw.kind !== 'string' || !isDeckIntentKind(raw.kind)) return null;
-  const params = raw.params ?? {};
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
-  return { kind: raw.kind, params } as DeckIntent;
-}

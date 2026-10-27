@@ -5,7 +5,7 @@ import { defineApiRoute } from '@/lib/server/generation/route';
 import { generateSinglePage } from '@/lib/server/generation/single-pages';
 import { generateReplicatePage } from '@/modules/ppt-replicate/server/facade';
 import { cleanString } from '@/lib/server/generation/types';
-import { singlePageIntentParams } from '@/lib/single-page-intents';
+import { SINGLE_PAGE_INTENT_PARAMS } from '@/lib/single-page-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 /** 单页生成：{pageId, projectId?, title?, content, stylePackId?, imagePath?, mode?, colorMode?, structure?, requestId?}，10🌟/张 */
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
-  const body = readIntentParams(await readJsonBody(request), (intent) => singlePageIntentParams('generatePage', intent));
+  const { params: body } = readIntentParams(await readJsonBody(request), SINGLE_PAGE_INTENT_PARAMS, 'generatePage');
   const mode = cleanString(body.mode, 20);
   const pageInput = {
     pageId: String(body.pageId ?? ''),

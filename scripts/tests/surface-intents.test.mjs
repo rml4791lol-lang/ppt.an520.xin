@@ -9,6 +9,7 @@ export async function runSurfaceIntentTests(ctx) {
   } = ctx;
   const sp = await import('../../src/lib/single-page-intents.ts');
   const ex = await import('../../src/lib/export-intents.ts');
+  const envelope = await import('../../src/lib/intent-envelope.ts');
   const server = await import('../../src/lib/server/intents.ts');
 
   console.log('\n[4f] 单页 / 导出 typed intent 契约');
@@ -48,35 +49,38 @@ export async function runSurfaceIntentTests(ctx) {
     exCalls[0].path);
 
   check('单页解析：合法意图 / 缺省 params / 未知 kind / 非对象参数',
-    sp.parseSinglePageIntent({ kind: 'selectVersion', params: { pageId: 'p', versionId: 'v' } })?.kind === 'selectVersion'
-      && JSON.stringify(sp.parseSinglePageIntent({ kind: 'selectVersion' })?.params) === '{}'
-      && sp.parseSinglePageIntent({ kind: 'drop-database', params: {} }) === null
-      && sp.parseSinglePageIntent({ kind: 'selectVersion', params: [] }) === null
-      && sp.parseSinglePageIntent(null) === null);
+    envelope.parseIntent({ kind: 'selectVersion', params: { pageId: 'p', versionId: 'v' } }, sp.SINGLE_PAGE_INTENT_PARAMS)?.kind === 'selectVersion'
+      && JSON.stringify(envelope.parseIntent({ kind: 'selectVersion' }, sp.SINGLE_PAGE_INTENT_PARAMS)?.params) === '{}'
+      && envelope.parseIntent({ kind: 'drop-database', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS) === null
+      && envelope.parseIntent({ kind: 'selectVersion', params: [] }, sp.SINGLE_PAGE_INTENT_PARAMS) === null
+      && envelope.parseIntent(null, sp.SINGLE_PAGE_INTENT_PARAMS) === null);
   check('导出解析：合法意图 / 未知 kind / 数组参数拒绝',
-    ex.parseExportIntent({ kind: 'quoteExport', params: { projectId: 'p' } })?.kind === 'quoteExport'
-      && ex.parseExportIntent({ kind: 'exportDeckImage', params: [] }) === null
-      && ex.parseExportIntent({ kind: 'nope' }) === null);
-  check('路由侧 extractor 拒绝错配 kind（不把别的动作参数当自己的）',
-    sp.singlePageIntentParams('generatePage', { kind: 'selectVersion', params: {} }) === null
-      && ex.exportIntentParams('quoteExport', { kind: 'exportDeckImage', params: { deckId: 'd' } }) === null);
+    envelope.parseIntent({ kind: 'quoteExport', params: { projectId: 'p' } }, ex.EXPORT_INTENT_PARAMS)?.kind === 'quoteExport'
+      && envelope.parseIntent({ kind: 'exportDeckImage', params: [] }, ex.EXPORT_INTENT_PARAMS) === null
+      && envelope.parseIntent({ kind: 'nope' }, ex.EXPORT_INTENT_PARAMS) === null);
+  check('路由侧 expected kind 拒绝错配（不把别的动作参数当自己的）',
+    envelope.parseIntent({ kind: 'selectVersion', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS, 'generatePage') === null
+      && envelope.parseIntent({ kind: 'exportDeckImage', params: { deckId: 'd' } }, ex.EXPORT_INTENT_PARAMS, 'quoteExport') === null);
 
   await expectThrows('服务器适配器：无 intent 信封一律 400（旧 body 直通已删除）', () =>
-    server.readIntentParams({ pageId: 'legacy-page' }, () => null), 'VALIDATION_ERROR');
+    server.readIntentParams({ pageId: 'legacy-page' }, sp.SINGLE_PAGE_INTENT_PARAMS, 'selectVersion'), 'VALIDATION_ERROR');
   check('服务器适配器：意图信封解出本路由参数',
     server.readIntentParams(
       { intent: { kind: 'selectVersion', params: { pageId: 'p', versionId: 'v' } } },
-      (value) => sp.singlePageIntentParams('selectVersion', value),
-    ).versionId === 'v');
+      sp.SINGLE_PAGE_INTENT_PARAMS,
+      'selectVersion',
+    ).params.versionId === 'v');
   await expectThrows('服务器适配器：未知意图 → VALIDATION_ERROR（不降级到旧入口）', () =>
     server.readIntentParams(
       { intent: { kind: 'nope', params: {} } },
-      (value) => sp.singlePageIntentParams('selectVersion', value),
+      sp.SINGLE_PAGE_INTENT_PARAMS,
+      'selectVersion',
     ), 'VALIDATION_ERROR');
   await expectThrows('服务器适配器：错配意图 → VALIDATION_ERROR', () =>
     server.readIntentParams(
       { intent: { kind: 'generatePage', params: {} } },
-      (value) => sp.singlePageIntentParams('selectVersion', value),
+      sp.SINGLE_PAGE_INTENT_PARAMS,
+      'selectVersion',
     ), 'VALIDATION_ERROR');
 
   // ---------- 端到端：单页版本选择经意图通道 ----------
@@ -157,6 +161,7 @@ export async function runSurfaceIntentTests(ctx) {
 export async function runAdminIntentTests(ctx) {
   const { check, expectThrows, adminRequest, configRoute } = ctx;
   const intents = await import('../../src/lib/admin-intents.ts');
+  const envelope = await import('../../src/lib/intent-envelope.ts');
   const server = await import('../../src/lib/server/intents.ts');
 
   console.log('\n[10b] 后台管理 typed intent 契约');
@@ -178,16 +183,17 @@ export async function runAdminIntentTests(ctx) {
   check('后台角色意图把 userId 编码进路径',
     calls[4].path === '/api/admin/users/u%2F1/role' && calls[4].method === 'POST');
   check('后台解析：合法 / 缺省 params / 未知 kind / 数组参数',
-    intents.parseAdminIntent({ kind: 'setFeatureFlag', params: { key: 'k', state: 'beta' } })?.kind === 'setFeatureFlag'
-      && JSON.stringify(intents.parseAdminIntent({ kind: 'setFeatureFlag' })?.params) === '{}'
-      && intents.parseAdminIntent({ kind: 'drop-database' }) === null
-      && intents.parseAdminIntent({ kind: 'setFeatureFlag', params: [1] }) === null);
-  check('后台路由侧 extractor 拒绝错配 kind',
-    intents.adminIntentParams('updateRuntimeConfig', { kind: 'setFeatureFlag', params: {} }) === null);
+    envelope.parseIntent({ kind: 'setFeatureFlag', params: { key: 'k', state: 'beta' } }, intents.ADMIN_INTENT_PARAMS)?.kind === 'setFeatureFlag'
+      && JSON.stringify(envelope.parseIntent({ kind: 'setFeatureFlag' }, intents.ADMIN_INTENT_PARAMS)?.params) === '{}'
+      && envelope.parseIntent({ kind: 'drop-database' }, intents.ADMIN_INTENT_PARAMS) === null
+      && envelope.parseIntent({ kind: 'setFeatureFlag', params: [1] }, intents.ADMIN_INTENT_PARAMS) === null);
+  check('后台路由侧 expected kind 拒绝错配',
+    envelope.parseIntent({ kind: 'setFeatureFlag', params: {} }, intents.ADMIN_INTENT_PARAMS, 'updateRuntimeConfig') === null);
   await expectThrows('后台适配器：未知意图 → VALIDATION_ERROR', () =>
     server.readIntentParams(
       { intent: { kind: 'nope', params: {} } },
-      (value) => intents.adminIntentParams('updateRuntimeConfig', value),
+      intents.ADMIN_INTENT_PARAMS,
+      'updateRuntimeConfig',
     ), 'VALIDATION_ERROR');
 
   const intentPut = await configRoute.PUT(adminRequest('http://localhost/api/admin/config', {

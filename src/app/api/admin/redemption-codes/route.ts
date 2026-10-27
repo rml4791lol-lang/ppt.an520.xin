@@ -1,7 +1,7 @@
 import { recordAdminAudit, requireAdmin } from '@/lib/server/admin';
 import { defineRoute, jsonOk, readJsonBody, validationError } from '@/lib/server/http';
 import { generateRedemptionCodes } from '@/lib/server/redemption';
-import { adminIntentParams } from '@/lib/admin-intents';
+import { ADMIN_INTENT_PARAMS } from '@/lib/admin-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 export const POST = defineRoute(async (request) => {
   const { user } = requireAdmin(request);
-  const body = readIntentParams(await readJsonBody(request), (intent) => adminIntentParams('generateRedemptionCodes', intent));
+  const { params: body } = readIntentParams(await readJsonBody(request), ADMIN_INTENT_PARAMS, 'generateRedemptionCodes');
   const credits = Math.floor(Number(body.credits));
   const count = Math.floor(Number(body.count ?? 1));
   const expiresDays = body.expiresDays == null || body.expiresDays === ''

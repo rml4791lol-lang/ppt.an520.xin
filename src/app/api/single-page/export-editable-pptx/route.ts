@@ -3,7 +3,7 @@ import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { startSinglePageEditableExport } from '@/modules/editable-export/server/editable';
 import { cleanString } from '@/lib/server/generation/types';
-import { singlePageIntentParams } from '@/lib/single-page-intents';
+import { SINGLE_PAGE_INTENT_PARAMS } from '@/lib/single-page-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const body = readIntentParams(raw, (intent) => singlePageIntentParams('exportEditablePptx', intent));
+  const { params: body } = readIntentParams(raw, SINGLE_PAGE_INTENT_PARAMS, 'exportEditablePptx');
   const projectId = cleanString(body?.projectId, 80);
   if (!projectId) throw validationError('缺少 projectId');
   const started = await startSinglePageEditableExport(user.id, projectId, {}, { force: body.force === true });

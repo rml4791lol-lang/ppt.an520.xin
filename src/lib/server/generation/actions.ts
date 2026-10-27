@@ -7,11 +7,13 @@ import { generateOutline, splitSlide, structureSlides, structureOneSlide } from 
 import { cleanString, type OutlineSlide } from './types';
 import { validateTaggedDsl } from './dsl';
 import {
+  buildDeckFacts,
   deleteSlide,
   getDeckState,
   getOwnedDeck,
   getSlide,
   insertSlide,
+  latestJob,
   listSlides,
   markSlidesGenStale,
   reorderSlides,
@@ -32,15 +34,13 @@ import { assertStylePackUsable, getTemplate, getTemplatePages, resolveTemplateKi
 import { assertFeatureVisible } from '../feature-flags';
 import { findUserById } from '../auth';
 import { hitRateLimit } from '../rate-limit';
-import {
-  parseDeckIntent,
-  type DeckIntent,
-  type DeckIntentExtra,
-  type DeckIntentKind,
+import type {
+  DeckIntent,
+  DeckIntentExtra,
+  DeckIntentKind,
 } from '../../deck-intents';
 import {
   deckGateDenial,
-  deckGateFacts,
   isDeckContentLocked,
   type DeckGateFacts,
 } from '../../deck-gates';
@@ -96,12 +96,9 @@ function dataUrlToBuffer(value: unknown, label: string, maxBytes: number): Buffe
   return buffer;
 }
 
+// facts 与 GET state 同源：都从 buildDeckFacts 构造，activeJob 不能只在展示面生效
 function factsOf(deck: DeckRow, slides?: () => ReturnType<typeof listSlides>): DeckGateFacts {
-  return deckGateFacts({
-    status: deck.status,
-    stylePackId: deck.stylePackId,
-    slides: slides ?? (() => listSlides(deck.id)),
-  });
+  return buildDeckFacts(deck, latestJob(deck.id), slides);
 }
 
 function assertDeckIntent(kind: DeckIntentKind, facts: DeckGateFacts): void {
@@ -472,17 +469,4 @@ async function dispatchByKind(
       );
     }
   }
-}
-
-/**
- * 路由边界：只接受 {intent:{kind,params}}。
- * 旧 {action,...params} 信封已删除——action 名不再是线上词汇（见 docs/DEBUG-HANDBOOK.md §29）。
- */
-export function readDeckIntent(body: unknown): DeckIntent {
-  if (!body || typeof body !== 'object' || Array.isArray(body) || !('intent' in body)) {
-    throw validationError('缺少意图');
-  }
-  const intent = parseDeckIntent((body as { intent: unknown }).intent);
-  if (!intent) throw validationError('未知意图');
-  return intent;
 }

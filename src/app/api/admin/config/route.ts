@@ -1,7 +1,7 @@
 import { listAdminConfigFields, updateAdminRuntimeConfig } from '@/lib/server/admin-config';
 import { recordAdminAudit, requireAdmin } from '@/lib/server/admin';
 import { defineRoute, jsonOk, readJsonBody, validationError } from '@/lib/server/http';
-import { adminIntentParams } from '@/lib/admin-intents';
+import { ADMIN_INTENT_PARAMS } from '@/lib/admin-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
@@ -16,7 +16,7 @@ export const GET = defineRoute(async (request) => {
 
 export const PUT = defineRoute(async (request) => {
   const { user } = requireAdmin(request);
-  const body = readIntentParams(await readJsonBody(request), (intent) => adminIntentParams('updateRuntimeConfig', intent));
+  const { params: body } = readIntentParams(await readJsonBody(request), ADMIN_INTENT_PARAMS, 'updateRuntimeConfig');
   const values = body.values == null
     ? undefined
     : body.values && typeof body.values === 'object' && !Array.isArray(body.values)

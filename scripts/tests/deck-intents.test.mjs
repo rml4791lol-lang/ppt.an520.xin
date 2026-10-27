@@ -5,10 +5,13 @@ import { readFileSync } from 'node:fs';
 export async function runDeckIntentTests(ctx) {
   const { check, auth, decks, fullDeps } = ctx;
   const intents = await import('../../src/lib/deck-intents.ts');
+  const envelope = await import('../../src/lib/intent-envelope.ts');
   const gates = await import('../../src/lib/deck-gates.ts');
   const actions = await import('../../src/lib/server/generation/actions.ts');
   const { STYLE_PACKS } = await import('../../src/data/style-packs.ts');
-  const { DECK_INTENT_KINDS, parseDeckIntent } = intents;
+  const { DECK_INTENT_KINDS } = intents;
+  // 解析器只有一份：用 deck 的 (kind → 参数校验器) 表走共享意图解析
+  const parseDeckIntent = (value) => envelope.parseIntent(value, intents.DECK_INTENT_PARAMS);
 
   console.log('\n[4d] deck typed intent：唯一入口 / 前置不变量 / 可用集合');
 
@@ -24,8 +27,9 @@ export async function runDeckIntentTests(ctx) {
   check('意图 kind 唯一（无重复登记）', new Set(DECK_INTENT_KINDS).size === 20);
   check('无类型入口已删除：dispatch 不再有 dispatchDeckAction / body.action',
     !actionsSrc.includes('dispatchDeckAction') && !actionsSrc.includes('body.action'));
-  check('路由边界只解意图（readDeckIntent），不再收 action 信封',
-    routeSrc.includes('readDeckIntent') && !routeSrc.includes('parseDeckRequest'));
+  check('路由边界只解意图（readIntentParams + deck 表），不再收 action 信封',
+    routeSrc.includes('readIntentParams') && routeSrc.includes('DECK_INTENT_PARAMS')
+      && !routeSrc.includes('parseDeckRequest'));
 
   check('解析：合法意图收窄通过',
     parseDeckIntent({ kind: 'commitVersion', params: { slideId: 's1', versionId: 'v1' } })?.kind === 'commitVersion');

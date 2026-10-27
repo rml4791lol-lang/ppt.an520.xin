@@ -2,7 +2,9 @@ import { jsonOk, readJsonBody } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute, paramOf } from '@/lib/server/generation/route';
 import { getDeckState } from '@/lib/server/generation/decks';
-import { dispatchDeckIntent, readDeckIntent } from '@/lib/server/generation/actions';
+import { dispatchDeckIntent } from '@/lib/server/generation/actions';
+import { DECK_INTENT_PARAMS } from '@/lib/deck-intents';
+import { readIntentParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +20,7 @@ export const GET = defineApiRoute(async (request, ctx) => {
 export const POST = defineApiRoute(async (request, ctx) => {
   const { user } = requireUser(request);
   const id = await paramOf(ctx, 'id');
-  const intent = readDeckIntent(await readJsonBody(request));
+  const intent = readIntentParams(await readJsonBody(request), DECK_INTENT_PARAMS);
   const result = await dispatchDeckIntent(user.id, id, intent);
   return jsonOk({ ...result.state, ...result.extra }, { status: result.status });
 }, { mutation: true });
