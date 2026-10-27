@@ -313,7 +313,7 @@ console.log('\n[9] LLM 回退链');
     uploadMaxBytes: 1024, sourceTextMaxChars: 1000,
     imageBaseUrl: '', imageApiKey: '', imageModel: 'gpt-image-2', imageSize: '1536x864',
     imageTimeoutMs: 5000, generateConcurrency: 1, jobStaleMs: 600000,
-    codiaApiKey: '', codiaBaseUrl: 'http://codia.test', singlePageCredits: 10, projectRetentionDays: 7,
+    codiaApiKey: '', codiaBaseUrl: 'http://codia.test', projectRetentionDays: 7,
   };
   const okBody = JSON.stringify({ choices: [{ message: { content: '[{"title":"首页","role":"cover","chapter":"","summary":["要点"],"must_keep":[]}]' } }] });
   const calls = [];

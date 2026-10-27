@@ -17,17 +17,20 @@ export async function runPluginRuntimeTests(ctx) {
       && pluginCtx.keys().join(',') === [HOST_CONFIG_KEY, 'pricing', 'models'].join(','));
 
   const pricing = pluginCtx.use('pricing');
-  check('pricing.quote：整页生成 10🌟 / 改图 5🌟 / 可编辑导出 20🌟',
+  check('pricing.quote：整页生成 10🌟 / 改图 5🌟 / 可编辑导出 20🌟 / 单页 10🌟',
     pricing.quote('generate.page') === 10
       && pricing.quote('edit.page') === 5
       && pricing.quote('export.editable') === 20
-      && pricing.quote('export.editable-text') === 5);
+      && pricing.quote('export.editable-text') === 5
+      && pricing.quote('generate.single-page') === 10
+      && pricing.quote('edit.single-page') === 10);
   check('pricing.quote：未定价动作返回 0 且不在价格表内（免费是合法形态）',
     pricing.quote('unknown.action') === 0 && !('unknown.action' in pricing.table()));
   check('pricing.table：只含已映射动作，outline 显式 0🌟也在表内',
-    Object.keys(pricing.table()).length === 7
+    Object.keys(pricing.table()).length === 9
       && pricing.table().outline === 0 && pricing.table()['export.image'] === 0
-      && pricing.table()['tool.ppt-to-base'] === 5);
+      && pricing.table()['tool.ppt-to-base'] === 5
+      && pricing.table()['generate.single-page'] === 10 && pricing.table()['edit.single-page'] === 10);
 
   const models = pluginCtx.use('models');
   const { getGenerationConfig } = await import('../../src/lib/server/generation/config.ts');
@@ -50,7 +53,10 @@ export async function runPluginRuntimeTests(ctx) {
     version: '0.0.0-test',
     provides: ['pricing'],
     register(c) {
-      c.register('pricing', { quote: () => 99, table: () => ({ 'generate.page': 99 }) });
+      c.register('pricing', {
+        quote: () => 99,
+        table: () => ({ 'generate.page': 99, 'generate.single-page': 99, 'edit.page': 99, 'edit.single-page': 99 }),
+      });
     },
   };
   const altCtx = await boot({ name: 'alt-pricing', plugins: [fakePricingPlugin, modelsPlugin] }, host);
@@ -88,12 +94,19 @@ export async function runPluginRuntimeTests(ctx) {
   // ---- Phase 2：生产读价路径（credits.estimateCredits）走服务键 ----
   const { expectThrows } = ctx;
   const credits = await import('../../src/lib/server/credits.ts');
-  const { getDefaultCtx } = await import('../../src/lib/plugin/default.ts');
-  check('默认 ctx 懒同步启动且复用同一实例', getDefaultCtx() === getDefaultCtx() && getDefaultCtx().has('pricing'));
+  const { getDefaultCtx, setDefaultCtx } = await import('../../src/lib/plugin/default.ts');
+  const sharedCtx = getDefaultCtx();
+  check('默认 ctx 懒同步启动且复用同一实例', sharedCtx === getDefaultCtx() && sharedCtx.has('pricing'));
   const est = credits.estimateCredits({ action: 'deck_page_generate', pages: 3 });
-  check('estimateCredits 经 ctx.pricing 读价：3 页 = 30🌟', est.credits === 30 && est.unitPrice === 10);
+  // 换实现即换价：替代实现换进默认上下文，生产读价入口（estimateCredits）零改动跟随
+  setDefaultCtx(altCtx);
+  const estSwapped = credits.estimateCredits({ action: 'deck_page_generate', pages: 3 });
+  setDefaultCtx(sharedCtx);
+  check('estimateCredits 经 ctx.pricing 读价且换实现即换价：3 页 = 30🌟（替代实现 297）',
+    est.credits === 30 && est.unitPrice === 10 && estSwapped.credits === 297);
   const estRefine = credits.estimateCredits({ action: 'deck_page_refine', pages: 2 });
-  check('estimateCredits 改图档经服务键：2 页 = 10🌟', estRefine.credits === 10);
+  const estSingle = credits.estimateCredits({ action: 'single_page_generate', pages: 2 });
+  check('estimateCredits 改图档/单页档同走服务键：2 页 = 10🌟 / 20🌟', estRefine.credits === 10 && estSingle.credits === 20);
   await expectThrows('未知计费动作仍被拒（语义不变）', async () =>
     credits.estimateCredits({ action: 'not_a_real_action' }), 'VALIDATION_ERROR');
   const { pricingPlugin } = await import('../../src/plugins/pricing/plugin.ts');
@@ -108,5 +121,5 @@ export async function runPluginRuntimeTests(ctx) {
     asyncMsg = error?.message || '';
   }
   check('bootSync 遇异步 register 即 fail fast', asyncMsg.includes('异步') && asyncMsg.includes('async-x'));
-  check('pricing 插件动作键与契约一致', pricingPlugin.pricing.join(',') === 'generate.page,edit.page,export.editable,export.editable-text,export.image,outline,tool.ppt-to-base');
+  check('pricing 插件动作键与契约一致', pricingPlugin.pricing.join(',') === 'generate.page,edit.page,export.editable,export.editable-text,export.image,outline,tool.ppt-to-base,generate.single-page,edit.single-page');
 }
