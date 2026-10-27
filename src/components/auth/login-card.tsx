@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { api, type AuthResult } from "@/lib/client/api";
+import { api, resetSessionCache, type AuthResult } from "@/lib/client/api";
 
 type Mode = "code" | "password";
 
@@ -98,6 +98,8 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
       setError(r.message);
       return;
     }
+    // 登录前壳/页面可能已缓存 authenticated:false，登录成功后必须作废，否则返回后仍显示未登录
+    resetSessionCache();
     router.push(next);
     router.refresh();
   };

@@ -57,19 +57,21 @@ export function AppShell({
   }, [drawerOpen]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let cancelled = false;
     const loadSession = async () => {
       try {
         const session = await getSession();
-        setSessionUser(session.user);
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) setSessionUser(null);
+        if (!cancelled) setSessionUser(session.user);
+      } catch {
+        if (!cancelled) setSessionUser(null);
       } finally {
-        if (!controller.signal.aborted) setSessionReady(true);
+        if (!cancelled) setSessionReady(true);
       }
     };
     void loadSession();
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (

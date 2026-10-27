@@ -2,23 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiClientError } from "@/lib/client/api";
-
-interface Summary {
-  balance?: number;
-  totalGranted?: number;
-  totalSpent?: number;
-  granted30d?: number;
-  spent30d?: number;
-}
-
-interface LedgerEntry {
-  delta: number;
-  balanceAfter?: number;
-  reason?: string;
-  eventType?: string;
-  createdAt?: number | string;
-}
+import {
+  api,
+  ApiClientError,
+  type CreditLedgerEntry,
+  type CreditSummary,
+} from "@/lib/client/api";
 
 function AuthWall({ onReload }: { onReload: () => void }) {
   return (
@@ -43,7 +32,7 @@ function AuthWall({ onReload }: { onReload: () => void }) {
   );
 }
 
-const CARDS: { key: keyof Summary; label: string; hint: string }[] = [
+const CARDS: { key: keyof CreditSummary; label: string; hint: string }[] = [
   { key: "balance", label: "可用星星", hint: "可用于生成和导出" },
   { key: "totalGranted", label: "累计获得", hint: "注册赠送、充值与兑换" },
   { key: "totalSpent", label: "累计已使用", hint: "生成消耗，失败自动退回" },
@@ -51,8 +40,8 @@ const CARDS: { key: keyof Summary; label: string; hint: string }[] = [
 ];
 
 export function CreditsClient() {
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [ledger, setLedger] = useState<LedgerEntry[] | null>(null);
+  const [summary, setSummary] = useState<CreditSummary | null>(null);
+  const [ledger, setLedger] = useState<CreditLedgerEntry[] | null>(null);
   const [unauthorized, setUnauthorized] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -76,7 +65,7 @@ export function CreditsClient() {
         setLedger(null);
         return;
       }
-      if (sumResult.status === "fulfilled") setSummary(sumResult.value ?? {});
+      if (sumResult.status === "fulfilled") setSummary(sumResult.value ?? null);
       if (ledgerResult.status === "fulfilled") setLedger(ledgerResult.value.items);
     } catch {
       /* 后端未就绪时保持占位 */
@@ -130,7 +119,7 @@ export function CreditsClient() {
               >
                 <div>
                   <p className="text-sm text-ink">
-                    {entry.reason ?? "星星变动"}
+                    {entry.reason || "星星变动"}
                   </p>
                   {entry.createdAt && (
                     <p className="mt-0.5 text-xs text-ink-4">

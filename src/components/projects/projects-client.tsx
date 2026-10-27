@@ -3,22 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PlusIcon } from "@/components/icons";
-import { api, ApiClientError, getSession } from "@/lib/client/api";
+import { api, ApiClientError, getSession, type ProjectItem } from "@/lib/client/api";
 import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
 
-interface Project {
-  id: string;
-  title?: string;
-  name?: string;
-  projectType?: string;
-  source?: "single" | "replicate";
-  updatedAt?: string | number;
-  createdAt?: string | number;
-  coverUrl?: string | null;
-}
-
 export function ProjectsClient() {
-  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [projects, setProjects] = useState<ProjectItem[] | null>(null);
   const [unauthorized, setUnauthorized] = useState(false);
   const [loading, setLoading] = useState(true);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -122,7 +111,7 @@ export function ProjectsClient() {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={p.coverUrl}
-                      alt={`${p.title ?? p.name ?? "项目"} 封面`}
+                      alt={`${p.title || "项目"} 封面`}
                       className="h-full w-full rounded-xl object-cover"
                     />
                   ) : (
@@ -131,11 +120,11 @@ export function ProjectsClient() {
                 </div>
                 <p className="mt-3 truncate text-sm font-medium text-ink">
                   {p.source === "replicate" ? "美化 · " : ""}
-                  {p.title ?? p.name ?? "未命名项目"}
+                  {p.title || "未命名项目"}
                 </p>
                 <p className="mt-1 text-xs text-ink-4">
-                  {p.updatedAt ?? p.createdAt
-                    ? `更新于 ${new Date(p.updatedAt ?? p.createdAt!).toLocaleString("zh-CN")}`
+                  {p.updatedAt
+                    ? `更新于 ${new Date(p.updatedAt).toLocaleString("zh-CN")}`
                     : ""}
                 </p>
               </Link>
@@ -161,7 +150,7 @@ export function ProjectsClient() {
               ) : (
                 <button
                   type="button"
-                  aria-label={`删除项目 ${p.title ?? p.name ?? ""}`}
+                  aria-label={`删除项目 ${p.title}`}
                   onClick={() => setConfirmingId(p.id)}
                   className="absolute right-2 top-2 z-10 rounded-full border border-line bg-card/95 px-2.5 py-1 text-[11px] text-ink-4 shadow-card transition hover:border-danger/30 hover:text-danger"
                 >

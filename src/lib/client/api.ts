@@ -327,4 +327,3 @@ export const api = {
     }): Promise<AuthResult> => postAuth("/api/auth/register", input),
   },
 };
-

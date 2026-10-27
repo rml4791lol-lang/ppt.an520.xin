@@ -1,6 +1,7 @@
 // 单页生成器（创意页面生成器）API 客户端。
 // 对齐 src/app/api/single-page/* 与 src/lib/server/generation/single-pages.ts。
-import { apiFetch, dispatchIntent } from "./api";
+import { apiFetch, dispatchIntent, type ProjectListResult } from "./api";
+export type { ProjectItem, ProjectListResult } from "./api";
 import { toSinglePageActionCall, type SinglePageIntent } from "../single-page-intents";
 
 export type SinglePageStatus = "idle" | "queued" | "running" | "succeeded" | "failed";
@@ -78,26 +79,6 @@ export interface SingleEditableExportStart {
 /** 单页项目 → 可编辑 PPTX（20🌟/页，WPS 免费优先 / Image2PPT / Codia 备用）：202 返回任务句柄，轮询 /api/pptx-exports/{id} */
 export function startSingleEditableExport(projectId: string, force = false): Promise<SingleEditableExportStart> {
   return sendIntent({ kind: "exportEditablePptx", params: { projectId, force } });
-}
-
-export interface ProjectItem {
-  id: string;
-  projectType: "deck" | "single-page";
-  source?: "single" | "replicate";
-  title: string;
-  status: string;
-  pageCount: number;
-  coverUrl: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ProjectListResult {
-  items: ProjectItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-  retentionDays: number;
 }
 
 export function listProjects(query: {
