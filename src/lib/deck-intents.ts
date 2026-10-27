@@ -40,8 +40,11 @@ export type DeckSlidePatch = {
   structuredContent?: string;
 };
 
-/** add-slide 的新页草稿（服务端 insertSlide 只读这几个字段） */
-export type DeckSlideDraft = Pick<DeckSlidePatch, 'role' | 'title' | 'goal' | 'rawText' | 'visualNote'>;
+/** add-slide 的新页草稿（撤销删除要还原章节，草稿保留 chapter） */
+export type DeckSlideDraft = Pick<
+  DeckSlidePatch,
+  'role' | 'chapter' | 'title' | 'goal' | 'rawText' | 'visualNote'
+>;
 
 /** 意图 → 参数；空对象表示该意图没有参数 */
 export type DeckIntentParams = {
@@ -95,6 +98,40 @@ export const DECK_INTENT_ACTIONS: Record<DeckIntentKind, DeckActionName> = {
   eraseSlide: 'erase-slide',
   editSlideText: 'text-edit-slide',
   fuseSlide: 'fuse-slide',
+};
+
+/** 生成类意图返回的 job 句柄（只暴露前端要用的摘要，done 留在服务端） */
+export interface DeckJobHandle {
+  jobId: string;
+  status: 'queued' | 'running';
+  total: number;
+}
+
+/**
+ * 意图 → 响应附带字段：与 actions.ts 每个动作的 extra 一一对应。
+ * 响应 = 全量 deck 状态 + 本意图的 extra，前端按 kind 取字段，不再从展开对象里猜形状。
+ */
+export type DeckIntentExtra = {
+  generateOutline: { reused: boolean; provider?: string; pageCount?: number };
+  addSlide: Record<string, never>;
+  removeSlide: Record<string, never>;
+  reorderSlides: Record<string, never>;
+  splitSlide: { provider: string; into: number };
+  updateSlide: { contentChanged: boolean };
+  commitVersion: Record<string, never>;
+  structureSlides: { reused?: boolean; failedSlides?: string[] };
+  structureSlide: { reused?: boolean; failedSlides?: string[] };
+  confirmStructure: Record<string, never>;
+  unlockStructure: { alreadyUnlocked?: boolean; invalidated?: number; warning?: string };
+  setStyle: { note?: string };
+  setReferenceImage: { anchorCleared?: boolean; anchorSlideId?: string };
+  generateSlides: { job: DeckJobHandle };
+  retryFailedSlides: { job: DeckJobHandle };
+  generateSlide: { job: DeckJobHandle };
+  refineSlide: { job: DeckJobHandle };
+  eraseSlide: { job: DeckJobHandle };
+  editSlideText: { job: DeckJobHandle };
+  fuseSlide: { job: DeckJobHandle };
 };
 
 export interface DeckActionCall {

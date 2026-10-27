@@ -472,15 +472,41 @@ export async function dispatchDeckIntent(
   return dispatchDeckAction(userId, deckId, { ...call.params, action: call.action }, deps);
 }
 
-/** action RPC 统一入口：body 带 intent 走意图通道，否则沿用旧的无类型入口 */
+/** 路由唯一请求信封：意图通道，或旧 action 信封（外部脚本仍在用，语义不变） */
+export type DeckRequest =
+  | { intent: DeckIntent }
+  | { action: string; params: Record<string, unknown> };
+
+/**
+ * 路由边界：把 JSON 收窄成 DeckRequest，路由之后不再碰原始对象。
+ * 旧入口的文案/错误码保持与 dispatchDeckAction 一致（空 action、未知 action 仍在动作层报错）。
+ */
+export function parseDeckRequest(value: unknown): DeckRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw validationError('请求体格式不正确');
+  }
+  const body = value as Record<string, unknown>;
+  if (body.intent !== undefined) {
+    const intent = parseDeckIntent(body.intent);
+    if (!intent) throw validationError('未知意图');
+    return { intent };
+  }
+  const action = cleanString(body.action, 40);
+  if (!action) throw validationError('缺少 action');
+  const params: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(body)) {
+    if (key !== 'action' && key !== 'intent') params[key] = entry;
+  }
+  return { action, params };
+}
+
+/** action RPC 统一入口：意图数与旧 action 信封在这里分派，业务语义全在动作层 */
 export async function dispatchDeckRequest(
   userId: string,
   deckId: string,
-  body: Record<string, unknown>,
+  request: DeckRequest,
   deps: ActionDeps = {},
 ): Promise<ActionResult> {
-  if (body.intent === undefined) return dispatchDeckAction(userId, deckId, body, deps);
-  const intent = parseDeckIntent(body.intent);
-  if (!intent) throw validationError('未知意图');
-  return dispatchDeckIntent(userId, deckId, intent, deps);
+  if ('intent' in request) return dispatchDeckIntent(userId, deckId, request.intent, deps);
+  return dispatchDeckAction(userId, deckId, { ...request.params, action: request.action }, deps);
 }

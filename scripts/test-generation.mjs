@@ -13,6 +13,7 @@ import { runWpsAipptTests } from './tests/wps-aippt.test.mjs';
 import { runPluginRuntimeTests } from './tests/plugin-runtime.test.mjs';
 import { runPptToBaseTests, runPptToBaseServerTests } from './tests/ppt-to-base.test.mjs';
 import { runDeckIntentTests } from './tests/deck-intents.test.mjs';
+import { runDeckWorkbenchTests } from './tests/deck-workbench.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
@@ -1023,6 +1024,7 @@ console.log('\n[4c] update-slide / select-slide-version');
 }
 
 await runDeckIntentTests({ check, expectThrows, auth, decks, fullDeps });
+await runDeckWorkbenchTests({ check });
 
 console.log('\n[5] 余额不足整单 402');
 {

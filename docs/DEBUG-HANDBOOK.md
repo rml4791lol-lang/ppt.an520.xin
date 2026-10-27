@@ -108,7 +108,7 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 497 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
+node scripts/test-generation.mjs  # 当前 519 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 163 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
@@ -359,3 +359,12 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/wps/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT/WPS 主通道未配置、Image2PPT 剩余额度 <20、Image2PPT/WPS 登录态失效（401/403）、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
 - 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/test-generation.mjs` 当前 458 断言，全部 mock，禁止真实付费调用。
 - 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。WPS 另用真实登录态跑通 `convertPdfWithWpsAippt`：1 页 PDF → 10,591 bytes PPTX，`slides/slide1.xml` 含可编辑 `<a:t>` 文本节点且无整页媒体图片；该验收命令不进测试套件。
+
+## 29. deck typed intent 与工作台可用性（2026-10-27）
+
+- 契约：`src/lib/deck-intents.ts` 是客户端与路由共用的一份意图声明——20 个 kind ↔ 20 个旧动作名（`DECK_INTENT_ACTIONS` 双射由测试钉住）；`DeckIntentExtra` 声明每个意图的响应附带字段。响应恒为「全量 deck 状态 + 该意图 extra」平铺，前端用 `DeckIntentResult<kind>` 按 kind 取字段，不再从展开对象猜形状。
+- 路由：`POST /api/deck/[id]` 先用 `parseDeckRequest` 在边界把原始 JSON 收窄成 `DeckRequest`（`{intent}` 或旧 `{action, params}`），之后不再传未收窄 body；`dispatchDeckRequest` 只做通道分派，开关硬门/冻结校验/扣费/幂等全在 `dispatchDeckAction`。旧脚本发 `{action, ...params}` 时参数收进 params，语义与错误码不变。
+- 工作台：`src/lib/client/deck-api.ts` 只保留 `deckIntentAction`（body 为 `{intent:{kind,params}}`），四步组件统一走 `DeckCtx.run(intent)`；生成/重试/换风格/提交版本的既有行为与扣费语义未改。
+- 可用性：`src/lib/client/deck-availability.ts` 的 `deriveDeckAvailability(state)` 是「哪些按钮可点」的唯一推导（`canGenerate/allGenerated/canExport/canRetryFailed/pendingStructure` 等），各步组件不再各写布尔条件；saving/editor/弹窗这类局部 UI 态仍归组件。
+- 失败语义：非法意图 → `VALIDATION_ERROR`（未知意图）；参数深校验仍由动作自身执行；响应仍是 200/202 + 全量 state，客户端拿到即 setState，不等轮询。
+- 测试：`scripts/tests/deck-intents.test.mjs`（[4d]）钉双射/适配器/解析/路由意图与旧信封/冻结门与开关硬门；`scripts/tests/deck-workbench.test.mjs`（[4e]）钉意图请求体、按意图收窄的响应、可用性推导与静态约束（链路无 `Record<string, unknown>` 请求体、无 `run("action")`、无 `deckAction`）。
