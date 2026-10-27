@@ -73,7 +73,7 @@ src/plugins/<key>/
 
 先锋（验证运行时，纯增量、不改现有调用方）：
 
-1. `pricing` 插件：价格表收拢为插件（读现有 `env.ts` 常量起步），暴露 `ctx.pricing.quote(actionKey)`。**验收：换一份价格配置 = 只换 profile，全站零代码改动。**
+1. `pricing` 插件：**价格表的存储与解析都归插件**（`prices.ts`，含 `CREDIT_ACTION_PRICES` 与单页单价旋钮），暴露 `ctx.pricing.quote(actionKey)`；平台不存价格。**验收（2026-10-27 达成，ADR-0001 G1）：换一份实现（如从 DB 读价）换进 profile，全站估价与扣费随之变，业务代码零改动。**
 2. `models` 插件：模型清单 + 回退链，暴露 `ctx.models.text()/image()`。**验收：下架一个模型 = 改一个数组元素。**
 
 迁移（风险从低到高，每次一块、全量门必绿）：模板库 → 导出中心 → ppt-replicate（复刻流水线五段：接入/内容/提示词/生图/导出，数据契约 Ref/Page/Result 冻结）→ 账户计费（钱最后动）。

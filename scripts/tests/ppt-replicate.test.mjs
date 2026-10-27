@@ -37,10 +37,12 @@ export async function runPptReplicateTests(ctx) {
     check('单价由入参决定（客户端不再硬编码 10/20）',
       pagesLogic.remainingGenerateCredits(samplePages, 12) === 12
         && pagesLogic.remainingEditableCredits(samplePages, 25) === 25);
-    check('单页单价走 /api/credits/estimate 同一份配置',
-      credits.estimateCredits({ action: 'single_page_generate', pages: 1 }).unitPrice === llmConfig.singlePageCredits
-        && credits.estimateCredits({ action: 'single_page_generate', pages: 3 }).credits === llmConfig.singlePageCredits * 3
-        && credits.estimateCredits({ action: 'single_page_refine', pages: 1 }).unitPrice === llmConfig.singlePageCredits);
+    const { getDefaultCtx } = await import('../../src/lib/plugin/default.ts');
+    const pricingSingleUnit = getDefaultCtx().use('pricing').quote('generate.single-page');
+    check('单页单价与 pricing 插件同源（不另设第二条价格链）',
+      credits.estimateCredits({ action: 'single_page_generate', pages: 1 }).unitPrice === pricingSingleUnit
+        && credits.estimateCredits({ action: 'single_page_generate', pages: 3 }).credits === pricingSingleUnit * 3
+        && credits.estimateCredits({ action: 'single_page_refine', pages: 1 }).unitPrice === pricingSingleUnit);
     check('星星不足横幅不被成功文案盖掉',
       pagesLogic.buildGenerateFinishBanner({
         newlyOk: 2, failed: 0, skippedDone: 0, stoppedForCredits: true, creditsMessage: '星星不足',
