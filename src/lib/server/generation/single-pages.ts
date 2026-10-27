@@ -19,6 +19,8 @@ import {
   type SlidePromptInput,
 } from './style-packs';
 import { cleanString } from './types';
+// 复刻分支只认模块 facade；facade 反向委托本文件的实体实现，循环引用是过渡态，
+// 两边都只在运行期取值（模块顶层不读对方绑定），搬完实体即可解开。
 import {
   buildReplicateCopyPrompt,
   buildReplicateInstruction,
@@ -26,7 +28,7 @@ import {
   resolveReplicateColorMode,
   type ReplicateColorMode,
   type SlideStructureCard,
-} from '@/modules/ppt-replicate/server/replicate';
+} from '@/modules/ppt-replicate/server/facade';
 
 export type SinglePageDeps = ImageDeps;
 
