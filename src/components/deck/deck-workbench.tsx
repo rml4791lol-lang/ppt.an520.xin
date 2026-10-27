@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
 import {
   deckAction,
+  deckIntentAction,
   estimateCredits,
   exportDeckImage,
   renameProject,
@@ -17,6 +18,7 @@ import {
   type DeckState,
 } from "@/lib/client/deck-api";
 import { ApiClientError } from "@/lib/client/api";
+import type { DeckIntent } from "@/lib/deck-intents";
 import { StepPrepare } from "@/components/deck/step-prepare";
 import { StepOutline } from "@/components/deck/step-outline";
 import { StepStructure } from "@/components/deck/step-structure";
@@ -97,14 +99,13 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   );
 
   // ---------- 统一 action 执行：错误归一化（402 → 星星不足弹窗，其余 toast） ----------
-  const run = useCallback(
+  const exec = useCallback(
     async (
-      action: DeckAction,
-      params: Record<string, unknown> = {},
+      send: () => Promise<DeckActionResult>,
       opts: { silent?: boolean } = {},
     ): Promise<DeckActionResult | null> => {
       try {
-        const result = await deckAction(deckId, action, params);
+        const result = await send();
         applyState(result);
         return result;
       } catch (error) {
@@ -120,7 +121,23 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
         return null;
       }
     },
-    [deckId, applyState, toast],
+    [applyState, toast],
+  );
+
+  const run = useCallback(
+    (
+      action: DeckAction,
+      params: Record<string, unknown> = {},
+      opts: { silent?: boolean } = {},
+    ): Promise<DeckActionResult | null> => exec(() => deckAction(deckId, action, params), opts),
+    [deckId, exec],
+  );
+
+  /** 类型化通道：与 run 同一条错误归一化，只有请求体换成意图 */
+  const runIntent = useCallback(
+    (intent: DeckIntent, opts: { silent?: boolean } = {}): Promise<DeckActionResult | null> =>
+      exec(() => deckIntentAction(deckId, intent), opts),
+    [deckId, exec],
   );
 
   // ---------- 大纲生成：进入页面时若尚未有大纲则自动触发（同步长请求，等待屏承载） ----------
@@ -444,7 +461,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
                   }
                   // 冻结：确认后内容锁定，进入选择风格
                   void (async () => {
-                    const result = await run("confirm-structure");
+                    const result = await runIntent({ kind: "confirmStructure", params: {} });
                     if (result) setViewStep(null);
                   })();
                 }}
