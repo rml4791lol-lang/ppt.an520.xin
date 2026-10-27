@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertIcon, ChevronLeftIcon, RefreshIcon } from "@/components/icons";
+import { apiFetch } from "@/lib/client/api";
 
 interface ProblemItem {
   ts: number;
@@ -41,12 +42,6 @@ interface ProblemPage {
   health: ProblemHealth;
 }
 
-interface ApiEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: { code?: string; message?: string; requestId?: string };
-}
-
 const CATEGORY_LABELS: Record<string, string> = {
   api: "接口异常",
   generation: "生成/退款",
@@ -79,12 +74,7 @@ function formatBytes(bytes: number): string {
 }
 
 async function fetchProblems(query: string): Promise<ProblemPage> {
-  const response = await fetch(`/api/admin/problems?${query}`, { cache: "no-store" });
-  const payload = (await response.json().catch(() => null)) as ApiEnvelope<ProblemPage> | null;
-  if (!response.ok || !payload?.ok || !payload.data) {
-    throw new Error(payload?.error?.message || "问题日志加载失败");
-  }
-  return payload.data;
+  return apiFetch<ProblemPage>(`/api/admin/problems?${query}`);
 }
 
 export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
