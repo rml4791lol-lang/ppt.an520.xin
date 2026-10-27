@@ -4,6 +4,8 @@ import { assertFeatureVisible } from '@/lib/server/feature-flags';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { generateSinglePage } from '@/lib/server/generation/single-pages';
 import { cleanString } from '@/lib/server/generation/types';
+import { singlePageIntentParams } from '@/lib/single-page-intents';
+import { readActionParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,7 +13,7 @@ export const dynamic = 'force-dynamic';
 /** 单页生成：{pageId, projectId?, title?, content, stylePackId?, imagePath?, mode?, colorMode?, structure?, requestId?}，10🌟/张 */
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
-  const body = await readJsonBody(request);
+  const body = readActionParams(await readJsonBody(request), (intent) => singlePageIntentParams('generatePage', intent));
   const mode = cleanString(body.mode, 20);
   if (mode === 'replicate') assertFeatureVisible('ppt_replicate', user);
   const result = await generateSinglePage(user.id, {

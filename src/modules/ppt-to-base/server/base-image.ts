@@ -1,7 +1,7 @@
 // PPT 转模版底座·截图 AI 路线：VLM 抽标题 + 精准编辑模型做「去风格化 + 文字中性词替换」。
 // 5🌟/张（env 价键 ppt_to_base，插件动作 tool.ppt-to-base），失败全退；requestId 幂等，重放 409。
-// 扣费前先落 ppt_to_base_jobs 状态行：进程崩溃/重启打断在途请求时，由 recovery.reconcileUser
-// 在鉴权门按 charge_key 补退（见 docs/DEBUG-HANDBOOK.md §4）。
+// 扣费前先落 ppt_to_base_jobs 状态行：进程崩溃/重启打断在途请求时，reconcilePptToBase
+// 按 charge_key 补退（懒恢复读点 = 同用户下一次生成、站点头部 /api/credits/balance）。
 // 编辑提示词纪律（GPT Image 2.5 最佳实践）：点名参考图角色 → 改变项/保留项分离 → 不变量重复声明 → 中性词逐字加引号。
 import { ApiError, validationError } from '@/lib/server/http';
 import { findUserById } from '@/lib/server/auth';
@@ -10,7 +10,7 @@ import { chargeRefundKeys, debitCredits, estimateCredits, refundCredits } from '
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
-import { markJobActive, markJobDone } from '@/lib/server/generation/recovery';
+import { refundCharge } from '@/lib/server/generation/recovery';
 import { editImage, toPublicImageError, type ImageDeps } from '@/lib/server/generation/images';
 import { saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
@@ -69,10 +69,39 @@ export async function extractTitleText(image: Buffer, deps: ImageDeps): Promise<
   }
 }
 
+/** 本进程在途任务守卫：懒恢复只收敛「超过 jobStaleMs 且非本进程在跑」的残留行 */
+const activeJobs = new Set<string>();
+
 function finishJob(jobId: string, status: 'succeeded' | 'failed', error = ''): void {
   getGenDb()
     .prepare('UPDATE ppt_to_base_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?')
     .run(status, cleanString(error, 200), nowMs(), jobId);
+}
+
+/**
+ * 收敛中断的底座生成（懒恢复，幂等）：status=running 且超 jobStaleMs 视为进程已死，
+ * 置 failed 并按 ledger 实扣金额补退款（退款键由扣费键定长派生，与正常失败退款同键，不双退）。
+ * 返回是否修复了残留行。
+ */
+export function reconcilePptToBase(userId: string): boolean {
+  const staleBefore = nowMs() - getGenerationConfig().jobStaleMs;
+  const rows = getGenDb()
+    .prepare("SELECT id, request_id, charge_key, status, updated_at FROM ppt_to_base_jobs WHERE user_id = ? AND status = 'running'")
+    .all(userId) as Array<{ id: string; request_id: string; charge_key: string; updated_at: number }>;
+  let healed = false;
+  for (const row of rows) {
+    const jobId = String(row.id);
+    if (activeJobs.has(jobId)) continue;
+    if (Number(row.updated_at) >= staleBefore) continue;
+    finishJob(jobId, 'failed', '生成中断（服务重启），已自动退回');
+    const chargeKey = String(row.charge_key || '');
+    if (chargeKey) {
+      refundCharge(chargeKey, userId, '底座生成中断退回', 'ppt-to-base', String(row.request_id || jobId));
+    }
+    healed = true;
+  }
+  if (healed) console.warn(`[anppt-v2][ppt-to-base] ${userId} 收敛了中断任务`);
+  return healed;
 }
 
 export interface PptToBaseInput {
@@ -101,6 +130,8 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
     throw new ApiError('RATE_LIMITED', `操作太频繁，请 ${rl.retryAfterSeconds} 秒后再试`, 429, true);
   }
 
+  reconcilePptToBase(userId);
+
   const unitPrice = estimateCredits({ action: PPT_TO_BASE_ACTION }).credits;
   // 与 credits.cleanKey 同口径归一：重放命中即拒，不重复扣费也不再生成；
   // 退款键不拼后缀（超长键会被截回扣费键），由扣费键定长派生
@@ -114,7 +145,7 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
        VALUES (?, ?, ?, ?, 'running', '', ?, ?)`,
     )
     .run(jobId, userId, requestId, chargeKey, ts, ts);
-  markJobActive(jobId);
+  activeJobs.add(jobId);
   try {
     let debit;
     try {
@@ -167,6 +198,6 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
       throw new ApiError(pub.code, pub.message, pub.status, true);
     }
   } finally {
-    markJobDone(jobId);
+    activeJobs.delete(jobId);
   }
 }

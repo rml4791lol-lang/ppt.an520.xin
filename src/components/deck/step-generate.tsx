@@ -65,13 +65,13 @@ export function StepGenerate({
   exporting: boolean;
   onReselectStyle: () => void;
 }) {
-  const { state, availability, run, toast } = ctx;
+  const { state, run, toast } = ctx;
   const slides = useMemo(
     () => [...state.slides].sort((a, b) => a.pageIndex - b.pageIndex),
     [state.slides],
   );
-  const { pageSummary } = state;
-  const { generating } = availability;
+  const { pageSummary, activeJob } = state;
+  const generating = state.deck.status === "generating" || activeJob !== null;
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -80,7 +80,7 @@ export function StepGenerate({
   const [editableOpen, setEditableOpen] = useState(false);
   const [editableForce, setEditableForce] = useState(false);
   const [editableUnit, setEditableUnit] = useState(20);
-  const allGenerated = availability.allGenerated;
+  const allGenerated = state.deck.status === "generated";
   const editableTotal = slides.length * editableUnit;
   const startEditableRequest = useCallback(
     (force: boolean) => startEditableExport(state.deck.id, force),
@@ -155,13 +155,13 @@ export function StepGenerate({
   const retrySlide = async (slide: DeckSlide) => {
     if (retryingId) return;
     setRetryingId(slide.slideId);
-    const result = await run({ kind: "generateSlide", params: { slideId: slide.slideId } });
+    const result = await run("generate-slide", { slideId: slide.slideId });
     setRetryingId(null);
     if (result) notifyCreditsRefresh();
   };
 
   const retryFailed = async () => {
-    const result = await run({ kind: "retryFailedSlides", params: {} });
+    const result = await run("retry-failed");
     if (result) notifyCreditsRefresh();
   };
 
@@ -187,7 +187,7 @@ export function StepGenerate({
               ? `其余页面仍在生成中：已有 ${pageSummary.failed} 页失败（该次费用已自动退回），本轮结束后可一键重试失败页。`
               : `整套生成已结束：${pageSummary.failed} 页失败。失败页不影响其他页面；失败的星星已退回，重试会重新计费，再次失败仍会退回。`}
           </p>
-          {availability.canRetryFailed && (
+          {!generating && (
             <button
               type="button"
               onClick={() => void retryFailed()}
@@ -359,7 +359,7 @@ export function StepGenerate({
             >
               重新选择风格
             </button>
-            {availability.canRetryFailed && (
+            {pageSummary.failed > 0 && !generating && (
               <button
                 type="button"
                 onClick={() => void retryFailed()}
@@ -455,8 +455,8 @@ export function StepGenerate({
             <button
               type="button"
               onClick={onExport}
-              disabled={exporting || !availability.canExport}
-              title={availability.canExport ? "导出图片集 PPT（免费）" : "尚无生成完成的页面"}
+              disabled={exporting || pageSummary.succeeded === 0}
+              title={pageSummary.succeeded === 0 ? "尚无生成完成的页面" : "导出图片集 PPT（免费）"}
               className="flex items-center gap-1.5 rounded-full bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
             >
               <DownloadIcon />
@@ -720,10 +720,7 @@ function SlideEditor({
     if (!canvas || !hasMarks || submitting || running) return;
     const markImageDataUrl = canvas.toDataURL("image/png");
     setSubmitting(true);
-    const result = await run({
-      kind: "eraseSlide",
-      params: { slideId: slide.slideId, markImageDataUrl },
-    });
+    const result = await run("erase-slide", { slideId: slide.slideId, markImageDataUrl });
     setSubmitting(false);
     if (result) {
       notifyCreditsRefresh();
@@ -738,10 +735,7 @@ function SlideEditor({
     const text = textEdit.trim();
     if (!text || submitting || running) return;
     setSubmitting(true);
-    const result = await run({
-      kind: "editSlideText",
-      params: { slideId: slide.slideId, editInstruction: text },
-    });
+    const result = await run("text-edit-slide", { slideId: slide.slideId, editInstruction: text });
     setSubmitting(false);
     if (result) {
       notifyCreditsRefresh();
@@ -755,10 +749,7 @@ function SlideEditor({
   const submitFusion = async () => {
     if (!fusionPackId || submitting || running) return;
     setSubmitting(true);
-    const result = await run({
-      kind: "fuseSlide",
-      params: { slideId: slide.slideId, fusionPackId },
-    });
+    const result = await run("fuse-slide", { slideId: slide.slideId, fusionPackId });
     setSubmitting(false);
     if (result) {
       notifyCreditsRefresh();
@@ -772,10 +763,7 @@ function SlideEditor({
   const toggleReference = async () => {
     if (submitting || running) return;
     setSubmitting(true);
-    const result = await run({
-      kind: "setReferenceImage",
-      params: { slideId: isAnchor ? null : slide.slideId },
-    });
+    const result = await run("set-reference", { slideId: isAnchor ? null : slide.slideId });
     setSubmitting(false);
     if (result) {
       toast(isAnchor ? "已取消全套参考图" : "已设为全套参考图，后续生成与改图将优先对齐本页风格");
@@ -788,10 +776,7 @@ function SlideEditor({
     const text = instruction.trim();
     if (!text || submitting || running) return;
     setSubmitting(true);
-    const result = await run({
-      kind: "refineSlide",
-      params: { slideId: slide.slideId, editInstruction: text },
-    });
+    const result = await run("refine-slide", { slideId: slide.slideId, editInstruction: text });
     setSubmitting(false);
     if (result) {
       notifyCreditsRefresh();
@@ -810,7 +795,7 @@ function SlideEditor({
     }
     setConfirmRegen(false);
     setSubmitting(true);
-    const result = await run({ kind: "generateSlide", params: { slideId: slide.slideId } });
+    const result = await run("generate-slide", { slideId: slide.slideId });
     setSubmitting(false);
     if (result) {
       notifyCreditsRefresh();
@@ -823,10 +808,7 @@ function SlideEditor({
   const selectVersion = async (versionId: string) => {
     if (selectingVersion || running) return;
     setSelectingVersion(versionId);
-    const result = await run({
-      kind: "commitVersion",
-      params: { slideId: slide.slideId, versionId },
-    });
+    const result = await run("select-slide-version", { slideId: slide.slideId, versionId });
     setSelectingVersion(null);
     if (!result) toast("切换版本失败，请重试。");
   };

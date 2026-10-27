@@ -6,6 +6,7 @@ import {
   generateSinglePage,
   getOwnedPage,
   listSingleProjectPageStatuses,
+  reconcileSingleProject,
   type SinglePageDeps,
   type SinglePageStatusView,
 } from '@/lib/server/generation/single-pages';
@@ -316,11 +317,12 @@ export async function startReplicateBatch(
   return { ...batch, reused: false };
 }
 
-/** 读取项目最新批量任务（重启遗留的 running 页由鉴权门统一收敛）。 */
+/** 读取项目最新批量任务；轮询时顺带收敛重启遗留的 running 页。 */
 export function getSinglePageBatchDetail(userId: string, projectId: string): SinglePageBatchDetail {
   const cleanProjectId = cleanString(projectId, 80);
   if (!cleanProjectId) throw validationError('缺少 projectId');
   findReplicateProject(userId, cleanProjectId);
+  reconcileSingleProject(userId, cleanProjectId);
   const pages = listSingleProjectPageStatuses(userId, cleanProjectId);
   const batch = latestBatch(userId, cleanProjectId);
   if (!batch) return { batch: null, pages };

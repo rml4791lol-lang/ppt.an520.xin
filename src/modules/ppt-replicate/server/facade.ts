@@ -2,13 +2,14 @@
 // 实现暂时逐项委托平台单页运行时（扣费/退款/版本/恢复全平台只有一份，不能在本模块另造）；
 // 后续把实体搬进本目录时只改这里，路由与平台调用面不动。
 import { estimateCredits } from '@/lib/server/credits';
-import { reconcileUser } from '@/lib/server/generation/recovery';
+import { reconcileSinglePage } from '@/lib/server/generation/recovery';
 import {
   getOwnedPage,
   getSingleProjectDetail,
   listPageVersions,
   listSingleProjectPageStatuses,
   listSingleProjectPages,
+  reconcileSingleProject,
   saveReplicateDraft as saveReplicateDraftOnPlatform,
   selectSinglePageVersion,
   type SinglePageRow,
@@ -79,7 +80,11 @@ export function quoteReplicateCredits(action: ReplicateBillingAction, pages = 1)
   return estimateCredits({ action, pages });
 }
 
-/** 收敛该用户全部中断任务；恢复只有平台一份入口（见 docs/DEBUG-HANDBOOK.md §4）。 */
-export function reconcileReplicateUser(userId: string): boolean {
-  return reconcileUser(userId) > 0;
+/** 读路径/轮询前收敛崩溃中断的页；返回是否修复（懒恢复语义见 docs/DEBUG-HANDBOOK.md §4）。 */
+export function reconcileReplicatePage(userId: string, pageId: string): boolean {
+  return reconcileSinglePage(userId, pageId);
+}
+
+export function reconcileReplicateProject(userId: string, projectId: string): boolean {
+  return reconcileSingleProject(userId, projectId);
 }

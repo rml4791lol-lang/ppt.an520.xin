@@ -3,6 +3,8 @@ import { requireUser } from '@/lib/server/auth';
 import { assertFeatureVisible } from '@/lib/server/feature-flags';
 import { defineApiRoute, paramOf } from '@/lib/server/generation/route';
 import { startDeckTextEditableExport } from '@/modules/editable-export/server/editable';
+import { exportIntentParams } from '@/lib/export-intents';
+import { readActionParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +15,8 @@ export const POST = defineApiRoute(async (request, ctx) => {
   const { user } = requireUser(request);
   assertFeatureVisible('editable_text_overlay', user);
   const id = await paramOf(ctx, 'id');
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = readActionParams(raw, (intent) => exportIntentParams('exportDeckTextEditable', intent));
   const started = await startDeckTextEditableExport(user.id, id, {}, { force: body.force === true });
   return jsonOk(
     {

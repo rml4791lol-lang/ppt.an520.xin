@@ -9,7 +9,6 @@ import { getDb, withTransaction, isUniqueViolation } from './db';
 import { getEnv } from './env';
 import { ApiError, validationError } from './http';
 import { grantSignupBonusTx } from './credits';
-import { reconcileUser } from './generation/recovery';
 import { hitRateLimit, resetRateLimit } from './rate-limit';
 
 const scrypt = promisify(scryptCallback);
@@ -256,9 +255,6 @@ export function getSessionByToken(token: string): SessionInfo | null {
 export function requireUser(request: Request): SessionInfo {
   const session = getSessionFromRequest(request);
   if (!session) throw new ApiError('UNAUTHORIZED', '请先登录', 401, false);
-  // 恢复跟身份走：用户态数据只会经由这道门被读写，收敛放这里，
-  // 新增读/写接口不必再接一次恢复（见 docs/DEBUG-HANDBOOK.md §4）。
-  reconcileUser(session.user.id);
   return session;
 }
 

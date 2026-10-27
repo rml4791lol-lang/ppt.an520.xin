@@ -57,7 +57,7 @@ NODE
 - 风格数据：`src/data/style-packs.ts` 保留 30 个稳定 id，公开过滤 2 个测试目录后展示 28 包；公开名称/slug 已整理，`legacySlugs` 兼容历史链接。`src/data/style-design-dna.ts` 为每包维护色板、栅格、装饰母题、场景和逐页参考类别。
 - 生成管线：`src/lib/server/generation/generate.ts`（估价→整单 402 预检→建 job→单套逐页并发 6；`images.ts` 再统一约束全站在途 20 / 每分钟启动 24→debit 幂等键 `deck-generate:{deckId}:{jobId}:{slideId}`→失败 refund）。每个已启动任务固定一次配置快照，管理员中途改模型、并发或密钥只影响后续任务。
 - 状态机：decks.ts（parsed→outlined→structured→confirmed→generating→generated/partial；stale 作废机制）。
-- **崩溃恢复（2026-08-20 上线）**：`src/lib/server/generation/recovery.ts`。重启/崩溃打断生成后，deck 卡 generating（409 死锁）、页卡 queued/running、已扣费页无退款的问题由懒恢复解决：鉴权门统一收敛（机制见本段末），把中断页收敛为 failed、deck 收敛为 partial/confirmed，并按 ledger **实扣金额**补退款（refund 幂等键与正常失败退款同格式，不双退）。判定依据 = job 心跳（每页完成刷新 `generation_jobs.updated_at`）超过 `ANPPT_V2_JOB_STALE_MS`（默认生图超时+2min，下限 5min）或 job 已终态；本进程活跃任务有注册表守卫不会误伤。**整批在途守卫（2026-08-24 修）**：deck 有活跃 job 时整体跳过收敛——页先置 queued、`slide_versions` 行要等蓝图/调度后才逐页落库，此前按「页最新版本所属旧 job 已死」判收敛会把在途页误置 failed，并对 refine/重生成页按旧版本误退原始扣费。单页扣费键存 `single_page_versions.charge_key`（老库懒迁移补列）。**ppt_to_base 懒恢复（2026-10-11 补）**：`ppt_to_base_jobs`（user_id/request_id/charge_key/status/updated_at）在**扣费前**落 running 行，懒恢复把超 `jobStaleMs` 的 running 残留行置 failed 并按 `charge_key` 补退款；读点 = 用户的任意鉴权请求（含站点头部每次加载都查的 `/api/credits/balance`），本进程在途任务有注册表守卫。**退款幂等键统一改为定长派生** `refund:<sha256(chargeKey)[0:32]>`（`credits.chargeRefundKeys`）——旧写法 `${chargeKey}:refund` 在超长键下会被 128 截断撞回扣费键，退款被 duplicate 静默吞掉。**单一收敛实现 + 读口自动接入（2026-10-27）**：原先分散在各生成类型里的三份收敛收成 `recovery.reconcileInterrupted(runs)`——生成类型只列「在途任务 + 收敛动作 + 扣费键」，判活、置终态、按实扣金额补退与日志由它统一做，整套 / 单页 / 可编辑导出 / ppt_to_base 共用。**唯一恢复入口（同日收口）**：`recovery.reconcileUser(userId)` 一次扫该用户的整套 / 单页 / ppt_to_base 三类在途任务，由 `requireUser` 在鉴权门触发；读函数、路由、动作分发都不再各自调用 `reconcile*`，新增读/写接口只要走鉴权门就自动收敛（新增读点无需写恢复代码，已用临时只读路由实测：新接口读一眼即解除死锁并补退，验证后删除）。可编辑导出仍留在模块自己的读路径（`getExport`/`listExports`）现场续跑——它需要模块的 async 管线，进不了同步鉴权门。层内语义不变：可编辑导出是**续跑**（重跑管线、不退星），其余是置 failed + 退星。
+- **崩溃恢复（2026-08-20 上线）**：`src/lib/server/generation/recovery.ts`。重启/崩溃打断生成后，deck 卡 generating（409 死锁）、页卡 queued/running、已扣费页无退款的问题由懒恢复解决：`getDeckState`/`startDeckGeneration`/单页读写入口触发 `reconcile*`，把中断页收敛为 failed、deck 收敛为 partial/confirmed，并按 ledger **实扣金额**补退款（refund 幂等键与正常失败退款同格式，不双退）。判定依据 = job 心跳（每页完成刷新 `generation_jobs.updated_at`）超过 `ANPPT_V2_JOB_STALE_MS`（默认生图超时+2min，下限 5min）或 job 已终态；本进程活跃任务有注册表守卫不会误伤。**整批在途守卫（2026-08-24 修）**：deck 有活跃 job 时整体跳过收敛——页先置 queued、`slide_versions` 行要等蓝图/调度后才逐页落库，此前按「页最新版本所属旧 job 已死」判收敛会把在途页误置 failed，并对 refine/重生成页按旧版本误退原始扣费。单页扣费键存 `single_page_versions.charge_key`（老库懒迁移补列）。**ppt_to_base 懒恢复（2026-10-11 补）**：`ppt_to_base_jobs`（user_id/request_id/charge_key/status/updated_at）在**扣费前**落 running 行，`reconcilePptToBase` 把超 `jobStaleMs` 的 running 残留行置 failed 并按 `charge_key` 补退款；读点 = 同用户下一次生成 + `/api/credits/balance`（站点头部每次加载都查余额），本进程在途任务有注册表守卫。**退款幂等键统一改为定长派生** `refund:<sha256(chargeKey)[0:32]>`（`credits.chargeRefundKeys`）——旧写法 `${chargeKey}:refund` 在超长键下会被 128 截断撞回扣费键，退款被 duplicate 静默吞掉。
 - **软删清理（同日上线）**：`projects.ts` `listProjects` 时懒清理软删超 `ANPPT_V2_PROJECT_RETENTION_DAYS`（默认 7 天）的项目——行级联删除（FK ON）+ 生成图删除（deck 整目录、单页按 version.image_path）；**复刻壳图**（`single_pages.shell_path` 与 `uploads/{userId}/replicate/` 中超期且未被在用页引用的文件）一并清；导出文件仍不清；**credit_ledger 永不删除**。
 
 ## 5. 计费与支付
@@ -108,8 +108,8 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 519 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 163 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
+node scripts/test-generation.mjs  # 当前 504 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
+node scripts/test-backend.mjs     # 当前 170 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
 npm run build
@@ -291,7 +291,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 ## 23. PPT 转模版底座（ppt_to_base，beta，2026-09-15）
 
 - 定位：§18 留下「需程序化底座」缺口的落地。工具页 `/tools/ppt-to-base`（侧栏入口按开关 `ppt_to_base` 门控，beta 期带「试验」标）。**输入是截图/PPT 图片，输出两样：①主标题原文（可复制）②去风格化通用模版底图**——版式栅格/区域位置大小/元素数量形状全保留，具体文字全部替换为中性角色词（"标题/副标题/正文/要点/标签/编号/图片/数据"），配色归一为中性浅色系（白底、浅灰分区、中灰线条、无 Logo/水印）。产物定位 = `templatePages` 真模板位图的通用化来源：拿到手填内容、换风格即可。
-- **主路线·截图 AI 通用化（5🌟/张）**：`POST /api/tools/ppt-to-base`（multipart：file=PNG ≤10MB + requestId；mutation 带 CSRF）。服务端 `src/modules/ppt-to-base/server/base-image.ts`：`assertFeatureVisible('ppt_to_base')` 硬门（开关外用户 404）→ 限流 `ppt-to-base:{uid}` 30 次/时 → `estimateCredits({action:'ppt_to_base'})` 取价（插件动作键 `tool.ppt-to-base`，§22 pricing 契约已映射）→ chargeKey `ppt-to-base:{uid}:{requestId}` 幂等扣费（duplicate→409，不重复扣；扣费前先落 `ppt_to_base_jobs` running 行）→ VLM 抽主标题（带图 vision 分段，**失败降级空串不阻塞主流程**）→ `editImage` 精准编辑 → `saveFile('generated',…,{kind:'ppt-to-base'})` 落盘（行置 succeeded）；任一步失败经定长派生退款键全退星星后抛 `toPublicImageError` 公开码，崩溃/重启打断则由 `recovery.reconcileUser` 在鉴权门补退（见 §4）。路由在解析 multipart 之前先做开关硬门 + content-length 预检（formData 会把整个 body 读进内存）。客户端先把任意截图 letterbox 成 1536×864 白底 PNG 再传（`client/image-prepare.ts`）。
+- **主路线·截图 AI 通用化（5🌟/张）**：`POST /api/tools/ppt-to-base`（multipart：file=PNG ≤10MB + requestId；mutation 带 CSRF）。服务端 `src/modules/ppt-to-base/server/base-image.ts`：`assertFeatureVisible('ppt_to_base')` 硬门（开关外用户 404）→ 限流 `ppt-to-base:{uid}` 30 次/时 → `estimateCredits({action:'ppt_to_base'})` 取价（插件动作键 `tool.ppt-to-base`，§22 pricing 契约已映射）→ chargeKey `ppt-to-base:{uid}:{requestId}` 幂等扣费（duplicate→409，不重复扣；扣费前先落 `ppt_to_base_jobs` running 行）→ VLM 抽主标题（带图 vision 分段，**失败降级空串不阻塞主流程**）→ `editImage` 精准编辑 → `saveFile('generated',…,{kind:'ppt-to-base'})` 落盘（行置 succeeded）；任一步失败经定长派生退款键全退星星后抛 `toPublicImageError` 公开码，崩溃/重启打断则走 `reconcilePptToBase` 补退（见 §4）。路由在解析 multipart 之前先做开关硬门 + content-length 预检（formData 会把整个 body 读进内存）。客户端先把任意截图 letterbox 成 1536×864 白底 PNG 再传（`client/image-prepare.ts`）。
 - 生图规范：编辑档默认走 `ANPPT_V2_IMAGE_EDIT_MODEL`（管理端运行时配置可热切换），image2.5 时代档名 `gpt-image-2.5-sunburst`（精准编辑）/ `gpt-image-2.5-flare`（快速）。编辑指令 `BASE_IMAGE_INSTRUCTION` 按 GPT Image 精准编辑最佳实践固化：点名参考图角色 → 改变项/保留项分离 → 不变量重复声明（构图/栅格/区域位置大小/元素数量/栏数/边距/16:9）→ 中性词逐字加引号 → 约束词频与原页面同类文字块数量一致、禁原文字与品牌残留。改提示词先改常量再跑 [7f] 契约断言。
 - image2.5 渠道实况（2026-09-15 校准记录）：an520 中转站已退役（503）；atlascloud 已上架 `openai/gpt-image-2.5-sunburst/edit`（IMAGE-TO-IMAGE，≤16 参考图），但**入参与现网 gpt-image-2/edit 不同**：图字段是 `images` 数组（现网灾备调用体用 `image` 单数），size 枚举无 1536x864，16:9 选 `2048x1152`，quality 新增 xhigh/max。主站恢复后切 2.5 只改 `ANPPT_V2_IMAGE_EDIT_MODEL`；若要灾备也上 2.5，需同步改 `images.ts` atlas 分支调用体。校准脚本 `output/ppt-to-base-e2e/calibrate-prompt.mjs`（主站默认 / 加 `atlas:` 前缀走灾备）。
 - **次路线·pptx 本地擦除（免费）**：页面底部折叠入口。上传 `.pptx`，浏览器本地 jszip + DOMParser 解析 OOXML 并重绘——不画任何文字，保留版式/配色/图片/装饰形状——导出 1536×864 底座 PNG + 槽位 JSON。无任何服务端路由、无计价；文件不出浏览器。渲染划界（有意为之）：文字一律不画只收槽位；graphicFrame（表格/图表/SmartArt）跳过并计数提示；未识别 prstGeom 回退 rect；渐变只近似线性、组旋转/flip 忽略。**文字已烧进位图的页面擦不掉**——那类页正由主路线覆盖，两路互补。
@@ -345,7 +345,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 请求侧：`/api/deck/parse` 在 `formData()` 前检查 content-length（防超限 body 整段进内存），并按用户限 60 次/小时；`/api/tools/replicate/plan` 按用户限 40 次/小时。
 - 查询：`getDeckState` 改为一次取整套 `slide_versions`（`listVersionsByDeck`），单页项目详情一次取项目版本（`listProjectVersions`），项目列表用相关子查询批量取页数与封面，避免逐项目/逐页 N+1。
 - 缓存：公开的 style-pack-categories / showcase-cases / site-config 加 `public` 缓存；style-packs / templates 加 `private, max-age=60` + `Vary: Cookie`。
-- 验证：`node scripts/test-generation.mjs` 497 断言、`node scripts/test-backend.mjs` 163 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
+- 验证：`node scripts/test-generation.mjs` 458 断言、`node scripts/test-backend.mjs` 142 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
 
 - 备份：`deploy/backup-db.sh` + `deploy/anppt-backup.timer`（每日 03:30，`VACUUM INTO` → gzip，保留 14 天，目录 `/opt/anppt-v2/shared/backups`）。已做一次恢复校验：解压后 `PRAGMA integrity_check=ok`，用户/钱包/订单表可读。备份只含 SQLite；uploads/generated/exports 需另行归档。
 - 本机压测基线（2026-10-19，本地 `next start`，非生产 SLA）：20 用户、100 个 deck、600 次 `/api/me` + `/api/projects` + `/api/style-packs` 并发读，40 并发下 p50 18.4ms / p95 34.7ms / p99 115.2ms，0 失败；空库 600 请求 p95 24.7ms。生产进程常驻 RSS 约 195MB（峰值 246MB），远端可用内存 6.2GB。
@@ -360,11 +360,10 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/test-generation.mjs` 当前 458 断言，全部 mock，禁止真实付费调用。
 - 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。WPS 另用真实登录态跑通 `convertPdfWithWpsAippt`：1 页 PDF → 10,591 bytes PPTX，`slides/slide1.xml` 含可编辑 `<a:t>` 文本节点且无整页媒体图片；该验收命令不进测试套件。
 
-## 29. deck typed intent 与工作台可用性（2026-10-27）
+## 29. typed intent 动作通道（2026-10-27）
 
-- 契约：`src/lib/deck-intents.ts` 是客户端与路由共用的一份意图声明——20 个 kind ↔ 20 个旧动作名（`DECK_INTENT_ACTIONS` 双射由测试钉住）；`DeckIntentExtra` 声明每个意图的响应附带字段。响应恒为「全量 deck 状态 + 该意图 extra」平铺，前端用 `DeckIntentResult<kind>` 按 kind 取字段，不再从展开对象猜形状。
-- 路由：`POST /api/deck/[id]` 先用 `parseDeckRequest` 在边界把原始 JSON 收窄成 `DeckRequest`（`{intent}` 或旧 `{action, params}`），之后不再传未收窄 body；`dispatchDeckRequest` 只做通道分派，开关硬门/冻结校验/扣费/幂等全在 `dispatchDeckAction`。旧脚本发 `{action, ...params}` 时参数收进 params，语义与错误码不变。
-- 工作台：`src/lib/client/deck-api.ts` 只保留 `deckIntentAction`（body 为 `{intent:{kind,params}}`），四步组件统一走 `DeckCtx.run(intent)`；生成/重试/换风格/提交版本的既有行为与扣费语义未改。
-- 可用性：`src/lib/client/deck-availability.ts` 的 `deriveDeckAvailability(state)` 是「哪些按钮可点」的唯一推导（`canGenerate/allGenerated/canExport/canRetryFailed/pendingStructure` 等），各步组件不再各写布尔条件；saving/editor/弹窗这类局部 UI 态仍归组件。
-- 失败语义：非法意图 → `VALIDATION_ERROR`（未知意图）；参数深校验仍由动作自身执行；响应仍是 200/202 + 全量 state，客户端拿到即 setState，不等轮询。
-- 测试：`scripts/tests/deck-intents.test.mjs`（[4d]）钉双射/适配器/解析/路由意图与旧信封/冻结门与开关硬门；`scripts/tests/deck-workbench.test.mjs`（[4e]）钉意图请求体、按意图收窄的响应、可用性推导与静态约束（链路无 `Record<string, unknown>` 请求体、无 `run("action")`、无 `deckAction`）。
+- 机制：写动作以判别式意图 `{kind, params}` 表达。deck 20 个动作（`src/lib/deck-intents.ts`）、单页 5 个（`src/lib/single-page-intents.ts`）、导出 4 个（`src/lib/export-intents.ts`）、后台 5 个（`src/lib/admin-intents.ts`）各带一份「意图 → 动作名/路由」适配器；客户端只发 `{intent}` 信封，路径与方法由适配器决定，组件与路由都不再各自抄一份清单。
+- 路由：`src/lib/server/intents.ts` 的 `readActionParams()` 解信封——kind 必须是该路由声明的那一个，未知/错配一律 400 `VALIDATION_ERROR`，不静默降级；参数深校验、扣费、幂等键、开关硬门、内容冻结仍留在原动作里，信封不复制语义。
+- 兼容：旧的无类型 body 与 deck 的 `body.action` 入口完全保留（deck 走 `dispatchDeckRequest`，其余路由走 `readActionParams` 的直通分支）；收缩票删除兼容分支前，两条通道同语义。
+- 未纳入（刻意）：读接口按能力命名（§7）；multipart 上传（`/api/assets/upload`、`/api/editable-conversions`）没有 JSON body；复刻美化批量/草稿（`/api/single-page/batch|draft`）随模块 facade 票归拢；后台读接口（overview/config/flags/problems/finance）仍按读处理。
+- 测试：`scripts/tests/deck-intents.test.mjs`（[4d]）钉 deck 意图↔动作双射；`scripts/tests/surface-intents.test.mjs`（[4e]/[10b]）钉单页/导出/后台的意图↔路由、解析护栏、适配器错配 400，以及版本选择/导出报价/后台配置三条真实路由的意图端到端（全程 mock，零付费调用）。

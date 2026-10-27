@@ -501,7 +501,8 @@ export async function runPptReplicateTests(ctx) {
         && facadeQuote.unitPrice === platformQuote.unitPrice
         && facadeQuote.credits === platformQuote.credits);
     check('facade 懒恢复入口委托平台（无中断时不改状态）',
-      facade.reconcileReplicateUser(uid) === false
+      facade.reconcileReplicatePage(uid, 'rp-facade-1') === false
+        && facade.reconcileReplicateProject(uid, facadeDraft.projectId) === false
         && facade.getReplicatePage(uid, 'rp-facade-1').status === 'succeeded');
     check('facade 暴露复刻提示词契约（平台唯一调用面）',
       facade.resolveReplicateColorMode('new-theme') === 'new-theme'

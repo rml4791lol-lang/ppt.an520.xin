@@ -18,6 +18,13 @@ import {
   UsersIcon,
 } from "@/components/icons";
 import { apiFetch } from "@/lib/client/api";
+import {
+  checkAdminIntegration,
+  generateRedemptionCodes,
+  setAdminFeatureFlag,
+  setAdminUserRole,
+  updateAdminConfig,
+} from "@/lib/client/admin-api";
 
 type ConfigGroup = "llm" | "image" | "editable" | "capacity";
 type ConfigSource = "runtime" | "environment" | "default" | "missing";
@@ -407,10 +414,7 @@ export function AdminClient({ admin }: AdminClientProps) {
     }
     setBusyAction("save-config");
     try {
-      const result = await apiFetch<{ config: ConfigPayload }>("/api/admin/config", {
-        method: "PUT",
-        body: { values, clearKeys: [...clearKeys] },
-      });
+      const result = await updateAdminConfig<{ config: ConfigPayload }>({ values, clearKeys: [...clearKeys] });
       setConfig(result.config);
       setDraft({});
       setClearKeys(new Set());
@@ -431,10 +435,7 @@ export function AdminClient({ admin }: AdminClientProps) {
     }
     setBusyAction(`check-${kind}`);
     try {
-      const result = await apiFetch<CheckResult>("/api/admin/integrations/check", {
-        method: "POST",
-        body: { kind, values },
-      });
+      const result = await checkAdminIntegration<CheckResult>({ kind, values });
       setCheckResults((current) => ({ ...current, [kind]: result }));
       showToast(result.message);
     } catch (error) {
@@ -448,10 +449,7 @@ export function AdminClient({ admin }: AdminClientProps) {
     const nextRole = user.role === "tester" ? "user" : "tester";
     setBusyAction(`role-${user.id}`);
     try {
-      await apiFetch<{ role: string }>(`/api/admin/users/${encodeURIComponent(user.id)}/role`, {
-        method: "POST",
-        body: { role: nextRole },
-      });
+      await setAdminUserRole({ userId: user.id, role: nextRole });
       showToast(nextRole === "tester" ? `${user.displayName} 已设为测试用户` : `${user.displayName} 已取消测试用户`);
       await loadFull(true);
     } catch (error) {
@@ -464,10 +462,7 @@ export function AdminClient({ admin }: AdminClientProps) {
   const setFlag = async (key: string, state: FeatureFlagState) => {
     setBusyAction(`flag-${key}`);
     try {
-      const result = await apiFetch<{ flags: FeatureFlag[] }>("/api/admin/feature-flags", {
-        method: "PUT",
-        body: { key, state },
-      });
+      const result = await setAdminFeatureFlag<{ flags: FeatureFlag[] }>({ key, state });
       setFlags(result.flags);
       showToast("功能开关已更新");
     } catch (error) {
@@ -480,14 +475,11 @@ export function AdminClient({ admin }: AdminClientProps) {
   const generateCodes = async () => {
     setBusyAction("generate-codes");
     try {
-      const result = await apiFetch<{ codes: string[] }>("/api/admin/redemption-codes", {
-        method: "POST",
-        body: {
-          credits: Number(codeForm.credits),
-          count: Number(codeForm.count),
-          batch: codeForm.batch,
-          expiresDays: codeForm.expiresDays ? Number(codeForm.expiresDays) : null,
-        },
+      const result = await generateRedemptionCodes<{ codes: string[] }>({
+        credits: Number(codeForm.credits),
+        count: Number(codeForm.count),
+        batch: codeForm.batch,
+        expiresDays: codeForm.expiresDays ? Number(codeForm.expiresDays) : null,
       });
       setGeneratedCodes(result.codes);
       showToast(`已生成 ${result.codes.length} 张兑换码，明文仅在这里展示`);

@@ -7,6 +7,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { ApiError } from '../http';
 import { withTransaction } from '../db';
 import { genId, getGenDb, nowMs } from './db';
+import { reconcileDeckGeneration } from './recovery';
 import {
   cleanString,
   cleanStringArray,
@@ -672,7 +673,9 @@ export function updateSlideGen(
 // ---------- 全量状态（前端 2.5s 轮询用） ----------
 
 export function getDeckState(userId: string, deckId: string) {
-  const deck = getOwnedDeck(userId, deckId);
+  let deck = getOwnedDeck(userId, deckId);
+  // 懒恢复：重启/崩溃留下的 generating 死锁与孤儿扣费在读状态时收敛
+  if (reconcileDeckGeneration(deck)) deck = getOwnedDeck(userId, deck.id);
   const slides = listSlides(deck.id);
   const job = latestJob(deckId);
   const versionsBySlide = new Map<string, SlideVersionRow[]>();

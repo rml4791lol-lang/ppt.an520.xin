@@ -1,9 +1,10 @@
 // 整套 PPT（deck）工作台 API 客户端。
 // 类型对齐 src/lib/server/generation/decks.ts 的 getDeckState 返回（后端已实现）。
-import { apiFetch } from "./api";
-import type { DeckIntent, DeckIntentExtra, DeckIntentKind, SlideRole } from "../deck-intents";
+import { apiFetch, dispatchIntent } from "./api";
+import type { DeckActionName, DeckIntent, SlideRole } from "../deck-intents";
+import { toExportActionCall, type ExportIntent } from "../export-intents";
 
-export type { DeckIntent, DeckSlideDraft, DeckSlidePatch, SlideRole } from "../deck-intents";
+export type { SlideRole } from "../deck-intents";
 
 export type DeckStatus =
   | "parsed"
@@ -96,19 +97,44 @@ export interface DeckState {
   contentLocked: boolean;
 }
 
-/** 意图的响应 data = 全量 state + 该意图的 extra 平铺（见 actions.ts 路由） */
-export type DeckIntentResult<K extends DeckIntentKind> = DeckState & DeckIntentExtra[K];
+/** 写 action 的响应 data = 全量 state + extra 字段平铺（见 actions.ts 路由） */
+export interface DeckActionResult extends DeckState {
+  [key: string]: unknown;
+}
+
+/** 动作名与意图契约同一份声明（src/lib/deck-intents.ts），避免两处清单漂移 */
+export type DeckAction = DeckActionName;
+
+export interface OutlineSlidePatch {
+  role?: SlideRole;
+  chapter?: string;
+  pageType?: string;
+  title?: string;
+  goal?: string;
+  rawText?: string;
+  summary?: string[];
+  visualNote?: string;
+  structuredContent?: string;
+}
 
 export function getDeckState(deckId: string): Promise<DeckState> {
   return apiFetch<DeckState>(`/api/deck/${encodeURIComponent(deckId)}`);
 }
 
-/** 意图 RPC：POST /api/deck/{id} {intent}，响应按意图收窄（附带字段由 kind 决定） */
-export function deckIntentAction<K extends DeckIntentKind>(
+/** action RPC：POST /api/deck/{id} {action, ...params}，响应即最新全量状态 */
+export function deckAction(
   deckId: string,
-  intent: Extract<DeckIntent, { kind: K }>,
-): Promise<DeckIntentResult<K>> {
-  return apiFetch<DeckIntentResult<K>>(`/api/deck/${encodeURIComponent(deckId)}`, {
+  action: DeckAction,
+  params: Record<string, unknown> = {},
+): Promise<DeckActionResult> {
+  return apiFetch<DeckActionResult>(`/api/deck/${encodeURIComponent(deckId)}`, {
+    body: { action, ...params },
+  });
+}
+
+/** 意图通道：同一条 RPC，body 换成 { intent }；路由侧适配器还原成动作名与参数 */
+export function deckIntentAction(deckId: string, intent: DeckIntent): Promise<DeckActionResult> {
+  return apiFetch<DeckActionResult>(`/api/deck/${encodeURIComponent(deckId)}`, {
     body: { intent },
   });
 }
@@ -120,11 +146,14 @@ export interface DeckExportResult {
   kind: "image";
 }
 
+/** 导出动作经 typed intent 分发：路径与信封由 src/lib/export-intents.ts 决定 */
+function sendExportIntent<T>(intent: ExportIntent): Promise<T> {
+  return dispatchIntent<T>(toExportActionCall(intent), intent);
+}
+
 /** 图片集 PPTX 导出（免费）。响应用 url 字段（后端 exports.ts 的 ExportResult） */
 export function exportDeckImage(deckId: string): Promise<DeckExportResult> {
-  return apiFetch<DeckExportResult>(`/api/deck/${encodeURIComponent(deckId)}/export-image`, {
-    body: {},
-  });
+  return sendExportIntent({ kind: "exportDeckImage", params: { deckId } });
 }
 
 export interface EditableExportStart {
@@ -142,16 +171,12 @@ export interface EditableExportStart {
 
 /** 可编辑 PPTX 导出（20🌟/页，WPS 免费优先 / Image2PPT / Codia 备用）：202 返回任务句柄，结果轮询 getExportRecord */
 export function startEditableExport(deckId: string, force = false): Promise<EditableExportStart> {
-  return apiFetch<EditableExportStart>(`/api/deck/${encodeURIComponent(deckId)}/export-editable`, {
-    body: { force },
-  });
+  return sendExportIntent({ kind: "exportDeckEditable", params: { deckId, force } });
 }
 
 /** 轻量文字可编辑 PPTX 导出（5🌟/页，VLM 覆盖层链，beta 开关功能） */
 export function startTextEditableExport(deckId: string, force = false): Promise<EditableExportStart> {
-  return apiFetch<EditableExportStart>(`/api/deck/${encodeURIComponent(deckId)}/export-editable-text`, {
-    body: { force },
-  });
+  return sendExportIntent({ kind: "exportDeckTextEditable", params: { deckId, force } });
 }
 
 /** 当前用户功能可见性地图（开关板驱动，未开放功能前端据此隐藏入口） */

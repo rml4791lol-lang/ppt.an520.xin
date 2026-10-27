@@ -28,7 +28,7 @@ import {
   type DeckContext,
   type SlidePromptInput,
 } from './style-packs';
-import { markJobActive, markJobDone } from './recovery';
+import { markJobActive, markJobDone, reconcileDeckGeneration } from './recovery';
 import { ensureDeckBlueprint } from './blueprint';
 import { buildOutlinePageMapping, resolveTemplateReferenceImage, type TemplateRouteContext } from './mapping';
 import { getTemplate, getTemplatePages, resolveTemplateKind } from '../templates';
@@ -275,7 +275,9 @@ export async function startDeckGeneration(
 ): Promise<StartedJob> {
   const config = deps.config ?? getGenerationConfig();
   const runDeps: GenerateDeps = { ...deps, config };
-  const deck = getOwnedDeck(userId, deckId);
+  let deck = getOwnedDeck(userId, deckId);
+  // 先收敛历史中断（重启死锁/孤儿扣费），否则卡死的 generating 会永远 409
+  if (reconcileDeckGeneration(deck)) deck = getOwnedDeck(userId, deckId);
   assertGeneratable(deck);
   const allSlides = listSlides(deck.id);
   if (allSlides.length === 0) throw new ApiError('NO_SLIDES', '大纲为空，请先生成大纲', 400, false);
@@ -397,6 +399,7 @@ export async function startDeckGeneration(
     });
     markJobDone(job.jobId);
     updateJob(job.jobId, { status: 'failed', error: '生成管线异常中断，请重试失败页' });
+    reconcileDeckGeneration(getOwnedDeck(deck.userId, deck.id));
   }).finally(() => {
     markJobDone(job.jobId);
   });

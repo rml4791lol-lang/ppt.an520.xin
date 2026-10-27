@@ -91,6 +91,14 @@ export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Pro
   return json.data as T;
 }
 
+/** typed intent 分发：路径/方法由意图适配器决定，请求体只发 { intent } */
+export function dispatchIntent<T>(
+  target: { path: string; method: "POST" | "PUT" },
+  intent: unknown,
+): Promise<T> {
+  return apiFetch<T>(target.path, { method: target.method, body: { intent } });
+}
+
 export interface SessionInfo {
   authenticated: boolean;
   user: { id: string; username: string } | null;

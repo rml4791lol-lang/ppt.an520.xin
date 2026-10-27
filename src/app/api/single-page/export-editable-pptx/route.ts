@@ -3,6 +3,8 @@ import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { startSinglePageEditableExport } from '@/modules/editable-export/server/editable';
 import { cleanString } from '@/lib/server/generation/types';
+import { singlePageIntentParams } from '@/lib/single-page-intents';
+import { readActionParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,7 +12,8 @@ export const dynamic = 'force-dynamic';
 /** 单页项目可编辑 PPTX 导出（20🌟/页，WPS 免费优先 / Image2PPT / Codia 备用）：建行扣费后后台转换，202 返回任务句柄 */
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = readActionParams(raw, (intent) => singlePageIntentParams('exportEditablePptx', intent));
   const projectId = cleanString(body?.projectId, 80);
   if (!projectId) throw validationError('缺少 projectId');
   const started = await startSinglePageEditableExport(user.id, projectId, {}, { force: body.force === true });

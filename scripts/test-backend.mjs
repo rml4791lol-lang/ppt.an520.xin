@@ -8,6 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { registerTsHooks } from './ts-hooks.mjs';
 import { runClientApiTests } from './tests/client-api.test.mjs';
+import { runAdminIntentTests } from './tests/surface-intents.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
@@ -432,6 +433,8 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   check('可编辑 provider 支持 wps 且 WPS Cookie 可保存',
     adminConfig.normalizeAdminConfigValue('ANPPT_V2_EDITABLE_PROVIDER', 'wps') === 'wps'
       && adminConfig.normalizeAdminConfigValue('ANPPT_V2_WPS_AIPPT_COOKIE', 'wps_sid=test; uid=1') === 'wps_sid=test; uid=1');
+
+  await runAdminIntentTests({ check, expectThrows, adminRequest, configRoute });
 
   const integrationCalls = [];
   const integrationFetch = async (url, init) => {
