@@ -8,7 +8,7 @@ import { findUserById } from '../auth';
 import { assertFeatureVisible } from '../feature-flags';
 import { getGenerationConfig } from './config';
 import { genId, getGenDb, nowMs } from './db';
-import { markSinglePageActive, markSinglePageDone, reconcileSinglePage } from './recovery';
+import { markSinglePageActive, markSinglePageDone } from './recovery';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { parseOwnedUploadRelPath, readSiteFile, saveFile } from './storage';
 import {
@@ -19,8 +19,6 @@ import {
   type SlidePromptInput,
 } from './style-packs';
 import { cleanString } from './types';
-// 复刻分支只认模块 facade；facade 反向委托本文件的实体实现，循环引用是过渡态，
-// 两边都只在运行期取值（模块顶层不读对方绑定），搬完实体即可解开。
 import {
   buildReplicateCopyPrompt,
   buildReplicateInstruction,
@@ -28,7 +26,7 @@ import {
   resolveReplicateColorMode,
   type ReplicateColorMode,
   type SlideStructureCard,
-} from '@/modules/ppt-replicate/server/facade';
+} from '@/modules/ppt-replicate/server/replicate';
 
 export type SinglePageDeps = ImageDeps;
 
@@ -512,8 +510,6 @@ export async function generateSinglePage(
   if (projectIdToCheck && !replicate && readProjectSource(userId, projectIdToCheck) === 'replicate') {
     throw new ApiError('REPLICATE_PROJECT', '这是美化作品，请到 PPT 美化继续生成', 409, false);
   }
-  // 先收敛历史中断（否则卡 running 的页会永远 409），upsertPage 内部再做运行中检查
-  reconcileSinglePage(userId, cleanPageId(input.pageId));
   const page = upsertPage(userId, {
     ...input,
     pageId: cleanPageId(input.pageId),
@@ -540,7 +536,6 @@ export async function refineSinglePage(
   input: { pageId: string; editInstruction: string; requestId?: string },
   deps: SinglePageDeps = {},
 ): Promise<SingleRunResult> {
-  reconcileSinglePage(userId, cleanPageId(input.pageId));
   const page = getOwnedPage(userId, input.pageId);
   if (readProjectSource(userId, page.projectId) === 'replicate') {
     assertFeatureVisible('ppt_replicate', findUserById(userId));
@@ -582,8 +577,6 @@ export function listSingleProjectPageStatuses(userId: string, projectId: string)
     .prepare('SELECT id FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
     .get(cleanString(projectId, 80), userId) as Row | undefined;
   if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
-  // 读点即收敛：批量状态轮询也要能解除中断页，调用方不必自己记得恢复
-  reconcileSingleProject(userId, String(project.id));
   const rows = db
     .prepare(
       `SELECT p.id, p.page_index, p.status, p.error, p.active_version_id, p.updated_at,
@@ -603,16 +596,6 @@ export function listSingleProjectPageStatuses(userId: string, projectId: string)
     imageUrl: String(row.image_url || ''),
     updatedAt: Number(row.updated_at),
   }));
-}
-
-/** 打开项目/轮询批量状态前收敛崩溃中断页，返回是否有页面被修复。 */
-export function reconcileSingleProject(userId: string, projectId: string): boolean {
-  let changed = false;
-  for (const page of listSingleProjectPages(userId, projectId)) {
-    if (page.status !== 'queued' && page.status !== 'running') continue;
-    changed = reconcileSinglePage(userId, page.pageId) || changed;
-  }
-  return changed;
 }
 
 export function getActiveVersionImagePath(page: SinglePageRow): string {
@@ -682,7 +665,6 @@ export function getSingleProjectDetail(userId: string, projectId: string) {
     .prepare('SELECT * FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
     .get(cleanString(projectId, 80), userId) as Row | undefined;
   if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
-  reconcileSingleProject(userId, String(project.id));
   const versionsByPage = listProjectVersions(String(project.id));
   const pages = listSingleProjectPages(userId, String(project.id)).map((page) => ({
     ...page,

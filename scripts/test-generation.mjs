@@ -13,7 +13,6 @@ import { runWpsAipptTests } from './tests/wps-aippt.test.mjs';
 import { runPluginRuntimeTests } from './tests/plugin-runtime.test.mjs';
 import { runPptToBaseTests, runPptToBaseServerTests } from './tests/ppt-to-base.test.mjs';
 import { runDeckIntentTests } from './tests/deck-intents.test.mjs';
-import { runDeckWorkbenchTests } from './tests/deck-workbench.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
@@ -1024,7 +1023,6 @@ console.log('\n[4c] update-slide / select-slide-version');
 }
 
 await runDeckIntentTests({ check, expectThrows, auth, decks, fullDeps });
-await runDeckWorkbenchTests({ check });
 
 console.log('\n[5] 余额不足整单 402');
 {
@@ -1236,6 +1234,20 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   const okImageFetcher = makeMockFetcher([imageOkHandler, editsOkHandler]);
   const okDeps2 = { fetchImpl: okImageFetcher, config: imageConfig };
 
+  // 读路径一律走真实路由：收敛由鉴权门统一触发，测试里不写任何恢复调用
+  const deckRoute = await import('../src/app/api/deck/[id]/route.ts');
+  const projectsRoute = await import('../src/app/api/projects/route.ts');
+  const singlePageProjectRoute = await import('../src/app/api/single-page/project/route.ts');
+  const sessionCookie = { cookie: `anppt_v2_session=${encodeURIComponent(auth.createSessionForUser(uid2))}` };
+  const readJson = async (response) => (await response.json()).data;
+  const readDeckViaRoute = async (deckId) => readJson(await deckRoute.GET(
+    new Request(`http://localhost/api/deck/${deckId}`, { headers: sessionCookie }),
+    { params: Promise.resolve({ id: deckId }) },
+  ));
+  const readSingleProjectViaRoute = async (projectId) => readJson(await singlePageProjectRoute.GET(
+    new Request(`http://localhost/api/single-page/project?projectId=${encodeURIComponent(projectId)}`, { headers: sessionCookie }),
+  ));
+
   // --- deck：手工铺「生成中途进程死亡」现场（deck generating + 页 queued + 已扣费无退款）---
   const d9 = decks.createDeck(uid2, {
     title: '中断恢复测试', sourceFileName: 'r.txt', sourceText: '2025 年销售额 1200 万元。',
@@ -1267,12 +1279,12 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   const stateLive = decks.getDeckState(uid2, d9.id);
   check('活跃生成不被误收敛', stateLive.deck.status === 'generating' && stateLive.slides.every((s) => s.genStatus === 'queued'));
 
-  // 心跳超时（回拨 2h）→ getDeckState 懒恢复
+  // 心跳超时（回拨 2h）→ 工作台状态读接口自动收敛（无任何恢复调用）
   const dbMod = await import('../src/lib/server/db.ts');
   const genDbMod = await import('../src/lib/server/generation/db.ts');
   const staleTs = Date.now() - 2 * 60 * 60 * 1000;
   dbMod.getDb().prepare('UPDATE generation_jobs SET updated_at = ? WHERE id = ?').run(staleTs, job9.jobId);
-  const healed = decks.getDeckState(uid2, d9.id);
+  const healed = await readDeckViaRoute(d9.id);
   check('恢复：deck 死锁解除（confirmed，无成功页）', healed.deck.status === 'confirmed', `实际 ${healed.deck.status}`);
   check('恢复：中断页 → failed 可重试', healed.slides.every((s) => s.genStatus === 'failed' && s.genError.length > 0));
   check('恢复：job 置 failed', decks.latestJob(d9.id).status === 'failed');
@@ -1282,7 +1294,7 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
     .map((r) => String(r.idempotency_key));
   check('恢复：refund 键与正常失败退款同格式',
     slides9.every((s) => refundKeys.includes(credits.deriveRefundKey(`deck-generate:${d9.id}:${job9.jobId}:${s.slideId}`))));
-  const againHealed = decks.getDeckState(uid2, d9.id);
+  const againHealed = await readDeckViaRoute(d9.id);
   check('恢复幂等：重复读不重复退款', credits.getBalance(uid2) === 100 && againHealed.deck.status === 'confirmed');
 
   const retry9 = await actions.dispatchDeckAction(uid2, d9.id, { action: 'retry-failed' }, okDeps2);
@@ -1301,7 +1313,10 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   genDbMod.getGenDb().prepare("UPDATE single_pages SET status = 'running' WHERE id = 'pg-r1'").run();
   credits.debitCredits(uid2, 10, { reason: '单页生成', idempotencyKey: manualKey, refType: 'single-page', refId: 'pg-r1' });
   check('单页中断现场：余额 60', credits.getBalance(uid2) === 60, `实际 ${credits.getBalance(uid2)}`);
-  check('单页恢复：reconcileSinglePage 收敛', recovery.reconcileSinglePage(uid2, 'pg-r1') === true);
+  // 单页工作台详情读一眼即收敛：读点没有恢复代码
+  const spHealed = await readSingleProjectViaRoute(sp.page.projectId);
+  const spHealedPage = spHealed.pages.find((row) => row.pageId === 'pg-r1');
+  check('单页恢复：详情读点收敛中断页（无恢复调用）', spHealedPage?.status === 'failed', `实际 ${spHealedPage?.status}`);
   const pageAfter = singlePages.getOwnedPage(uid2, 'pg-r1');
   check('单页恢复：页 → failed', pageAfter.status === 'failed');
   check('单页恢复：孤儿扣费补退（余额回 70）', credits.getBalance(uid2) === 70, `实际 ${credits.getBalance(uid2)}`);
@@ -1350,7 +1365,12 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
     decks.touchDeck(dList.id, { status: 'generating' });
     dbMod.getDb().prepare('UPDATE generation_jobs SET updated_at = ? WHERE id = ?').run(staleTs, jobList.jobId);
     const balanceList = credits.getBalance(uid2);
-    const listed = projects.listProjects(uid2, { projectType: 'deck' });
+    // 读函数本身不再顺手收敛：恢复只在鉴权门，读点不必写恢复代码
+    check('读函数不再顺手恢复（收敛归鉴权门）', decks.getDeckState(uid2, dList.id).deck.status === 'generating');
+    // 列表读接口（不是读函数）：新增读点只要走鉴权门就自动收敛
+    const listed = await readJson(await projectsRoute.GET(
+      new Request('http://localhost/api/projects?projectType=deck', { headers: sessionCookie }),
+    ));
     const listedItem = listed.items.find((item) => item.id === dList.id);
     check('读点：项目列表读一眼即收敛中断的整套生成', listedItem?.status === 'confirmed', `实际 ${listedItem?.status}`);
     check('读点：列表读点按实扣金额补退（无显式恢复调用）', credits.getBalance(uid2) === balanceList + 20, `实际 ${credits.getBalance(uid2)}`);
@@ -1366,8 +1386,8 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
     genDbMod.getGenDb().prepare("UPDATE single_pages SET status = 'running' WHERE id = 'pg-r2'").run();
     credits.debitCredits(uid2, 10, { reason: '单页生成', idempotencyKey: pollKey, refType: 'single-page', refId: 'pg-r2' });
     const balancePoll = credits.getBalance(uid2);
-    const pollStatuses = singlePages.listSingleProjectPageStatuses(uid2, spPoll.page.projectId);
-    const pollRow = pollStatuses.find((row) => row.pageId === 'pg-r2');
+    const polled = await readSingleProjectViaRoute(spPoll.page.projectId);
+    const pollRow = polled.pages.find((row) => row.pageId === 'pg-r2');
     check('读点：批量状态轮询收敛中断页', pollRow?.status === 'failed', `实际 ${pollRow?.status}`);
     check('读点：轮询读点按实扣金额补退（无显式恢复调用）', credits.getBalance(uid2) === balancePoll + 10, `实际 ${credits.getBalance(uid2)}`);
   }

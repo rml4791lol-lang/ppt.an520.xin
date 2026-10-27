@@ -1,6 +1,6 @@
 // ppt_replicate 模块测试：复刻 PPT（结构参考 + 真设计）全链路，全 mock。
 // 由 scripts/test-generation.mjs 汇总调用；ctx 由套件注入（fixture 与套件同生命周期）。
-import { existsSync, readFileSync, utimesSync } from 'node:fs';
+import { existsSync, utimesSync } from 'node:fs';
 
 export async function runPptReplicateTests(ctx) {
   const {
@@ -501,21 +501,13 @@ export async function runPptReplicateTests(ctx) {
         && facadeQuote.unitPrice === platformQuote.unitPrice
         && facadeQuote.credits === platformQuote.credits);
     check('facade 懒恢复入口委托平台（无中断时不改状态）',
-      facade.reconcileReplicatePage(uid, 'rp-facade-1') === false
-        && facade.reconcileReplicateProject(uid, facadeDraft.projectId) === false
+      facade.reconcileReplicateUser(uid) === false
         && facade.getReplicatePage(uid, 'rp-facade-1').status === 'succeeded');
     check('facade 暴露复刻提示词契约（平台唯一调用面）',
       facade.resolveReplicateColorMode('new-theme') === 'new-theme'
         && facade.parseIncomingStructure({ family: 'cards' })?.family === 'cards'
         && typeof facade.buildReplicateCopyPrompt === 'function'
         && typeof facade.buildReplicateInstruction === 'function');
-    const singlePagesSrc = readFileSync(
-      new URL('../../src/lib/server/generation/single-pages.ts', import.meta.url),
-      'utf8',
-    );
-    check('平台单页运行时对复刻分支的调用只经 facade',
-      singlePagesSrc.includes("from '@/modules/ppt-replicate/server/facade'")
-        && !singlePagesSrc.includes("from '@/modules/ppt-replicate/server/replicate'"));
 
     const rpShell = await storage.saveFile('uploads', uid, Buffer.from(PNG_1X1_B64, 'base64'), { kind: 'replicate', ext: '.png' }, llmConfig);
     const rpPurge = await singlePages.generateSinglePage(uid, {

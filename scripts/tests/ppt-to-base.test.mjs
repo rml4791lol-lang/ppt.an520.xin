@@ -179,15 +179,21 @@ export async function runPptToBaseServerTests(ctx) {
     "INSERT INTO ppt_to_base_jobs (id, user_id, request_id, charge_key, status, error, created_at, updated_at) VALUES (?, ?, ?, ?, 'running', '', ?, ?)",
   ).run(crashJobId, tid, 'p2b-crash', crashChargeKey, Date.now(), Date.now());
   check('中断现场：已扣 5🌟 且未退回', credits.getBalance(tid) === beforeCrash - 5);
+  const recovery = await import('../../src/lib/server/generation/recovery.ts');
   check('在途未超时不误收敛',
-    baseImage.reconcilePptToBase(tid) === false && credits.getBalance(tid) === beforeCrash - 5);
+    recovery.reconcileUser(tid) === 0 && credits.getBalance(tid) === beforeCrash - 5);
   const staleAt = Date.now() - 2 * 60 * 60 * 1000;
   genDb.prepare('UPDATE ppt_to_base_jobs SET created_at = ?, updated_at = ? WHERE id = ?').run(staleAt, staleAt, crashJobId);
-  check('超时残留行被懒恢复收敛', baseImage.reconcilePptToBase(tid) === true);
-  check('中断任务补退实扣金额（余额回原值）', credits.getBalance(tid) === beforeCrash, `实际 ${credits.getBalance(tid)}`);
+  // 余额读接口（站点头部每次加载）：不写恢复代码也能补退中断的底座任务
+  const balanceRoute = await import('../../src/app/api/credits/balance/route.ts');
+  const balanceResponse = await balanceRoute.GET(new Request('http://localhost/api/credits/balance', {
+    headers: { cookie: `anppt_v2_session=${encodeURIComponent(auth.createSessionForUser(tid))}` },
+  }));
+  const balanceBody = await balanceResponse.json();
+  check('超时残留行被余额读点收敛（无恢复调用）', balanceBody?.data?.balance === beforeCrash, `实际 ${balanceBody?.data?.balance}`);
   const crashRow = genDb.prepare('SELECT status, error FROM ppt_to_base_jobs WHERE id = ?').get(crashJobId);
   check('残留行置 failed 带中断文案',
     String(crashRow?.status) === 'failed' && String(crashRow?.error).includes('中断'));
   check('恢复幂等：重复收敛不重复退款',
-    baseImage.reconcilePptToBase(tid) === false && credits.getBalance(tid) === beforeCrash);
+    recovery.reconcileUser(tid) === 0 && credits.getBalance(tid) === beforeCrash);
 }

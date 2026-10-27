@@ -12,7 +12,7 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@/components/icons";
-import type { DeckSlide, DeckSlideDraft, DeckSlidePatch, SlideRole } from "@/lib/client/deck-api";
+import type { DeckSlide, OutlineSlidePatch, SlideRole } from "@/lib/client/deck-api";
 import type { DeckCtx } from "@/components/deck/deck-workbench";
 import { GripIcon, Modal, Spinner } from "@/components/deck/ui";
 
@@ -67,7 +67,7 @@ export function StepOutline({
     [state.slides],
   );
   const chapters = useMemo(() => groupByChapter(slides), [slides]);
-  const readOnly = !ctx.availability.contentEditable;
+  const readOnly = state.contentLocked;
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [splitTarget, setSplitTarget] = useState<DeckSlide | null>(null);
@@ -96,7 +96,7 @@ export function StepOutline({
   const deleteSlide = (slide: DeckSlide) =>
     withLock(async () => {
       const atIndex = slides.findIndex((s) => s.slideId === slide.slideId);
-      const result = await run({ kind: "removeSlide", params: { slideId: slide.slideId } });
+      const result = await run("delete-slide", { slideId: slide.slideId });
       if (result) {
         lastDeletedRef.current = { slide, atIndex };
         toast(`已删除「${slide.title || `第 ${slide.pageIndex + 1} 页`}」（P${slide.pageIndex + 1}）`, {
@@ -105,19 +105,16 @@ export function StepOutline({
           onAction: () => {
             const snapshot = lastDeletedRef.current;
             if (!snapshot) return;
-            void run({
-              kind: "addSlide",
-              params: {
-                atIndex: snapshot.atIndex,
-                slide: {
-                  role: snapshot.slide.role,
-                  chapter: snapshot.slide.chapter,
-                  title: snapshot.slide.title,
-                  goal: snapshot.slide.goal,
-                  rawText: snapshot.slide.rawText,
-                  visualNote: snapshot.slide.visualNote,
-                } satisfies DeckSlideDraft,
-              },
+            void run("add-slide", {
+              atIndex: snapshot.atIndex,
+              slide: {
+                role: snapshot.slide.role,
+                chapter: snapshot.slide.chapter,
+                title: snapshot.slide.title,
+                goal: snapshot.slide.goal,
+                rawText: snapshot.slide.rawText,
+                visualNote: snapshot.slide.visualNote,
+              } satisfies OutlineSlidePatch,
             }).then((ok) => {
               if (!ok) toast("撤销删除失败，请重新尝试。");
             });
@@ -133,15 +130,15 @@ export function StepOutline({
       if (index < 0 || target < 0 || target >= slides.length) return;
       const order = slides.map((s) => s.slideId);
       [order[index], order[target]] = [order[target], order[index]];
-      const result = await run({ kind: "reorderSlides", params: { order } });
+      const result = await run("reorder-slides", { order });
       if (!result) toast("调整顺序失败，请重新尝试。");
     });
 
   const addSlideAfter = (index: number, chapter: string) =>
     withLock(async () => {
-      const result = await run({
-        kind: "addSlide",
-        params: { atIndex: index + 1, slide: { role: "content", chapter } },
+      const result = await run("add-slide", {
+        atIndex: index + 1,
+        slide: { role: "content", chapter },
       });
       if (!result) toast("新增页面失败，请重新尝试。");
     });
@@ -161,12 +158,9 @@ export function StepOutline({
       const moved = slides[from];
       const neighbor = slides[to];
       if (neighbor && moved.chapter !== neighbor.chapter) {
-        await run(
-          { kind: "updateSlide", params: { slideId: dragId, chapter: neighbor.chapter } },
-          { silent: true },
-        );
+        await run("update-slide", { slideId: dragId, chapter: neighbor.chapter }, { silent: true });
       }
-      const result = await run({ kind: "reorderSlides", params: { order } });
+      const result = await run("reorder-slides", { order });
       if (!result) toast("调整顺序失败，请重新尝试。");
     });
 
@@ -246,12 +240,9 @@ export function StepOutline({
                       title="添加章节过渡页"
                       onClick={() =>
                         void withLock(async () => {
-                          await run({
-                            kind: "addSlide",
-                            params: {
-                              atIndex: chapter.slides[0]?.pageIndex ?? slides.length,
-                              slide: { role: "section", chapter: chapter.name, title: chapter.name },
-                            },
+                          await run("add-slide", {
+                            atIndex: chapter.slides[0]?.pageIndex ?? slides.length,
+                            slide: { role: "section", chapter: chapter.name, title: chapter.name },
                           });
                         })
                       }
@@ -450,7 +441,7 @@ export function StepOutline({
           operating={operating}
           onClose={() => setEditingId(null)}
           onNavigate={(id) => setEditingId(id)}
-          onSave={(id, patch) => run({ kind: "updateSlide", params: { slideId: id, ...patch } })}
+          onSave={(id, patch) => run("update-slide", { slideId: id, ...patch })}
           onMove={(slide, delta) => void moveSlide(slide, delta)}
           onAdd={(slide) => void addSlideAfter(slide.pageIndex, slide.chapter)}
           onSplit={(slide) => {
@@ -471,10 +462,7 @@ export function StepOutline({
           onClose={() => setSplitTarget(null)}
           onSubmit={(into) =>
             withLock(async () => {
-              const result = await run({
-                kind: "splitSlide",
-                params: { slideId: splitTarget.slideId, into },
-              });
+              const result = await run("split-slide", { slideId: splitTarget.slideId, into });
               if (result) {
                 setSplitTarget(null);
                 toast(`已拆分为 ${into} 页`);
@@ -500,9 +488,9 @@ export function StepOutline({
               const atIndex = group
                 ? group.slides[group.slides.length - 1].pageIndex + 1
                 : slides.length;
-              const result = await run({
-                kind: "addSlide",
-                params: { atIndex, slide: { role: "content", chapter: name, title: "" } },
+              const result = await run("add-slide", {
+                atIndex,
+                slide: { role: "content", chapter: name, title: "" },
               });
               if (result) setChapterModal(null);
             })
@@ -521,7 +509,8 @@ export function StepOutline({
               const targets = slides.filter((s) => s.chapter === chapterModal.chapter);
               for (const slide of targets) {
                 const ok = await run(
-                  { kind: "updateSlide", params: { slideId: slide.slideId, chapter: name } },
+                  "update-slide",
+                  { slideId: slide.slideId, chapter: name },
                   { silent: true },
                 );
                 if (!ok) {
@@ -553,14 +542,15 @@ export function StepOutline({
                   slides[firstIndex - 1]?.chapter ?? slides[firstIndex + targets.length]?.chapter ?? "";
                 for (const slide of targets) {
                   if (slide.role === "section") {
-                    const ok = await run({ kind: "removeSlide", params: { slideId: slide.slideId } });
+                    const ok = await run("delete-slide", { slideId: slide.slideId });
                     if (!ok) {
                       toast("删除章节失败，请重新尝试。");
                       return;
                     }
                   } else {
                     const ok = await run(
-                      { kind: "updateSlide", params: { slideId: slide.slideId, chapter: neighbor } },
+                      "update-slide",
+                      { slideId: slide.slideId, chapter: neighbor },
                       { silent: true },
                     );
                     if (!ok) {
@@ -571,7 +561,7 @@ export function StepOutline({
                 }
               } else {
                 for (const slide of targets) {
-                  const ok = await run({ kind: "removeSlide", params: { slideId: slide.slideId } });
+                  const ok = await run("delete-slide", { slideId: slide.slideId });
                   if (!ok) {
                     toast("删除章节失败，请重新尝试。");
                     return;
@@ -608,7 +598,7 @@ function EditPageModal({
   operating: boolean;
   onClose: () => void;
   onNavigate: (id: string) => void;
-  onSave: (id: string, patch: DeckSlidePatch) => Promise<unknown>;
+  onSave: (id: string, patch: OutlineSlidePatch) => Promise<unknown>;
   onMove: (slide: DeckSlide, delta: -1 | 1) => void;
   onAdd: (slide: DeckSlide) => void;
   onSplit: (slide: DeckSlide) => void;
