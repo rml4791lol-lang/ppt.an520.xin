@@ -10,7 +10,7 @@ import { chargeRefundKeys, debitCredits, estimateCredits, refundCredits } from '
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
-import { isStale, reconcileInterrupted } from '@/lib/server/generation/recovery';
+import { refundCharge } from '@/lib/server/generation/recovery';
 import { editImage, toPublicImageError, type ImageDeps } from '@/lib/server/generation/images';
 import { saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
@@ -84,24 +84,24 @@ function finishJob(jobId: string, status: 'succeeded' | 'failed', error = ''): v
  * 返回是否修复了残留行。
  */
 export function reconcilePptToBase(userId: string): boolean {
+  const staleBefore = nowMs() - getGenerationConfig().jobStaleMs;
   const rows = getGenDb()
     .prepare("SELECT id, request_id, charge_key, status, updated_at FROM ppt_to_base_jobs WHERE user_id = ? AND status = 'running'")
     .all(userId) as Array<{ id: string; request_id: string; charge_key: string; updated_at: number }>;
-  // 判活（注册表 + 心跳）留在本类型，收敛/补退走恢复模块的唯一实现
-  return reconcileInterrupted(rows.map((row) => {
+  let healed = false;
+  for (const row of rows) {
     const jobId = String(row.id);
-    return {
-      key: jobId,
-      domain: 'ppt-to-base',
-      userId,
-      interrupted: !activeJobs.has(jobId) && isStale(Number(row.updated_at)),
-      settle: () => finishJob(jobId, 'failed', '生成中断（服务重启），已自动退回'),
-      chargeKey: String(row.charge_key || ''),
-      refundReason: '底座生成中断退回',
-      refType: 'ppt-to-base',
-      refId: String(row.request_id || jobId),
-    };
-  })) > 0;
+    if (activeJobs.has(jobId)) continue;
+    if (Number(row.updated_at) >= staleBefore) continue;
+    finishJob(jobId, 'failed', '生成中断（服务重启），已自动退回');
+    const chargeKey = String(row.charge_key || '');
+    if (chargeKey) {
+      refundCharge(chargeKey, userId, '底座生成中断退回', 'ppt-to-base', String(row.request_id || jobId));
+    }
+    healed = true;
+  }
+  if (healed) console.warn(`[anppt-v2][ppt-to-base] ${userId} 收敛了中断任务`);
+  return healed;
 }
 
 export interface PptToBaseInput {

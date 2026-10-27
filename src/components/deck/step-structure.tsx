@@ -97,7 +97,7 @@ export function StepStructure({
     () => [...state.slides].sort((a, b) => a.pageIndex - b.pageIndex),
     [state.slides],
   );
-  const readOnly = state.contentLocked;
+  const readOnly = !ctx.availability.contentEditable;
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [editor, setEditor] = useState<StructureEditorDraft | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -113,7 +113,10 @@ export function StepStructure({
       return;
     }
     setPendingIds((prev) => new Set(prev).add(slide.slideId));
-    const result = await run("structure-slide", { slideId: slide.slideId }, { silent: true });
+    const result = await run(
+      { kind: "structureSlide", params: { slideId: slide.slideId } },
+      { silent: true },
+    );
     setPendingIds((prev) => {
       const next = new Set(prev);
       next.delete(slide.slideId);
@@ -156,10 +159,9 @@ export function StepStructure({
       return;
     }
     setSavingId(editor.slideId);
-    const result = await run("update-slide", {
-      slideId: editor.slideId,
-      title,
-      structuredContent,
+    const result = await run({
+      kind: "updateSlide",
+      params: { slideId: editor.slideId, title, structuredContent },
     });
     setSavingId(null);
     if (result) {

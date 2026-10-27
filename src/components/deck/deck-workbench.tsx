@@ -8,17 +8,16 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
 import {
-  deckAction,
   deckIntentAction,
   estimateCredits,
   exportDeckImage,
   renameProject,
-  type DeckAction,
-  type DeckActionResult,
+  type DeckIntentResult,
   type DeckState,
 } from "@/lib/client/deck-api";
 import { ApiClientError } from "@/lib/client/api";
-import type { DeckIntent } from "@/lib/deck-intents";
+import { deriveDeckAvailability, type DeckAvailability } from "@/lib/client/deck-availability";
+import type { DeckIntent, DeckIntentKind } from "@/lib/deck-intents";
 import { StepPrepare } from "@/components/deck/step-prepare";
 import { StepOutline } from "@/components/deck/step-outline";
 import { StepStructure } from "@/components/deck/step-structure";
@@ -53,14 +52,18 @@ export function deriveStep(state: DeckState): number {
   }
 }
 
+/** 意图执行器：响应附带字段由 kind 决定（见 DeckIntentResult） */
+export type DeckRun = <K extends DeckIntentKind>(
+  intent: Extract<DeckIntent, { kind: K }>,
+  opts?: { silent?: boolean },
+) => Promise<DeckIntentResult<K> | null>;
+
 /** 各步组件共享的操作上下文 */
 export interface DeckCtx {
   state: DeckState;
-  run: (
-    action: DeckAction,
-    params?: Record<string, unknown>,
-    opts?: { silent?: boolean },
-  ) => Promise<DeckActionResult | null>;
+  /** 按钮可用性统一从 deck 状态派生，组件不再各写布尔判断 */
+  availability: DeckAvailability;
+  run: DeckRun;
   toast: (text: string, opts?: { actionLabel?: string; onAction?: () => void; duration?: number }) => void;
   goStep: (step: number) => void;
 }
@@ -89,7 +92,11 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
 
   const derivedStep = state ? deriveStep(state) : 0;
   const activeStep = viewStep ?? derivedStep;
-  const generating = state?.deck.status === "generating" || !!state?.activeJob;
+  const availability = useMemo(
+    () => (state ? deriveDeckAvailability(state) : null),
+    [state],
+  );
+  const generating = availability?.generating ?? false;
 
   const goStep = useCallback(
     (step: number) => {
@@ -98,14 +105,14 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
     [derivedStep],
   );
 
-  // ---------- 统一 action 执行：错误归一化（402 → 星星不足弹窗，其余 toast） ----------
-  const exec = useCallback(
-    async (
-      send: () => Promise<DeckActionResult>,
+  // ---------- 统一意图执行：错误归一化（402 → 星星不足弹窗，其余 toast） ----------
+  const run = useCallback(
+    async <K extends DeckIntentKind,>(
+      intent: Extract<DeckIntent, { kind: K }>,
       opts: { silent?: boolean } = {},
-    ): Promise<DeckActionResult | null> => {
+    ): Promise<DeckIntentResult<K> | null> => {
       try {
-        const result = await send();
+        const result = await deckIntentAction(deckId, intent);
         applyState(result);
         return result;
       } catch (error) {
@@ -121,23 +128,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
         return null;
       }
     },
-    [applyState, toast],
-  );
-
-  const run = useCallback(
-    (
-      action: DeckAction,
-      params: Record<string, unknown> = {},
-      opts: { silent?: boolean } = {},
-    ): Promise<DeckActionResult | null> => exec(() => deckAction(deckId, action, params), opts),
-    [deckId, exec],
-  );
-
-  /** 类型化通道：与 run 同一条错误归一化，只有请求体换成意图 */
-  const runIntent = useCallback(
-    (intent: DeckIntent, opts: { silent?: boolean } = {}): Promise<DeckActionResult | null> =>
-      exec(() => deckIntentAction(deckId, intent), opts),
-    [deckId, exec],
+    [deckId, applyState, toast],
   );
 
   // ---------- 大纲生成：进入页面时若尚未有大纲则自动触发（同步长请求，等待屏承载） ----------
@@ -145,7 +136,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
     async (force: boolean) => {
       setBusyKind("outline");
       setOutlineError(null);
-      const result = await run("outline", force ? { force: true } : {}, { silent: true });
+      const result = await run({ kind: "generateOutline", params: force ? { force: true } : {} }, { silent: true });
       setBusyKind(null);
       if (!result) {
         setOutlineError("大纲生成失败，本次失败不扣除星星，可重新尝试。");
@@ -218,10 +209,10 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
     if (confirm.kind === "confirm-structure") {
       setConfirm(null);
       setBusyKind("structure");
-      const result = await run("structure", {}, { silent: true });
+      const result = await run({ kind: "structureSlides", params: {} }, { silent: true });
       setBusyKind(null);
       if (result) {
-        const failed = (result.failedSlides as string[] | undefined)?.length ?? 0;
+        const failed = result.failedSlides?.length ?? 0;
         toast(
           failed > 0
             ? `内容梳理完成，${failed} 页失败（失败页重试不扣除星星）`
@@ -239,16 +230,16 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
       toast("大纲已重新生成");
     } else if (confirm.kind === "unlock-structure") {
       setConfirm(null);
-      const result = await run("unlock-structure");
+      const result = await run({ kind: "unlockStructure", params: {} });
       if (result) {
         toast("已解锁，可修改内容；已生成的页面图已作废，需重新生成并重新计费");
       }
     } else if (confirm.kind === "generate") {
       setConfirm(null);
-      const result = await run(
-        "generate",
-        confirm.forceRegenerate ? { forceRegenerate: true } : {},
-      );
+      const result = await run({
+        kind: "generateSlides",
+        params: confirm.forceRegenerate ? { forceRegenerate: true } : {},
+      });
       if (result) {
         notifyCreditsRefresh();
         setViewStep(null); // 钉到生成画布
@@ -260,10 +251,8 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   const openGenerateConfirm = useCallback(
     (forceRegenerate: boolean) => {
       setEstimate(null);
-      if (!state) return;
-      const pages = forceRegenerate
-        ? state.slides.length
-        : state.slides.filter((s) => s.genStatus !== "succeeded").length;
+      if (!state || !availability) return;
+      const pages = forceRegenerate ? state.slides.length : availability.pendingGeneration;
       if (!forceRegenerate && pages === 0) {
         toast("所有页面都已生成完毕，无需重复生成。");
         return;
@@ -273,12 +262,12 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
         .then((e) => setEstimate({ credits: e.credits, unitPrice: e.unitPrice, pages: e.pages }))
         .catch(() => setEstimate(null));
     },
-    [state, toast],
+    [state, availability, toast],
   );
 
   const ctx: DeckCtx | null = useMemo(
-    () => (state ? { state, run, toast, goStep } : null),
-    [state, run, toast, goStep],
+    () => (state && availability ? { state, availability, run, toast, goStep } : null),
+    [state, availability, run, toast, goStep],
   );
 
   // ---------- 终态错误屏（401/404） ----------
@@ -359,12 +348,8 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
           <button
             type="button"
             onClick={doExport}
-            disabled={exporting || !state || state.pageSummary.succeeded === 0}
-            title={
-              state && state.pageSummary.succeeded > 0
-                ? "导出图片集 PPT（免费）"
-                : "尚无生成完成的页面"
-            }
+            disabled={exporting || !availability?.canExport}
+            title={availability?.canExport ? "导出图片集 PPT（免费）" : "尚无生成完成的页面"}
             className="rounded-full bg-dark px-4 py-1.5 text-[13px] font-medium text-white transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             {exporting ? "导出中…" : "导出"}
@@ -454,14 +439,13 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
                 ctx={ctx}
                 structuring={busyKind === "structure"}
                 onConfirmFreeze={() => {
-                  const notReady = ctx.state.slides.filter((s) => s.structureStatus !== "ok");
-                  if (notReady.length > 0) {
-                    toast(`还有 ${notReady.length} 页未完成梳理，暂不可确认`);
+                  if (!ctx.availability.structureReady) {
+                    toast(`还有 ${ctx.availability.pendingStructure} 页未完成梳理，暂不可确认`);
                     return;
                   }
                   // 冻结：确认后内容锁定，进入选择风格
                   void (async () => {
-                    const result = await runIntent({ kind: "confirmStructure", params: {} });
+                    const result = await run({ kind: "confirmStructure", params: {} });
                     if (result) setViewStep(null);
                   })();
                 }}
@@ -473,8 +457,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
                 ctx={ctx}
                 onGenerate={() => {
                   // 全部页都已成功 → 整套重做（force）；否则只补未完成页，已生成页不重复扣费
-                  const pending = ctx.state.slides.filter((s) => s.genStatus !== "succeeded").length;
-                  openGenerateConfirm(pending === 0);
+                  openGenerateConfirm(ctx.availability.pendingGeneration === 0);
                 }}
               />
             )}
