@@ -7,11 +7,14 @@ export async function runPluginRuntimeTests(ctx) {
   const { createCtx } = await import('../../src/lib/plugin/ctx.ts');
   const { defaultProfile } = await import('../../src/plugins/default-profile.ts');
   const { modelsPlugin } = await import('../../src/plugins/models/plugin.ts');
+  const { hostConfig } = await import('../../src/lib/plugin/host-config.ts');
+  const { HOST_CONFIG_KEY } = await import('../../src/lib/plugin/contracts/config.ts');
+  const host = { [HOST_CONFIG_KEY]: hostConfig };
 
-  const pluginCtx = await boot(defaultProfile);
+  const pluginCtx = await boot(defaultProfile, host);
   check('默认 profile boot 后 pricing/models 服务可用',
     pluginCtx.has('pricing') && pluginCtx.has('models')
-      && pluginCtx.keys().join(',') === 'pricing,models');
+      && pluginCtx.keys().join(',') === [HOST_CONFIG_KEY, 'pricing', 'models'].join(','));
 
   const pricing = pluginCtx.use('pricing');
   check('pricing.quote：整页生成 10🌟 / 改图 5🌟 / 可编辑导出 20🌟',
@@ -50,7 +53,7 @@ export async function runPluginRuntimeTests(ctx) {
       c.register('pricing', { quote: () => 99, table: () => ({ 'generate.page': 99 }) });
     },
   };
-  const altCtx = await boot({ name: 'alt-pricing', plugins: [fakePricingPlugin, modelsPlugin] });
+  const altCtx = await boot({ name: 'alt-pricing', plugins: [fakePricingPlugin, modelsPlugin] }, host);
   check('插拔实证：换价格 = 只换 profile，调用方代码不变、新价格生效',
     quoteGenerate(pluginCtx) === 10 && quoteGenerate(altCtx) === 99
       && altCtx.has('models'));
@@ -74,7 +77,7 @@ export async function runPluginRuntimeTests(ctx) {
   check('重复注册同键报冲突错', conflictMsg.includes('冲突') && conflictMsg.includes('pricing'));
   let dupMsg = '';
   try {
-    await boot({ name: 'dup', plugins: [modelsPlugin, modelsPlugin] });
+    await boot({ name: 'dup', plugins: [modelsPlugin, modelsPlugin] }, host);
   } catch (error) {
     dupMsg = error?.message || '';
   }

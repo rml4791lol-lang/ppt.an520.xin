@@ -27,7 +27,7 @@ import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generat
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
 import { getOwnedDeck, listSlides } from '@/lib/server/generation/decks';
 import { getActiveVersionImagePath, listSingleProjectPages } from '@/lib/server/generation/single-pages';
-import { reconcileInterruptedRun } from '@/lib/server/generation/recovery';
+import { reconcileInterrupted } from '@/lib/server/generation/recovery';
 import { absPathForRelPath, readSiteFile, saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
@@ -1003,16 +1003,19 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
   if (nowMs() - Number(row.created_at) > RECOVERY_GRACE_MS) {
     // 建行后超过宽限仍无上游任务 = 进程中断：走同一个收敛实现重跑整条管线（可编辑导出是续跑，不是退星）
     // （debit 幂等键 + Codia Idempotency-Key 防重，重跑安全）
-    reconcileInterruptedRun({
-      key: exportId,
-      domain: 'editable-export',
-      userId: String(row.user_id),
-      settle: () => {
-        ensureEditablePipeline(row, runDeps);
+    reconcileInterrupted([
+      {
+        key: exportId,
+        domain: 'editable-export',
+        userId: String(row.user_id),
+        interrupted: true,
+        settle: () => {
+          ensureEditablePipeline(row, runDeps);
+        },
+        refType: String(row.ref_type || 'deck'),
+        refId: String(row.ref_id || ''),
       },
-      refType: String(row.ref_type || 'deck'),
-      refId: String(row.ref_id || ''),
-    });
+    ]);
   }
   return row;
 }

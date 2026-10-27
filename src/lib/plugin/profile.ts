@@ -7,8 +7,16 @@ export interface AnProfile {
   plugins: AnPlugin[];
 }
 
-export async function boot(profile: AnProfile): Promise<PluginCtx> {
+/** 宿主在插件注册前注入的服务（如 config）；插件经 ctx.use 取用，缺失即启动期失败。 */
+export type HostServices = Record<string, unknown>;
+
+function registerHost(ctx: PluginCtx, host?: HostServices): void {
+  for (const [key, impl] of Object.entries(host ?? {})) ctx.register(key, impl);
+}
+
+export async function boot(profile: AnProfile, host?: HostServices): Promise<PluginCtx> {
   const ctx = createCtx();
+  registerHost(ctx, host);
   const seen = new Set<string>();
   for (const plugin of profile.plugins) {
     if (seen.has(plugin.key)) {
@@ -21,8 +29,9 @@ export async function boot(profile: AnProfile): Promise<PluginCtx> {
 }
 
 /** 同步启动：仅当所有插件 register 同步返回；出现异步 register 立即报错（fail fast）。 */
-export function bootSync(profile: AnProfile): PluginCtx {
+export function bootSync(profile: AnProfile, host?: HostServices): PluginCtx {
   const ctx = createCtx();
+  registerHost(ctx, host);
   const seen = new Set<string>();
   for (const plugin of profile.plugins) {
     if (seen.has(plugin.key)) {

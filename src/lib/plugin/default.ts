@@ -2,11 +2,13 @@
 // 计价/模型等高频同步读点（如 credits.estimateCredits）从这里取服务，不走 async boot。
 import type { PluginCtx } from './ctx';
 import { bootSync } from './profile';
+import { HOST_CONFIG_KEY } from './contracts/config';
+import { hostConfig } from './host-config';
 import { defaultProfile } from '@/plugins/default-profile';
 
 let cached: PluginCtx | null = null;
 
 export function getDefaultCtx(): PluginCtx {
-  if (!cached) cached = bootSync(defaultProfile);
+  if (!cached) cached = bootSync(defaultProfile, { [HOST_CONFIG_KEY]: hostConfig });
   return cached;
 }

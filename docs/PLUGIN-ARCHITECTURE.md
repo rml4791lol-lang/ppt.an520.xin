@@ -41,9 +41,9 @@ src/plugins/<key>/
 
 - `provides`：本插件注册到 ctx 的服务键清单（如 `pricing`、`models`）。
 - `pricing`：本插件涉及的计费动作 key 清单（只声明动作，**不写数字**；数字只在 pricing 插件的价格表里）。
-- `config`：本插件的运行参数声明（进 profile，不埋进代码）。
+- `config`：本插件的运行参数声明（进 profile，不埋进代码）。平台运行参数（env / 生成链）不直读平台模块：平台在 boot 时把只读 `config` 服务注入 ctx（契约 `src/lib/plugin/contracts/config.ts`），插件 `ctx.use('config')` 取用（ADR-0001 G4）。
 - `ui`（2026-09-06 补）：本插件的 UI 贡献声明——`entries: [{slot, label, href?, component?, order?, flag?}]`。entry 必须是**可静态审计的数据**（VS Code contribution points 的教训：回调时代无法静态分析）；`order` 显式定序（不靠注册顺序）；`flag` 粒度可细到单条 entry（对齐 VS Code `when` 子句）；`component` 存懒加载指令（动态 import / `next/dynamic`），插件 JS 不进首屏 bundle。壳按注册表渲染入口，不 import 插件。
-- 插件之间**禁止直接 import**，只能通过 ctx 服务协作。lint 强制。
+- 插件之间**禁止直接 import**，只能通过 ctx 服务协作；插件也不得 import 平台内部（`src/lib/server`）。lint 强制。
 
 ## 2.5 UI：壳与挂载点（2026-09-06）
 
@@ -57,7 +57,7 @@ src/plugins/<key>/
 ## 3. 运行时三件（平台层，src/lib/plugin/）
 
 - `ctx.ts`：服务注册表。`register(key, impl)` / `use(key)`；`use` 一个未注册的键 = 启动期报错（fail fast，不许运行期 undefined）。
-- `profile.ts`：配置单加载。profile = 有序插件清单（顺序即依赖序）+ 各插件 config；默认 profile 是生产形态，测试可组合替代实现。
+- `profile.ts`：配置单加载。profile = 有序插件清单（顺序即依赖序）+ 各插件 config；默认 profile 是生产形态，测试可组合替代实现。`boot(profile, host)` / `bootSync(profile, host)` 在插件注册前注入宿主服务（如 `config`），插件注册时取配置，缺服务即启动期报错。
 - `types.ts`：`AnPlugin` 接口与冻结数据契约的唯一定义处。
 
 ## 4. 冻结清单（改动需开 Issue 拍板）
@@ -82,7 +82,7 @@ src/plugins/<key>/
 
 1. 两个先锋插件经 profile 组合启动，`ctx.use('pricing')` / `ctx.use('models')` 可用。
 2. **插拔实证**：替代实现换进 profile，调用方零改动，测试同绿。
-3. 未注册服务键 `use` 即报错；插件间 import 被 lint 拦截。
+3. 未注册服务键 `use` 即报错；插件间 import 与「插件 → 平台内部（`src/lib/server`）」被 lint 拦截。
 4. 两套既有测试门 + lint + tsc + build 全绿（纯增量证明）。
 
 ## 7. 与 DeepSeek Harness 的关系

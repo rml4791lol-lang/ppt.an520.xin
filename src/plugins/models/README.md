@@ -20,7 +20,7 @@
 
 ## 配置项
 
-无插件级 `config`。模型清单来自 `generation/config.ts` 的环境变量（`ANPPT_V2_LLM_MODEL` / `ANPPT_V2_LLM_FALLBACK_MODELS` / `ANPPT_V2_IMAGE_MODEL` / `ANPPT_V2_IMAGE_EDIT_MODEL` / `*_BACKUP_*`），调用时现读，管理端覆盖自动生效。
+无插件级 `config`。平台在 boot 时把 `config` 服务（`src/lib/plugin/contracts/config.ts`）注入 ctx，本插件经 `ctx.use('config').models()` 调用时现读；模型清单来自 `generation/config.ts` 的环境变量（`ANPPT_V2_LLM_MODEL` / `ANPPT_V2_LLM_FALLBACK_MODELS` / `ANPPT_V2_IMAGE_MODEL` / `ANPPT_V2_IMAGE_EDIT_MODEL` / `*_BACKUP_*`），调用时现读，管理端覆盖自动生效。
 
 ## 测试
 

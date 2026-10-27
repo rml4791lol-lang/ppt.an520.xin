@@ -28,7 +28,7 @@
 
 ## 配置项
 
-无（`config` 未声明）。价格调整走 `CREDIT_ACTION_PRICES` 环境变量。
+无插件级 `config`。平台在 boot 时把 `config` 服务（`src/lib/plugin/contracts/config.ts`）注入 ctx，本插件经 `ctx.use('config').creditActionPrices()` 调用时现读；价格调整走 `CREDIT_ACTION_PRICES` 环境变量。
 
 ## 测试
 
