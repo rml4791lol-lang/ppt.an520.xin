@@ -2,7 +2,7 @@
 // 状态机（契约 §4）：
 //   parse → outline（可增/删/重排/拆页）→ structure → confirm-structure（内容冻结）
 //   → style → generate（逐页生图）→ deliver（图片版导出免费，可编辑导出占位）
-// 冻结后内容类 action 一律拒绝，需 unlock-structure 解锁（作废已生成页）。
+// 冻结后内容类意图一律拒绝，需 unlockStructure 解锁（作废已生成页）。
 import type { DatabaseSync } from 'node:sqlite';
 import { ApiError } from '../http';
 import { withTransaction } from '../db';
@@ -18,6 +18,7 @@ import {
   type SlideRole,
   type StructureStatus,
 } from './types';
+import { availableIntentsOf, deckGateFacts, isDeckContentLocked } from '../../deck-gates';
 
 export interface DeckRow {
   id: string;
@@ -681,7 +682,7 @@ export function getDeckState(userId: string, deckId: string) {
     list.push(version);
     versionsBySlide.set(version.slideId, list);
   }
-  const contentLocked = ['confirmed', 'generating', 'generated', 'partial'].includes(deck.status);
+  const contentLocked = isDeckContentLocked(deck.status);
   const slideViews = slides.map((slide) => ({
     slideId: slide.slideId,
     pageIndex: slide.pageIndex,
@@ -715,6 +716,28 @@ export function getDeckState(userId: string, deckId: string) {
   for (const slide of slides) {
     if (slide.genStatus in summary) summary[slide.genStatus as keyof typeof summary] += 1;
   }
+  const activeJob =
+    job && (job.status === 'queued' || job.status === 'running')
+      ? {
+          jobId: job.jobId,
+          kind: job.kind,
+          status: job.status,
+          total: job.total,
+          succeeded: job.succeeded,
+          failed: job.failed,
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+        }
+      : null;
+  // 顺序约束的展示面：哪些意图现在可执行由 deck-gates 同一份规则算出（客户端按钮读这份集合）
+  const availableIntents = availableIntentsOf(
+    deckGateFacts({
+      status: deck.status,
+      stylePackId: deck.stylePackId,
+      slides: () => slides,
+      hasActiveJob: Boolean(activeJob),
+    }),
+  );
   return {
     deck: {
       id: deck.id,
@@ -732,20 +755,9 @@ export function getDeckState(userId: string, deckId: string) {
       updatedAt: deck.updatedAt,
     },
     slides: slideViews,
-    activeJob:
-      job && (job.status === 'queued' || job.status === 'running')
-        ? {
-            jobId: job.jobId,
-            kind: job.kind,
-            status: job.status,
-            total: job.total,
-            succeeded: job.succeeded,
-            failed: job.failed,
-            createdAt: job.createdAt,
-            updatedAt: job.updatedAt,
-          }
-        : null,
+    activeJob,
     pageSummary: summary,
     contentLocked,
+    availableIntents,
   };
 }

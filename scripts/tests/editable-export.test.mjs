@@ -209,11 +209,11 @@ export async function runEditableExportTests(ctx) {
         title: '穷人可编辑', sourceFileName: '', sourceText: '内容',
         durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
       });
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'outline' }, okDeps6b);
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'structure' }, okDeps6b);
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'confirm-structure' }, okDeps6b);
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps6b);
-      const g = await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'generate' }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'generateOutline', params: {} }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'structureSlides', params: {} }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'confirmStructure', params: {} }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, okDeps6b);
+      const g = await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'generateSlides', params: {} }, okDeps6b);
       await g.job.done;
       check('穷人 deck 生成全绿', decks.getDeckState(poorE.user.id, pd.id).deck.status === 'generated');
       credits.debitCredits(poorE.user.id, 50, { reason: '测试花掉', idempotencyKey: 'test-drain-6b' });
@@ -342,7 +342,7 @@ export async function runEditableExportTests(ctx) {
         }),
         { params: Promise.resolve({ id: deck.id }) },
       );
-      check('export-editable 兼容旧调用方无请求体', noBody.status !== 400, `实际 ${noBody.status}`);
+      check('export-editable 无请求体不再兼容（缺意图 400）', noBody.status === 400, `实际 ${noBody.status}`);
     }
   }
 
@@ -644,11 +644,11 @@ export async function runEditableExportTests(ctx) {
         title: '穷人文字档', sourceFileName: '', sourceText: '内容',
         durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
       });
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'outline' }, okDeps6e);
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'structure' }, okDeps6e);
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'confirm-structure' }, okDeps6e);
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps6e);
-      const g = await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'generate' }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'generateOutline', params: {} }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'structureSlides', params: {} }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'confirmStructure', params: {} }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, okDeps6e);
+      const g = await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'generateSlides', params: {} }, okDeps6e);
       await g.job.done;
       check('穷人文字档 deck 生成全绿', decks.getDeckState(poorT.user.id, pd.id).deck.status === 'generated');
       credits.debitCredits(poorT.user.id, 75, { reason: '测试花掉', idempotencyKey: 'test-drain-6e' });
@@ -677,7 +677,9 @@ export async function runEditableExportTests(ctx) {
           'x-anppt-action': '1',
           cookie: `anppt_v2_session=${auth.createSessionForUser(gateUser.user.id)}`,
         },
-        body: '{}',
+        body: JSON.stringify({
+          intent: { kind: 'exportDeckTextEditable', params: { deckId: 'deck_nope' } },
+        }),
       });
       const denied = await textRoute.POST(gateRequest(), { params: Promise.resolve({ id: 'deck_nope' }) });
       const deniedJson = await denied.json();

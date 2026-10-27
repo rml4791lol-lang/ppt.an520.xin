@@ -1,31 +1,7 @@
-// deck action RPC 的类型化意图契约：客户端与路由共用一份，禁止各自复制。
-// 旧的无类型入口 {action, ...params} 完全保留；意图只把「合法动作 + 参数结构」表达进类型，
-// 由 toDeckActionCall 原样还原成动作名与参数（机制与取舍见 docs/DEBUG-HANDBOOK.md §29）。
+// deck 动作 RPC 的类型化意图契约：客户端与路由共用一份，参数结构只在这里声明。
+// 唯一请求形态是 {intent:{kind,params}}；旧 {action,...params} 入口已删除（取舍见 docs/DEBUG-HANDBOOK.md §29）。
 
 export type SlideRole = 'cover' | 'toc' | 'section' | 'content' | 'ending';
-
-/** 路由 body.action 的合法取值（新增动作先登记这里，否则意图通道也表达不出来） */
-export type DeckActionName =
-  | 'outline'
-  | 'add-slide'
-  | 'delete-slide'
-  | 'reorder-slides'
-  | 'split-slide'
-  | 'update-slide'
-  | 'structure'
-  | 'structure-slide'
-  | 'confirm-structure'
-  | 'unlock-structure'
-  | 'style'
-  | 'generate'
-  | 'generate-slide'
-  | 'refine-slide'
-  | 'erase-slide'
-  | 'text-edit-slide'
-  | 'fuse-slide'
-  | 'set-reference'
-  | 'retry-failed'
-  | 'select-slide-version';
 
 /** update-slide 可写字段（对齐服务端 updateSlideContent 的 patch） */
 export type DeckSlidePatch = {
@@ -76,29 +52,35 @@ export type DeckIntent = {
   [K in DeckIntentKind]: { kind: K; params: DeckIntentParams[K] };
 }[DeckIntentKind];
 
-/** 意图 → 既有动作名。必须与 body.action 的 20 个取值一一对应（测试钉住双射） */
-export const DECK_INTENT_ACTIONS: Record<DeckIntentKind, DeckActionName> = {
-  generateOutline: 'outline',
-  addSlide: 'add-slide',
-  removeSlide: 'delete-slide',
-  reorderSlides: 'reorder-slides',
-  splitSlide: 'split-slide',
-  updateSlide: 'update-slide',
-  commitVersion: 'select-slide-version',
-  structureSlides: 'structure',
-  structureSlide: 'structure-slide',
-  confirmStructure: 'confirm-structure',
-  unlockStructure: 'unlock-structure',
-  setStyle: 'style',
-  setReferenceImage: 'set-reference',
-  generateSlides: 'generate',
-  retryFailedSlides: 'retry-failed',
-  generateSlide: 'generate-slide',
-  refineSlide: 'refine-slide',
-  eraseSlide: 'erase-slide',
-  editSlideText: 'text-edit-slide',
-  fuseSlide: 'fuse-slide',
+/** 运行时 kind 登记：Record 强制穷尽（新增 kind 忘记登记即编译失败），parseDeckIntent 用它做线上护栏 */
+const DECK_INTENT_KIND_REGISTRY: Record<DeckIntentKind, true> = {
+  generateOutline: true,
+  addSlide: true,
+  removeSlide: true,
+  reorderSlides: true,
+  splitSlide: true,
+  updateSlide: true,
+  commitVersion: true,
+  structureSlides: true,
+  structureSlide: true,
+  confirmStructure: true,
+  unlockStructure: true,
+  setStyle: true,
+  setReferenceImage: true,
+  generateSlides: true,
+  retryFailedSlides: true,
+  generateSlide: true,
+  refineSlide: true,
+  eraseSlide: true,
+  editSlideText: true,
+  fuseSlide: true,
 };
+
+export const DECK_INTENT_KINDS = Object.keys(DECK_INTENT_KIND_REGISTRY) as DeckIntentKind[];
+
+export function isDeckIntentKind(value: string): value is DeckIntentKind {
+  return Object.prototype.hasOwnProperty.call(DECK_INTENT_KIND_REGISTRY, value);
+}
 
 /** 生成类意图返回的 job 句柄（只暴露前端要用的摘要，done 留在服务端） */
 export interface DeckJobHandle {
@@ -108,7 +90,7 @@ export interface DeckJobHandle {
 }
 
 /**
- * 意图 → 响应附带字段：与 actions.ts 每个动作的 extra 一一对应。
+ * 意图 → 响应附带字段：与 actions.ts 每个分支的 extra 一一对应（由 ActionResult<kind> 钉住）。
  * 响应 = 全量 deck 状态 + 本意图的 extra，前端按 kind 取字段，不再从展开对象里猜形状。
  */
 export type DeckIntentExtra = {
@@ -134,23 +116,9 @@ export type DeckIntentExtra = {
   fuseSlide: { job: DeckJobHandle };
 };
 
-export interface DeckActionCall {
-  action: DeckActionName;
-  params: Record<string, unknown>;
-}
-
-/** 意图 → 旧入口的 {action, ...params}：参数原样透传，不裁剪、不补默认值 */
-export function toDeckActionCall(intent: DeckIntent): DeckActionCall {
-  return { action: DECK_INTENT_ACTIONS[intent.kind], params: intent.params };
-}
-
-function isDeckIntentKind(value: string): value is DeckIntentKind {
-  return Object.prototype.hasOwnProperty.call(DECK_INTENT_ACTIONS, value);
-}
-
 /**
  * 线上护栏：只认已知 kind，params 缺省按空对象。
- * 参数内的深校验留在动作自身，错误码与旧入口完全一致。
+ * 参数内的深校验留在动作自身；路由边界只把「不是合法意图」挡在门外。
  */
 export function parseDeckIntent(value: unknown): DeckIntent | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;

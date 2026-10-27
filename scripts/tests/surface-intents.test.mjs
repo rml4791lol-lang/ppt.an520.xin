@@ -61,20 +61,20 @@ export async function runSurfaceIntentTests(ctx) {
     sp.singlePageIntentParams('generatePage', { kind: 'selectVersion', params: {} }) === null
       && ex.exportIntentParams('quoteExport', { kind: 'exportDeckImage', params: { deckId: 'd' } }) === null);
 
-  check('服务器适配器：旧 body 原样直通（兼容分支未改语义）',
-    server.readActionParams({ pageId: 'legacy-page' }, () => null).pageId === 'legacy-page');
+  await expectThrows('服务器适配器：无 intent 信封一律 400（旧 body 直通已删除）', () =>
+    server.readIntentParams({ pageId: 'legacy-page' }, () => null), 'VALIDATION_ERROR');
   check('服务器适配器：意图信封解出本路由参数',
-    server.readActionParams(
+    server.readIntentParams(
       { intent: { kind: 'selectVersion', params: { pageId: 'p', versionId: 'v' } } },
       (value) => sp.singlePageIntentParams('selectVersion', value),
     ).versionId === 'v');
   await expectThrows('服务器适配器：未知意图 → VALIDATION_ERROR（不降级到旧入口）', () =>
-    server.readActionParams(
+    server.readIntentParams(
       { intent: { kind: 'nope', params: {} } },
       (value) => sp.singlePageIntentParams('selectVersion', value),
     ), 'VALIDATION_ERROR');
   await expectThrows('服务器适配器：错配意图 → VALIDATION_ERROR', () =>
-    server.readActionParams(
+    server.readIntentParams(
       { intent: { kind: 'generatePage', params: {} } },
       (value) => sp.singlePageIntentParams('selectVersion', value),
     ), 'VALIDATION_ERROR');
@@ -122,8 +122,11 @@ export async function runSurfaceIntentTests(ctx) {
     versionId: refineVersion.versionId,
   }), routeContext);
   const viaLegacyJson = await viaLegacy.json();
-  check('单页版本选择旧 body 仍可用（两条通道同语义）',
-    viaLegacy.status === 200 && viaLegacyJson?.data?.activeVersionId === refineVersion.versionId);
+  const afterLegacy = singlePages.getSingleProjectDetail(uid, generated.page.projectId);
+  check('单页版本选择旧 body 被拒（400 缺意图，且不落旧通道）',
+    viaLegacy.status === 400 && viaLegacyJson?.error?.code === 'VALIDATION_ERROR'
+      && afterLegacy.pages[0].activeVersionId === genVersion.versionId,
+    `实际 ${viaLegacy.status} ${viaLegacyJson?.error?.code}`);
 
   const mismatched = await selectRoute.POST(post('http://localhost/api/single-page/select-version', {
     intent: { kind: 'generatePage', params: {} },
@@ -182,7 +185,7 @@ export async function runAdminIntentTests(ctx) {
   check('后台路由侧 extractor 拒绝错配 kind',
     intents.adminIntentParams('updateRuntimeConfig', { kind: 'setFeatureFlag', params: {} }) === null);
   await expectThrows('后台适配器：未知意图 → VALIDATION_ERROR', () =>
-    server.readActionParams(
+    server.readIntentParams(
       { intent: { kind: 'nope', params: {} } },
       (value) => intents.adminIntentParams('updateRuntimeConfig', value),
     ), 'VALIDATION_ERROR');

@@ -108,7 +108,7 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 536 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
+node scripts/test-generation.mjs  # 当前 538 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 170 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
@@ -360,19 +360,24 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/test-generation.mjs` 当前 458 断言，全部 mock，禁止真实付费调用。
 - 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。WPS 另用真实登录态跑通 `convertPdfWithWpsAippt`：1 页 PDF → 10,591 bytes PPTX，`slides/slide1.xml` 含可编辑 `<a:t>` 文本节点且无整页媒体图片；该验收命令不进测试套件。
 
-## 29. deck typed intent 与工作台可用性（2026-10-27）
+## 29. deck 意图通道、动作前置与可用集合（2026-10-27）
 
-- 契约：`src/lib/deck-intents.ts` 是客户端与路由共用的一份意图声明——20 个 kind ↔ 20 个旧动作名（`DECK_INTENT_ACTIONS` 双射由测试钉住）；`DeckIntentExtra` 声明每个意图的响应附带字段。响应恒为「全量 deck 状态 + 该意图 extra」平铺，前端用 `DeckIntentResult<kind>` 按 kind 取字段，不再从展开对象猜形状。
-- 路由：`POST /api/deck/[id]` 先用 `parseDeckRequest` 在边界把原始 JSON 收窄成 `DeckRequest`（`{intent}` 或旧 `{action, params}`），之后不再传未收窄 body；`dispatchDeckRequest` 只做通道分派，开关硬门/冻结校验/扣费/幂等全在 `dispatchDeckAction`。旧脚本发 `{action, ...params}` 时参数收进 params，语义与错误码不变。
-- 工作台：`src/lib/client/deck-api.ts` 只保留 `deckIntentAction`（body 为 `{intent:{kind,params}}`），四步组件统一走 `DeckCtx.run(intent)`；生成/重试/换风格/提交版本的既有行为与扣费语义未改。
-- 可用性：`src/lib/client/deck-availability.ts` 的 `deriveDeckAvailability(state)` 是「哪些按钮可点」的唯一推导（`canGenerate/allGenerated/canExport/canRetryFailed/pendingStructure` 等），各步组件不再各写布尔条件；saving/editor/弹窗这类局部 UI 态仍归组件。
-- 失败语义：非法意图 → `VALIDATION_ERROR`（未知意图）；参数深校验仍由动作自身执行；响应仍是 200/202 + 全量 state，客户端拿到即 setState，不等轮询。
-- 测试：`scripts/tests/deck-intents.test.mjs`（[4d]）钉双射/适配器/解析/路由意图与旧信封/冻结门与开关硬门；`scripts/tests/deck-workbench.test.mjs`（[4e]）钉意图请求体、按意图收窄的响应、可用性推导与静态约束（链路无 `Record<string, unknown>` 请求体、无 `run("action")`、无 `deckAction`）。
+- 契约：`src/lib/deck-intents.ts` 是客户端与路由共用的一份意图声明——20 个 kind（`DECK_INTENT_KINDS` 由 `Record<DeckIntentKind, true>` 强制穷尽登记）各自带具体参数类型；`DeckIntentExtra` 声明每个意图的响应附带字段。旧动作名词汇（`{action, ...params}` 信封与动作名映射表）已删除，唯一请求形态是 `{intent:{kind,params}}`。
+- 路由与分派：`POST /api/deck/[id]` 用 `readDeckIntent` 收窄（缺信封/未知 kind → 400 `VALIDATION_ERROR`），`dispatchDeckIntent` 按 `intent.kind` 分派；返回值 `ActionResult<kind>` 的 `extra` 按 kind 收窄（无 `Record<string, unknown>` 兜底），响应恒为「全量 deck 状态 + 该意图 extra」平铺，前端用 `DeckIntentResult<kind>` 按 kind 取字段。
+- 动作与前置（唯一声明在 `src/lib/deck-gates.ts`）：
+  - 内容类（`generateOutline/addSlide/removeSlide/reorderSlides/splitSlide/updateSlide`）：冻结即拒 → `CONTENT_LOCKED`；`structureSlides/structureSlide` 另加「至少一页」`NO_SLIDES`；`confirmStructure` 再加「全部页梳理完成」`STRUCTURE_INCOMPLETE`（文案带未完成页号）。
+  - 冻结态出口与只读动作：`unlockStructure` 生成中拒（`GENERATION_RUNNING`；未冻结时是幂等 no-op，返回 `alreadyUnlocked`）；`commitVersion` 生成中拒 + 未冻结拒（`VERSION_SELECT_TOO_EARLY`）；`setStyle` 生成中拒。
+  - 生成类：`generateSlides` 走生成前置（生成中 → 未确认 → 未选风格，码 `GENERATION_RUNNING / STRUCTURE_NOT_CONFIRMED / STYLE_REQUIRED`）；`retryFailedSlides` 先要求有失败页（`VALIDATION_ERROR`）再套生成前置。`generate.ts` 的启动校验复用同一函数，措辞不分叉。
+  - 页级意图（`generateSlide/refineSlide/eraseSlide/editSlideText/fuseSlide/setReferenceImage`）的前置依赖具体页（是否已有生成图等），不登记 deck 级集合，逐页判断。
+- 可用性：`getDeckState()` 返回 `availableIntents`（同一份规则按当前 deck 事实算出）；客户端 `deriveDeckAvailability(state)` 直接读它（`canRetryFailed` 等），各步组件不再各写顺序条件；`canGenerate` 仍是「内容已冻结」这个事实，风格由 UI 另行校验。saving/editor/弹窗这类局部 UI 态仍归组件。
+- 拒绝语义：拒绝码/文案/HTTP 状态都从 gate 规则生成（含 `STRUCTURE_INCOMPLETE` 的页号文案），错误提示不再与规则各写一份；参数深校验（缺 slideId、DSL 非法等）仍留在动作自身。
+- 计费/幂等未改：扣费键、退款键、job 创建顺序与 `unlockStructure` 的作废语义全部沿用原实现。
+- 测试：`scripts/tests/deck-intents.test.mjs`（[4d]）钉意图唯一入口、dispatch 覆盖、拒绝理由逐字来自不变量、`availableIntents` 随状态翻转、路由拒旧 `{action}` 信封；`scripts/tests/deck-workbench.test.mjs`（[4e]）钉意图请求体、按意图收窄的响应、可用性推导与静态约束（链路无 `Record<string, unknown>` 请求体、无 `run("action")`、无 `deckAction`）。
 
 ## 30. 单页 / 导出 / 后台的 typed intent（2026-10-27）
 
 - 契约：单页 5 个写动作（`src/lib/single-page-intents.ts`）、导出 4 个（`src/lib/export-intents.ts`）、后台 5 个（`src/lib/admin-intents.ts`）与 deck 同一形态：`{kind, params}` + 「意图 → 路由」适配器；客户端只发 `{intent}` 信封，路径与方法由适配器决定，组件与路由不再各抄一份清单（deck 通道见 §29）。
-- 路由：`src/lib/server/intents.ts` 的 `readActionParams()` 解信封——kind 必须是该路由声明的那一个，未知/错配一律 400 `VALIDATION_ERROR`，不静默降级；参数深校验、扣费、幂等键、开关硬门仍留在原动作里，信封不复制语义。
-- 兼容：旧的无类型 body 完全保留（走 `readActionParams` 的直通分支）；收缩票删除兼容分支前，两条通道同语义。单页逐版本生成/半成功状态与扣费仍由原循环与 `single-pages.ts` 决定。
+- 路由：`src/lib/server/intents.ts` 的 `readIntentParams()` 解信封——kind 必须是该路由声明的那一个，缺信封/未知/错配一律 400 `VALIDATION_ERROR`，不静默降级；参数深校验、扣费、幂等键、开关硬门仍留在原动作里，信封不复制语义。
+- 兼容：无——旧的无类型 body 直通分支已随收缩票删除（2026-10-27），15 条意图路由只收 `{intent:{kind,params}}`；外部脚本一律改发意图。单页逐版本生成/半成功状态与扣费仍由原循环与 `single-pages.ts` 决定。
 - 未纳入（刻意）：读接口按能力命名（§7）；multipart 上传（`/api/assets/upload`、`/api/editable-conversions`）没有 JSON body；复刻美化批量/草稿（`/api/single-page/batch|draft`）随模块 facade 票归拢；后台读接口（overview/config/flags/problems/finance）仍按读处理。
 - 测试：`scripts/tests/surface-intents.test.mjs`（[4f]/[10b]）钉单页/导出/后台的意图↔路由、解析护栏、适配器错配 400，以及版本选择/导出报价/后台配置三条真实路由的意图端到端（全程 mock，零付费调用）。

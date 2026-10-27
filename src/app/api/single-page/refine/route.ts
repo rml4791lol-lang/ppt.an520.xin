@@ -3,7 +3,7 @@ import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { refineSinglePage } from '@/lib/server/generation/single-pages';
 import { singlePageIntentParams } from '@/lib/single-page-intents';
-import { readActionParams } from '@/lib/server/intents';
+import { readIntentParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 /** 单页对话式改图（i2i）：{pageId, editInstruction, requestId?} */
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
-  const body = readActionParams(await readJsonBody(request), (intent) => singlePageIntentParams('refinePage', intent));
+  const body = readIntentParams(await readJsonBody(request), (intent) => singlePageIntentParams('refinePage', intent));
   const result = await refineSinglePage(user.id, {
     pageId: String(body.pageId ?? ''),
     editInstruction: String(body.editInstruction ?? ''),

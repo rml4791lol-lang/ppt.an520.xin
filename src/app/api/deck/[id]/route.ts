@@ -2,7 +2,7 @@ import { jsonOk, readJsonBody } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute, paramOf } from '@/lib/server/generation/route';
 import { getDeckState } from '@/lib/server/generation/decks';
-import { dispatchDeckRequest, parseDeckRequest } from '@/lib/server/generation/actions';
+import { dispatchDeckIntent, readDeckIntent } from '@/lib/server/generation/actions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,12 +14,11 @@ export const GET = defineApiRoute(async (request, ctx) => {
   return jsonOk(getDeckState(user.id, id));
 });
 
-/** 意图 RPC：{intent: {kind, params}}（contract 见 src/lib/deck-intents.ts）。
- * 旧 {action, ...params} 信封仍由 parseDeckRequest 收窄，脚本与灰度客户端不受影响。 */
+/** 意图 RPC：{intent:{kind,params}}（contract 见 src/lib/deck-intents.ts，前置见 src/lib/deck-gates.ts）。 */
 export const POST = defineApiRoute(async (request, ctx) => {
   const { user } = requireUser(request);
   const id = await paramOf(ctx, 'id');
-  const deckRequest = parseDeckRequest(await readJsonBody(request));
-  const result = await dispatchDeckRequest(user.id, id, deckRequest);
+  const intent = readDeckIntent(await readJsonBody(request));
+  const result = await dispatchDeckIntent(user.id, id, intent);
   return jsonOk({ ...result.state, ...result.extra }, { status: result.status });
 }, { mutation: true });
