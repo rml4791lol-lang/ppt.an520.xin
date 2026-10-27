@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { api, ApiClientError } from "@/lib/client/api";
 
 interface Summary {
   balance?: number;
@@ -59,27 +60,24 @@ export function CreditsClient() {
     setLoading(true);
     setUnauthorized(false);
     try {
-      const [sumRes, ledgerRes] = await Promise.all([
-        fetch("/api/credits/summary", { cache: "no-store" }),
-        fetch("/api/credits/ledger", { cache: "no-store" }),
+      const [sumResult, ledgerResult] = await Promise.allSettled([
+        api.credits.summary(),
+        api.credits.ledger(),
       ]);
-      if (sumRes.status === 401 || ledgerRes.status === 401) {
+      const unauthorized = [sumResult, ledgerResult].some(
+        (result) =>
+          result.status === "rejected" &&
+          result.reason instanceof ApiClientError &&
+          result.reason.isUnauthorized,
+      );
+      if (unauthorized) {
         setUnauthorized(true);
         setSummary(null);
         setLedger(null);
         return;
       }
-      if (sumRes.ok) {
-        const json = await sumRes.json().catch(() => null);
-        if (json?.ok) setSummary(json.data ?? {});
-      }
-      if (ledgerRes.ok) {
-        const json = await ledgerRes.json().catch(() => null);
-        if (json?.ok) {
-          const list = json.data?.items ?? json.data?.entries ?? json.data?.records;
-          if (Array.isArray(list)) setLedger(list);
-        }
-      }
+      if (sumResult.status === "fulfilled") setSummary(sumResult.value ?? {});
+      if (ledgerResult.status === "fulfilled") setLedger(ledgerResult.value.items);
     } catch {
       /* 后端未就绪时保持占位 */
     } finally {
