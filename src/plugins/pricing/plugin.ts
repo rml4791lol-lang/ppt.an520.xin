@@ -1,23 +1,35 @@
-// pricing 先锋插件：价格表的存储、解析与查询都归本插件，平台只认 ctx.pricing。
+// pricing 先锋插件：价格表收拢为服务。数字唯一权威仍是 env.ts 的
+// DEFAULT_ACTION_PRICES / CREDIT_ACTION_PRICES 覆盖链，本插件只做动作 key 映射，不抄数字。
 // 动作 key 契约（PRICING_ACTION_MAP / PricingService）在平台层 src/lib/plugin/contracts/pricing.ts。
+import { getEnv } from '@/lib/server/env';
 import type { AnPlugin } from '@/lib/plugin/types';
-import { PRICING_ACTION_MAP, type PricingService } from '@/lib/plugin/contracts/pricing';
-import { loadPriceTable } from './prices';
+import {
+  PRICING_ACTION_MAP,
+  type PricingService,
+} from '@/lib/plugin/contracts/pricing';
 
 export type { PricingService } from '@/lib/plugin/contracts/pricing';
 
+function buildTable(): Record<string, number> {
+  const prices = getEnv().creditActionPrices;
+  const table: Record<string, number> = {};
+  for (const [actionKey, envKey] of Object.entries(PRICING_ACTION_MAP)) {
+    if (envKey in prices) table[actionKey] = prices[envKey];
+  }
+  return table;
+}
+
+const service: PricingService = {
+  quote: (actionKey) => buildTable()[actionKey] ?? 0,
+  table: buildTable,
+};
+
 export const pricingPlugin: AnPlugin = {
   key: 'pricing',
-  version: '0.2.0',
+  version: '0.1.0',
   provides: ['pricing'],
   pricing: Object.keys(PRICING_ACTION_MAP),
   register(ctx) {
-    // 装配期定格：读价走内存表，不在每次 quote 时重解析 env；任务内的单价一致由调用方启动快照保证。
-    const table = loadPriceTable();
-    const service: PricingService = {
-      quote: (actionKey) => table[actionKey] ?? 0,
-      table: () => ({ ...table }),
-    };
     ctx.register('pricing', service);
   },
 };

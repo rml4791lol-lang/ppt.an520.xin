@@ -54,6 +54,7 @@ export interface ServerEnv {
   wechat: WechatPayConfig;
   epay: EpayConfig;
   rechargePlans: RechargePlan[];
+  creditActionPrices: Record<string, number>;
   rechargeOrderTtlMs: number;
 }
 
@@ -63,6 +64,21 @@ const DEFAULT_RECHARGE_PLANS: RechargePlan[] = [
   { id: 'pack-1000', label: '职场常用包', amountFen: 7990, credits: 1000, description: '高频创作更划算' },
   { id: 'pack-2000', label: '高频项目包', amountFen: 14990, credits: 2000, description: '量大管饱最划算' },
 ];
+
+const DEFAULT_ACTION_PRICES: Record<string, number> = {
+  deck_page_generate: 10,
+  // 单页改图/微调（图生图，成本低于整页重生成；中转站通道下用户拍板 5🌟/页，
+  // 若未来切 atlascloud 等高价图生图上游须同步调价——通过 CREDIT_ACTION_PRICES 覆盖）
+  deck_page_refine: 5,
+  outline: 0,
+  export_image: 0,
+  // 可编辑导出（即将上线，Codia 链）：用户拍板 20🌟/页
+  export_editable: 20,
+  // 轻量文字可编辑导出（VLM 提取文字层 + 文本框覆盖，无上游转换成本）：5🌟/页
+  export_editable_text: 5,
+  // PPT 转模版底座（截图去风格化 + 文字中性词替换，一次 VLM + 一次图生图编辑）：对齐改图档 5🌟/张
+  ppt_to_base: 5,
+};
 
 function trim(value: unknown): string {
   return String(value ?? '').trim();
@@ -101,6 +117,23 @@ function parsePlansJson(raw: string): RechargePlan[] | null {
       });
     }
     return plans.length > 0 ? plans : null;
+  } catch {
+    return null;
+  }
+}
+
+function parsePricesJson(raw: string): Record<string, number> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const n = Number(value);
+      if (!Number.isSafeInteger(n) || n < 0) return null;
+      out[key] = n;
+    }
+    return out;
   } catch {
     return null;
   }
@@ -192,6 +225,7 @@ function loadEnv(): ServerEnv {
     wechat: loadWechatConfig(publicBaseUrl, isProduction),
     epay: loadEpayConfig(publicBaseUrl, isProduction),
     rechargePlans: parsePlansJson(trim(e.RECHARGE_PLANS)) || DEFAULT_RECHARGE_PLANS,
+    creditActionPrices: parsePricesJson(trim(e.CREDIT_ACTION_PRICES)) || DEFAULT_ACTION_PRICES,
     rechargeOrderTtlMs: intFromEnv(e.RECHARGE_ORDER_TTL_MS, 2 * 60 * 60 * 1000),
   };
 }

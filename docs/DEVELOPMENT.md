@@ -23,7 +23,7 @@ src/lib/server/db.ts   持久层 —— node:sqlite（WAL），业务层不手�
 
 - 新功能先问"属于哪一层"，代码只放那一层；路由里出现业务判断 = 分层错误。
 - **模块纪律**：模块可依赖平台件与共享组件，平台件不得 import 模块；模块之间不交叉 import（交叉需求下沉平台层）。模块的开关/计价/测试/文档是模块四件套，缺一不可。
-- **边界由 lint 强制执行**（2026-09-06）：`eslint.config.mjs` 的 `import/no-restricted-paths` 拦「`src/lib` → `src/modules`」；合法例外以 overrides 逐个登记（当前只剩插件组合根 `src/lib/plugin/default.ts`），新增例外必须同步注释原因。`src/components/` 里既有纯共享件（icons/layout），也有页面级编排件（upload-card/template-library 等）——编排件允许接线模块入口（import 模块 client），纯共享件不得依赖模块。
+- **边界由 lint 强制执行**（2026-09-06）：`eslint.config.mjs` 的 `import/no-restricted-paths` 拦「`src/lib` → `src/modules`」；合法例外以 overrides 逐个登记（当前两处：插件组合根 `src/lib/plugin/default.ts`、生成恢复组装点 `src/lib/server/generation/recovery.ts`——后者须调度模块自有的结算入口，模块表只由模块写），新增例外必须同步注释原因。`src/components/` 里既有纯共享件（icons/layout），也有页面级编排件（upload-card/template-library 等）——编排件允许接线模块入口（import 模块 client），纯共享件不得依赖模块。
 - 存量归拢（裁定 2026-09-06）：新功能一律进 `src/modules/`；老代码按样板（ppt-replicate）逐步归拢，顺序 ~~editable-export~~（已成）→ image-edit-tools → single-page → deck → payments → admin → auth，每次只搬一块、搬完全量门必须绿。
 - 静态数据优先：能写死在 `src/data/` 的不建表；必须运行时可改（管理员要调）才进 DB 或加密运行时配置。
 

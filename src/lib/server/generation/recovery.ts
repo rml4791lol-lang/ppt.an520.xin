@@ -8,6 +8,7 @@
 import { getDb } from '../db';
 import { deriveRefundKey, refundCredits } from '../credits';
 import { logProblem } from '../problem-log';
+import { interruptedPptToBaseRuns } from '@/modules/ppt-to-base/server/recovery';
 import { getGenDb, nowMs } from './db';
 import { getGenerationConfig } from './config';
 
@@ -118,6 +119,14 @@ export function reconcileInterrupted(runs: InterruptedRun[]): number {
     console.warn(`[anppt-v2][recovery] 收敛中断任务 ${healed.length} 条（${refs.join('、')}）`);
   }
   return healed.length;
+}
+
+/**
+ * 调用方已判定中断的单条任务：收敛 + 按实扣金额补退。
+ * 判活留在调用方（读路径无法等心跳扫描），不必为了签名伪造 interrupted 标志。
+ */
+export function reconcileInterruptedRun(run: Omit<InterruptedRun, 'interrupted'>): number {
+  return reconcileInterrupted([{ ...run, interrupted: true }]);
 }
 
 /**
@@ -275,26 +284,6 @@ function singlePageRuns(userId: string): InterruptedRun[] {
 }
 
 function pptToBaseRuns(userId: string): InterruptedRun[] {
-  // 表由平台 db 建，模块只写自己的业务；这里只做与模块失败分支同一条 UPDATE
-  const rows = getGenDb()
-    .prepare("SELECT id, request_id, charge_key, updated_at FROM ppt_to_base_jobs WHERE user_id = ? AND status = 'running'")
-    .all(userId) as Array<{ id: string; request_id: string; charge_key: string; updated_at: number }>;
-  return rows.map((row) => {
-    const jobId = String(row.id);
-    return {
-      key: jobId,
-      domain: 'ppt-to-base',
-      userId,
-      interrupted: !activeJobs.has(jobId) && isStale(Number(row.updated_at)),
-      settle: () => {
-        getGenDb()
-          .prepare("UPDATE ppt_to_base_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?")
-          .run('failed', '生成中断（服务重启），已自动退回', nowMs(), jobId);
-      },
-      chargeKey: String(row.charge_key || ''),
-      refundReason: '底座生成中断退回',
-      refType: 'ppt-to-base',
-      refId: String(row.request_id || jobId),
-    };
-  });
+  // 底座表归模块：这里只注入判活口径，调度模块导出的结算入口
+  return interruptedPptToBaseRuns(userId, (jobId, heartbeatMs) => activeJobs.has(jobId) || !isStale(heartbeatMs));
 }

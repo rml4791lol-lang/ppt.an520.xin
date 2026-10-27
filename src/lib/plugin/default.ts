@@ -10,8 +10,3 @@ export function getDefaultCtx(): PluginCtx {
   if (!cached) cached = bootSync(defaultProfile);
   return cached;
 }
-
-/** 换实现接缝：测试/嵌入可整体替换默认上下文（生产只在懒启动时装配一次）；null 复位。 */
-export function setDefaultCtx(ctx: PluginCtx | null): void {
-  cached = ctx;
-}
