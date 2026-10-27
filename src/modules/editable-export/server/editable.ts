@@ -20,12 +20,14 @@ import {
   verifyImage2PptWebhook,
   type Image2PptJobView,
 } from './image2ppt';
+import { editableChargeKey } from './charge-keys';
 import { withTransaction } from '@/lib/server/db';
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
 import { getOwnedDeck, listSlides } from '@/lib/server/generation/decks';
 import { getActiveVersionImagePath, listSingleProjectPages } from '@/lib/server/generation/single-pages';
+import { reconcileInterrupted } from '@/lib/server/generation/recovery';
 import { absPathForRelPath, readSiteFile, saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
@@ -304,9 +306,10 @@ async function prepareEditablePdf(row: ExportRow, config: GenerationConfig): Pro
 function refundEditableCharge(row: ExportRow): void {
   const charged = Number(row.charged_credits) || 0;
   if (charged <= 0) return;
-  const ledgerPrefix = String(row.kind) === 'editable_text' ? 'export-editable-text' : 'export-editable';
   try {
-    const { refundKey } = chargeRefundKeys(`${ledgerPrefix}:${row.ref_id}:${row.id}`);
+    const { refundKey } = chargeRefundKeys(
+      editableChargeKey({ kind: row.kind, refId: String(row.ref_id), exportId: String(row.id) }),
+    );
     refundCredits(String(row.user_id), charged, {
       reason: '可编辑导出失败退回',
       idempotencyKey: refundKey,
@@ -804,8 +807,7 @@ async function launchEditableExport(
       now,
       now,
     );
-    const ledgerPrefix = kind === 'editable_text' ? 'export-editable-text' : 'export-editable';
-    const { chargeKey } = chargeRefundKeys(`${ledgerPrefix}:${refId}:${exportId}`);
+    const { chargeKey } = chargeRefundKeys(editableChargeKey({ kind, refId, exportId }));
     debitCredits(userId, estimate.credits, {
       reason: kind === 'editable_text' ? `转文字可编辑 PPTX（${pageCount} 页）` : `转可编辑 PPTX（${pageCount} 页）`,
       idempotencyKey: chargeKey,
@@ -999,9 +1001,21 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
     return (getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow) ?? row;
   }
   if (nowMs() - Number(row.created_at) > RECOVERY_GRACE_MS) {
-    // 建行后未建上游任务（进程中断）：后台重跑整条管线
+    // 建行后超过宽限仍无上游任务 = 进程中断：走同一个收敛实现重跑整条管线（可编辑导出是续跑，不是退星）
     // （debit 幂等键 + Codia Idempotency-Key 防重，重跑安全）
-    ensureEditablePipeline(row, runDeps);
+    reconcileInterrupted([
+      {
+        key: exportId,
+        domain: 'editable-export',
+        userId: String(row.user_id),
+        interrupted: true,
+        settle: () => {
+          ensureEditablePipeline(row, runDeps);
+        },
+        refType: String(row.ref_type || 'deck'),
+        refId: String(row.ref_id || ''),
+      },
+    ]);
   }
   return row;
 }

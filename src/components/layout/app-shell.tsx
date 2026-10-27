@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, MenuIcon } from "@/components/icons";
+import { getSession } from "@/lib/client/api";
 import { AnnouncementBar } from "@/components/layout/announcement-bar";
 import { SidebarBrand, SidebarNav } from "@/components/layout/sidebar";
 import { UserArea } from "@/components/layout/user-area";
@@ -27,14 +28,6 @@ export interface ShellSessionUser {
   email?: string | null;
   displayName?: string;
   role?: string;
-}
-
-interface SessionResponse {
-  ok: boolean;
-  data?: {
-    authenticated?: boolean;
-    user?: ShellSessionUser | null;
-  };
 }
 
 export function AppShell({
@@ -64,24 +57,21 @@ export function AppShell({
   }, [drawerOpen]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let cancelled = false;
     const loadSession = async () => {
       try {
-        const response = await fetch("/api/auth/session", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) return;
-        const payload = (await response.json()) as SessionResponse;
-        setSessionUser(payload.ok && payload.data?.authenticated ? payload.data.user ?? null : null);
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) setSessionUser(null);
+        const session = await getSession();
+        if (!cancelled) setSessionUser(session.user);
+      } catch {
+        if (!cancelled) setSessionUser(null);
       } finally {
-        if (!controller.signal.aborted) setSessionReady(true);
+        if (!cancelled) setSessionReady(true);
       }
     };
     void loadSession();
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (

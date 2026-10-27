@@ -4,7 +4,7 @@ set -euo pipefail
 
 LABEL="xin.anppt.v2-sync"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-SCRIPT="/Users/an/ZCodeProject/anppt-v2.production/scripts/sync-production.sh"
+SCRIPT="/Users/an/Desktop/Atlas/ppt.an520.xin网站/scripts/sync-production.sh"   # 已废弃：2026-10-26 起单目录开发
 LOG="$HOME/Library/Logs/anppt-v2-git-sync.log"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"

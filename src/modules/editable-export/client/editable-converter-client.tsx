@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, DownloadIcon, FileIcon, ImageIcon, UploadIcon } from "@/components/icons";
+import { getSession } from "@/lib/client/api";
 import { getExportRecord, listExportRecords, type ExportRecord } from "@/lib/client/deck-api";
 
 const ACCEPTED = ["application/pdf", "image/png", "image/jpeg"];
@@ -82,10 +83,10 @@ export function EditableConverterClient() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/session", { cache: "no-store" })
-      .then((response) => response.json().catch(() => null))
+    getSession()
+      .catch(() => ({ authenticated: false, user: null }))
       .then((session) => {
-        const authenticated = Boolean(session?.ok && session.data?.authenticated);
+        const authenticated = session.authenticated;
         if (!cancelled) setLoggedIn(authenticated);
         if (cancelled || !authenticated) return null;
         return listExportRecords(1, 1, { refType: "upload", kind: "editable", latest: true });

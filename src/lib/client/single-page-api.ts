@@ -1,6 +1,8 @@
 // 单页生成器（创意页面生成器）API 客户端。
 // 对齐 src/app/api/single-page/* 与 src/lib/server/generation/single-pages.ts。
-import { apiFetch } from "./api";
+import { apiFetch, dispatchIntent, type ProjectListResult } from "./api";
+export type { ProjectItem, ProjectListResult } from "./api";
+import { toSinglePageActionCall, type SinglePageIntent } from "../single-page-intents";
 
 export type SinglePageStatus = "idle" | "queued" | "running" | "succeeded" | "failed";
 
@@ -16,6 +18,11 @@ export interface SingleRunResponse {
   balance: number;
 }
 
+/** 动作经 typed intent 分发：路径与信封由 src/lib/single-page-intents.ts 决定 */
+function sendIntent<T>(intent: SinglePageIntent): Promise<T> {
+  return dispatchIntent<T>(toSinglePageActionCall(intent), intent);
+}
+
 export function generateSinglePage(input: {
   pageId: string;
   projectId?: string;
@@ -29,7 +36,7 @@ export function generateSinglePage(input: {
   colorMode?: string;
   structure?: unknown;
 }): Promise<SingleRunResponse> {
-  return apiFetch<SingleRunResponse>("/api/single-page/generate", { body: input });
+  return sendIntent({ kind: "generatePage", params: input });
 }
 
 export function refineSinglePage(input: {
@@ -37,7 +44,7 @@ export function refineSinglePage(input: {
   editInstruction: string;
   requestId?: string;
 }): Promise<SingleRunResponse> {
-  return apiFetch<SingleRunResponse>("/api/single-page/refine", { body: input });
+  return sendIntent({ kind: "refinePage", params: input });
 }
 
 export interface SingleExportResult {
@@ -53,7 +60,7 @@ export function exportSinglePagesImagePptx(input: {
   pageIds?: string[];
   title?: string;
 }): Promise<SingleExportResult> {
-  return apiFetch<SingleExportResult>("/api/single-page/export-image-pptx", { body: input });
+  return sendIntent({ kind: "exportImagePptx", params: input });
 }
 
 export interface SingleEditableExportStart {
@@ -71,29 +78,7 @@ export interface SingleEditableExportStart {
 
 /** 单页项目 → 可编辑 PPTX（20🌟/页，WPS 免费优先 / Image2PPT / Codia 备用）：202 返回任务句柄，轮询 /api/pptx-exports/{id} */
 export function startSingleEditableExport(projectId: string, force = false): Promise<SingleEditableExportStart> {
-  return apiFetch<SingleEditableExportStart>("/api/single-page/export-editable-pptx", {
-    body: { projectId, force },
-  });
-}
-
-export interface ProjectItem {
-  id: string;
-  projectType: "deck" | "single-page";
-  source?: "single" | "replicate";
-  title: string;
-  status: string;
-  pageCount: number;
-  coverUrl: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ProjectListResult {
-  items: ProjectItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-  retentionDays: number;
+  return sendIntent({ kind: "exportEditablePptx", params: { projectId, force } });
 }
 
 export function listProjects(query: {
@@ -168,7 +153,7 @@ export function selectSinglePageVersion(input: {
   pageId: string;
   versionId: string;
 }): Promise<SelectVersionResponse> {
-  return apiFetch<SelectVersionResponse>("/api/single-page/select-version", { body: input });
+  return sendIntent({ kind: "selectVersion", params: input });
 }
 
 /** 素材上传（单页「传图」原稿）：POST /api/assets/upload（FormData，≤30MB） */

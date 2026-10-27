@@ -28,7 +28,7 @@ export type DeckStatus =
 
 export type StructureStatus = 'pending' | 'ok' | 'failed';
 
-/** stale：unlock-structure 或换风格后被作废的历史生成页 */
+/** stale：解锁结构或换风格后被作废的历史生成页 */
 export type GenStatus = 'idle' | 'queued' | 'running' | 'succeeded' | 'failed' | 'stale';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'partial' | 'failed';

@@ -20,6 +20,23 @@ export async function runEditableExportTests(ctx) {
       credits.estimateCredits({ action: 'export_editable', pages: 3 }).credits === 60);
     credits.refundCredits(uid, 500, { reason: '测试补贴', idempotencyKey: 'test-topup-6b' });
 
+    // ---- 扣费键唯一来源（架构评审 C2）：扣费与退款必须拼出同一个键 ----
+    {
+      const keyLib = await import('../../src/modules/editable-export/server/charge-keys.ts');
+      const { chargeRefundKeys } = await import('../../src/lib/server/credits.ts');
+      const deckKey = keyLib.editableChargeKey({ kind: 'editable', refId: 'deck-1', exportId: 'exp-1' });
+      const textKey = keyLib.editableChargeKey({ kind: 'editable_text', refId: 'deck-1', exportId: 'exp-1' });
+      check('扣费键：editable 档前缀与历史账本一致', deckKey === 'export-editable:deck-1:exp-1', deckKey);
+      check('扣费键：editable_text 档前缀独立', textKey === 'export-editable-text:deck-1:exp-1', textKey);
+      check('扣费键：未知 kind 回落 editable 档，不凭空造前缀',
+        keyLib.editableChargeKey({ kind: 'mystery', refId: 'd', exportId: 'e' }) === 'export-editable:d:e');
+      check('扣费键：同输入同输出（幂等前提）',
+        keyLib.editableChargeKey({ kind: 'editable', refId: 'd', exportId: 'e' })
+          === keyLib.editableChargeKey({ kind: 'editable', refId: 'd', exportId: 'e' }));
+      check('退款键：由扣费键定长派生且不等于扣费键',
+        chargeRefundKeys(deckKey).refundKey !== deckKey && chargeRefundKeys(deckKey).chargeKey === deckKey);
+    }
+
     // ---- 已启动任务固定 Codia 配置快照：管理员中途切换只影响后续新任务 ----
     {
       const envKeys = ['ANPPT_V2_CODIA_BASE_URL', 'ANPPT_V2_CODIA_API_KEY'];
@@ -192,11 +209,11 @@ export async function runEditableExportTests(ctx) {
         title: '穷人可编辑', sourceFileName: '', sourceText: '内容',
         durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
       });
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'outline' }, okDeps6b);
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'structure' }, okDeps6b);
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'confirm-structure' }, okDeps6b);
-      await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps6b);
-      const g = await actions.dispatchDeckAction(poorE.user.id, pd.id, { action: 'generate' }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'generateOutline', params: {} }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'structureSlides', params: {} }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'confirmStructure', params: {} }, okDeps6b);
+      await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, okDeps6b);
+      const g = await actions.dispatchDeckIntent(poorE.user.id, pd.id, { kind: 'generateSlides', params: {} }, okDeps6b);
       await g.job.done;
       check('穷人 deck 生成全绿', decks.getDeckState(poorE.user.id, pd.id).deck.status === 'generated');
       credits.debitCredits(poorE.user.id, 50, { reason: '测试花掉', idempotencyKey: 'test-drain-6b' });
@@ -259,6 +276,33 @@ export async function runEditableExportTests(ctx) {
       check('懒恢复成功不触碰余额', credits.getBalance(uid) === before);
     }
 
+    // ---- 懒恢复读点：导出列表读一眼就重跑中断的导出（调用方不显式调用恢复）----
+    {
+      const now = Date.now();
+      genDb.prepare(`INSERT INTO export_jobs
+          (id, user_id, ref_type, ref_id, kind, status, page_count, file_path, file_url, error, upstream_task_id, charged_credits, created_at, updated_at)
+         VALUES ('exp_lazy_read', ?, 'deck', ?, 'editable', 'processing', 2, '', '', '', '', 40, ?, ?)`)
+        .run(uid, deck.id, now - 60_000, now - 60_000);
+      let pollN = 0;
+      const readFetcher = makeMockFetcher([
+        { match: '/v2/open/tasks/task_read', payload: () => (pollN++ > 0
+          ? { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/read.pptx', page_count: 2 } } }
+          : { code: 0, message: 'ok', data: { status: 'pending' } }) },
+        { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_read', status: 'pending' } } },
+        { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_read' } } },
+        { match: 'read.pptx', payload: new Response(Buffer.from('read-pptx-binary')) },
+      ]);
+      const beforeRead = credits.getBalance(uid);
+      exportsLib.listExports(uid, {}, codiaDeps(readFetcher));
+      let readStatus = 'processing';
+      for (let i = 0; i < 150 && readStatus !== 'succeeded'; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        readStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read')?.status || '');
+      }
+      check('懒恢复读点：listExports 读一眼即重跑中断的导出', readStatus === 'succeeded', `实际 ${readStatus}`);
+      check('懒恢复读点：重跑不重复扣星', credits.getBalance(uid) === beforeRead);
+    }
+
     // ---- 未 generated deck → 409 ----
     {
       const dNg = decks.createDeck(uid, {
@@ -298,7 +342,7 @@ export async function runEditableExportTests(ctx) {
         }),
         { params: Promise.resolve({ id: deck.id }) },
       );
-      check('export-editable 兼容旧调用方无请求体', noBody.status !== 400, `实际 ${noBody.status}`);
+      check('export-editable 无请求体不再兼容（缺意图 400）', noBody.status === 400, `实际 ${noBody.status}`);
     }
   }
 
@@ -600,11 +644,11 @@ export async function runEditableExportTests(ctx) {
         title: '穷人文字档', sourceFileName: '', sourceText: '内容',
         durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
       });
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'outline' }, okDeps6e);
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'structure' }, okDeps6e);
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'confirm-structure' }, okDeps6e);
-      await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps6e);
-      const g = await actions.dispatchDeckAction(poorT.user.id, pd.id, { action: 'generate' }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'generateOutline', params: {} }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'structureSlides', params: {} }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'confirmStructure', params: {} }, okDeps6e);
+      await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, okDeps6e);
+      const g = await actions.dispatchDeckIntent(poorT.user.id, pd.id, { kind: 'generateSlides', params: {} }, okDeps6e);
       await g.job.done;
       check('穷人文字档 deck 生成全绿', decks.getDeckState(poorT.user.id, pd.id).deck.status === 'generated');
       credits.debitCredits(poorT.user.id, 75, { reason: '测试花掉', idempotencyKey: 'test-drain-6e' });
@@ -633,7 +677,9 @@ export async function runEditableExportTests(ctx) {
           'x-anppt-action': '1',
           cookie: `anppt_v2_session=${auth.createSessionForUser(gateUser.user.id)}`,
         },
-        body: '{}',
+        body: JSON.stringify({
+          intent: { kind: 'exportDeckTextEditable', params: { deckId: 'deck_nope' } },
+        }),
       });
       const denied = await textRoute.POST(gateRequest(), { params: Promise.resolve({ id: 'deck_nope' }) });
       const deniedJson = await denied.json();

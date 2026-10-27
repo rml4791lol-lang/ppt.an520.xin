@@ -16,7 +16,7 @@ export function StepStyle({
   ctx: DeckCtx;
   onGenerate: () => void;
 }) {
-  const { state, run, toast } = ctx;
+  const { state, availability, run, toast } = ctx;
   const [category, setCategory] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const gatedPacks = useGatedStylePacks();
@@ -27,11 +27,7 @@ export function StepStyle({
 
   const selectedId = state.deck.stylePackId || null;
   const selectedPack = allPacks.find((p) => p.id === selectedId) ?? null;
-  const hasGenerated = state.deck.status === "generated" || state.deck.status === "partial";
-  const generating = state.deck.status === "generating"
-    || state.slides.some((s) => s.genStatus === "queued" || s.genStatus === "running");
-  const pendingCount = state.slides.filter((s) => s.genStatus !== "succeeded").length;
-  const canGenerate = state.contentLocked; // 需先确认冻结
+  const { hasGenerated, generating, pendingGeneration: pendingCount, canGenerate } = availability;
 
   const filtered = useMemo(
     () =>
@@ -53,7 +49,7 @@ export function StepStyle({
       toast("暂不支持清除为「无风格」，可直接改选其他风格。");
       return;
     }
-    const result = await run("style", { stylePackId });
+    const result = await run({ kind: "setStyle", params: { stylePackId } });
     setSaving(false);
     if (!result) toast("选择风格失败，请重新尝试。");
   };

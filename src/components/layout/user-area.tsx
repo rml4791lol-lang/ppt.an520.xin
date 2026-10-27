@@ -4,11 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StarIcon } from "@/components/icons";
 import type { ShellSessionUser } from "@/components/layout/app-shell";
-
-interface BalanceResponse {
-  ok: boolean;
-  data?: { balance?: number; available?: number };
-}
+import { api } from "@/lib/client/api";
 
 /**
  * 顶部右侧用户区：积分 pill + 购买与兑换 + 登录/用户。
@@ -32,10 +28,7 @@ export function UserArea({
         return;
       }
       try {
-        const balRes = await fetch("/api/credits/balance", { cache: "no-store" });
-        if (!balRes.ok) return;
-        const bal = (await balRes.json()) as BalanceResponse;
-        const value = bal.data?.balance ?? bal.data?.available;
+        const value = await api.credits.balance();
         if (!cancelled && typeof value === "number") setBalance(value);
       } catch {
         /* 后端未就绪时保持占位态 */

@@ -12,6 +12,9 @@ import { runImage2PptTests } from './tests/image2ppt.test.mjs';
 import { runWpsAipptTests } from './tests/wps-aippt.test.mjs';
 import { runPluginRuntimeTests } from './tests/plugin-runtime.test.mjs';
 import { runPptToBaseTests, runPptToBaseServerTests } from './tests/ppt-to-base.test.mjs';
+import { runDeckIntentTests } from './tests/deck-intents.test.mjs';
+import { runDeckWorkbenchTests } from './tests/deck-workbench.test.mjs';
+import { runSurfaceIntentTests } from './tests/surface-intents.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
@@ -754,33 +757,33 @@ const fullFetcher = makeMockFetcher([...engineHandlers, imageOkHandler, editsOkH
 const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
 
 {
-  const r1 = await actions.dispatchDeckAction(uid, deck.id, { action: 'outline' }, fullDeps);
+  const r1 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'generateOutline', params: {} }, fullDeps);
   check('outline 后 status=outlined、2 页', r1.state.deck.status === 'outlined' && r1.state.slides.length === 2);
-  const r1b = await actions.dispatchDeckAction(uid, deck.id, { action: 'outline' }, fullDeps);
+  const r1b = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'generateOutline', params: {} }, fullDeps);
   check('重复 outline（无 force）复用', r1b.extra.reused === true);
 
-  const r2 = await actions.dispatchDeckAction(uid, deck.id, { action: 'structure' }, fullDeps);
+  const r2 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'structureSlides', params: {} }, fullDeps);
   check('structure 后 status=structured 且全部 ok', r2.state.deck.status === 'structured' && r2.state.slides.every((s) => s.structureStatus === 'ok'));
   check('structuredContent 已存库', r2.state.slides.every((s) => s.structuredContent.includes('【标题】')));
 
-  const r3 = await actions.dispatchDeckAction(uid, deck.id, { action: 'confirm-structure' }, fullDeps);
+  const r3 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'confirmStructure', params: {} }, fullDeps);
   check('confirm 后 status=confirmed、contentLocked=true', r3.state.deck.status === 'confirmed' && r3.state.contentLocked === true);
 
   await expectThrows('冻结后 outline 被拒', () =>
-    actions.dispatchDeckAction(uid, deck.id, { action: 'outline', force: true }, fullDeps), 'CONTENT_LOCKED');
+    actions.dispatchDeckIntent(uid, deck.id, { kind: 'generateOutline', params: { force: true } }, fullDeps), 'CONTENT_LOCKED');
   await expectThrows('冻结后 add-slide 被拒', () =>
-    actions.dispatchDeckAction(uid, deck.id, { action: 'add-slide' }, fullDeps), 'CONTENT_LOCKED');
+    actions.dispatchDeckIntent(uid, deck.id, { kind: 'addSlide', params: {} }, fullDeps), 'CONTENT_LOCKED');
   await expectThrows('冻结后 delete-slide 被拒', () =>
-    actions.dispatchDeckAction(uid, deck.id, { action: 'delete-slide', slideId: r3.state.slides[0].slideId }, fullDeps), 'CONTENT_LOCKED');
+    actions.dispatchDeckIntent(uid, deck.id, { kind: 'removeSlide', params: { slideId: r3.state.slides[0].slideId } }, fullDeps), 'CONTENT_LOCKED');
 
   await expectThrows('未选风格 generate 被拒', () =>
-    actions.dispatchDeckAction(uid, deck.id, { action: 'generate' }, fullDeps), 'STYLE_REQUIRED');
+    actions.dispatchDeckIntent(uid, deck.id, { kind: 'generateSlides', params: {} }, fullDeps), 'STYLE_REQUIRED');
 
-  const r4 = await actions.dispatchDeckAction(uid, deck.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, fullDeps);
+  const r4 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, fullDeps);
   check('style 选中风格包', r4.state.deck.stylePackId === STYLE_PACKS[0].id);
 
   const before = credits.getBalance(uid);
-  const r5 = await actions.dispatchDeckAction(uid, deck.id, { action: 'generate' }, fullDeps);
+  const r5 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'generateSlides', params: {} }, fullDeps);
   check('generate 返回 202 + job', r5.status === 202 && Boolean(r5.job));
   await r5.job.done;
   const s5 = decks.getDeckState(uid, deck.id);
@@ -815,19 +818,18 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
     genPrompts.some((p) => p.includes('全套 2 页中的第 2 页') && p.includes('「业绩」章节')));
 
   await expectThrows('生成后（非 generating）内容仍冻结', () =>
-    actions.dispatchDeckAction(uid, deck.id, { action: 'reorder-slides', order: slideIds }, fullDeps), 'CONTENT_LOCKED');
+    actions.dispatchDeckIntent(uid, deck.id, { kind: 'reorderSlides', params: { order: slideIds } }, fullDeps), 'CONTENT_LOCKED');
 
   // 失败重试：mock 不再失败（临时移除失败标记页标题不可行，换 forceRegenerate 整单重试）
   const retryFetcher = makeMockFetcher([...engineHandlers, { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
-  const r6 = await actions.dispatchDeckAction(uid, deck.id, { action: 'retry-failed' }, { fetchImpl: retryFetcher, config: engineConfig });
+  const r6 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'retryFailedSlides', params: {} }, { fetchImpl: retryFetcher, config: engineConfig });
   await r6.job.done;
   const s6 = decks.getDeckState(uid, deck.id);
   check('retry-failed 后全绿 status=generated', s6.deck.status === 'generated', `实际 ${s6.deck.status}`);
   check('失败页重试后 succeeded 且版本保留（≥2 版）', s6.slides[1].genStatus === 'succeeded' && s6.slides[1].versions.length >= 2);
 
   // refine-slide（i2i，保留旧版本）
-  const r7 = await actions.dispatchDeckAction(uid, deck.id,
-    { action: 'refine-slide', slideId: s6.slides[0].slideId, editInstruction: '把标题放大一点' },
+  const r7 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'refineSlide', params: { slideId: s6.slides[0].slideId, editInstruction: '把标题放大一点' } },
     { fetchImpl: retryFetcher, config: engineConfig });
   await r7.job.done;
   const s7 = decks.getDeckState(uid, deck.id);
@@ -835,7 +837,7 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
     retryFetcher.calls.some((c) => c.url.includes('/images/edits')) && s7.slides[0].versions.length >= 2);
 
   // unlock-structure：作废已生成页
-  const r8 = await actions.dispatchDeckAction(uid, deck.id, { action: 'unlock-structure' }, fullDeps);
+  const r8 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'unlockStructure', params: {} }, fullDeps);
   check('unlock 后 status=structured 且页变 stale', r8.state.deck.status === 'structured' && r8.state.slides.every((s) => s.genStatus === 'stale'));
   check('unlock 返回作废提示', String(r8.extra.warning || '').includes('作废'));
 }
@@ -850,10 +852,10 @@ console.log('\n[4a] 已启动整套生成固定运行时配置快照');
     title: '配置快照测试', sourceFileName: '', sourceText: '两页内容',
     durationMinutes: 10, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
   });
-  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'outline' }, fullDeps);
-  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'structure' }, fullDeps);
-  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'confirm-structure' }, fullDeps);
-  await actions.dispatchDeckAction(snapshotUser.user.id, snapshotDeck.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, fullDeps);
+  await actions.dispatchDeckIntent(snapshotUser.user.id, snapshotDeck.id, { kind: 'generateOutline', params: {} }, fullDeps);
+  await actions.dispatchDeckIntent(snapshotUser.user.id, snapshotDeck.id, { kind: 'structureSlides', params: {} }, fullDeps);
+  await actions.dispatchDeckIntent(snapshotUser.user.id, snapshotDeck.id, { kind: 'confirmStructure', params: {} }, fullDeps);
+  await actions.dispatchDeckIntent(snapshotUser.user.id, snapshotDeck.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, fullDeps);
 
   const envKeys = [
     'ANPPT_V2_IMAGE_BASE_URL', 'ANPPT_V2_IMAGE_API_KEY', 'ANPPT_V2_IMAGE_MODEL',
@@ -881,8 +883,8 @@ console.log('\n[4a] 已启动整套生成固定运行时配置快照');
     return jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] });
   };
   try {
-    const started = await actions.dispatchDeckAction(
-      snapshotUser.user.id, snapshotDeck.id, { action: 'generate' }, { fetchImpl: snapshotFetcher },
+    const started = await actions.dispatchDeckIntent(
+      snapshotUser.user.id, snapshotDeck.id, { kind: 'generateSlides', params: {} }, { fetchImpl: snapshotFetcher },
     );
     await started.job.done;
     check('管理员中途改配置不影响已启动整套生成',
@@ -950,53 +952,47 @@ console.log('\n[4c] update-slide / select-slide-version');
   });
   const okFetcher = makeMockFetcher([...engineHandlers, { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
   const okDeps = { fetchImpl: okFetcher, config: engineConfig };
-  await actions.dispatchDeckAction(uid, d3.id, { action: 'outline' }, okDeps);
+  await actions.dispatchDeckIntent(uid, d3.id, { kind: 'generateOutline', params: {} }, okDeps);
   const s0 = decks.getDeckState(uid, d3.id).slides[0].slideId;
 
-  const u1 = await actions.dispatchDeckAction(uid, d3.id,
-    { action: 'update-slide', slideId: s0, title: '新标题', rawText: '第一季度销售额 1200 万元，同比增长 20%' }, okDeps);
+  const u1 = await actions.dispatchDeckIntent(uid, d3.id, { kind: 'updateSlide', params: { slideId: s0, title: '新标题', rawText: '第一季度销售额 1200 万元，同比增长 20%' } }, okDeps);
   check('update-slide 标题/原文入库',
     u1.state.slides[0].title === '新标题' && u1.state.slides[0].rawText.includes('1200 万元'));
 
-  await actions.dispatchDeckAction(uid, d3.id, { action: 'structure' }, okDeps);
-  const u2 = await actions.dispatchDeckAction(uid, d3.id, { action: 'update-slide', slideId: s0, chapter: '第二章' }, okDeps);
+  await actions.dispatchDeckIntent(uid, d3.id, { kind: 'structureSlides', params: {} }, okDeps);
+  const u2 = await actions.dispatchDeckIntent(uid, d3.id, { kind: 'updateSlide', params: { slideId: s0, chapter: '第二章' } }, okDeps);
   check('仅改章节：deck 不回退且梳理结果保留',
     u2.state.deck.status === 'structured' && u2.state.slides[0].structureStatus === 'ok' && u2.state.slides[0].chapter === '第二章');
   generationDb.getGenDb().prepare("UPDATE deck_slides SET structure_warnings = '[\"旧提示\"]' WHERE id = ?").run(s0);
   const manualDsl = '【标题】人工新标题\n【区域：核心区域】\n【模块标题】人工模块\n【重点正文】人工调整后的梳理内容';
-  const manual = await actions.dispatchDeckAction(uid, d3.id,
-    { action: 'update-slide', slideId: s0, title: '人工新标题', structuredContent: manualDsl }, okDeps);
+  const manual = await actions.dispatchDeckIntent(uid, d3.id, { kind: 'updateSlide', params: { slideId: s0, title: '人工新标题', structuredContent: manualDsl } }, okDeps);
   check('人工编辑梳理内容后保持 structured + 本页 ok',
     manual.state.deck.status === 'structured'
       && manual.state.slides[0].structureStatus === 'ok'
       && manual.state.slides[0].structuredContent === manualDsl);
   check('人工编辑梳理内容后清除旧 warnings', manual.state.slides[0].structureWarnings.length === 0);
   await expectThrows('人工保存非法 DSL 被拒', () =>
-    actions.dispatchDeckAction(uid, d3.id,
-      { action: 'update-slide', slideId: s0, structuredContent: '这不是合法 DSL' }, okDeps), 'VALIDATION_ERROR');
+    actions.dispatchDeckIntent(uid, d3.id, { kind: 'updateSlide', params: { slideId: s0, structuredContent: '这不是合法 DSL' } }, okDeps), 'VALIDATION_ERROR');
   await expectThrows('人工保存空 DSL 被拒', () =>
-    actions.dispatchDeckAction(uid, d3.id,
-      { action: 'update-slide', slideId: s0, structuredContent: '   ' }, okDeps), 'VALIDATION_ERROR');
-  const u3 = await actions.dispatchDeckAction(uid, d3.id,
-    { action: 'update-slide', slideId: s0, rawText: '销售额 1200 万元，同比增长 20%，补充第二季度展望' }, okDeps);
+    actions.dispatchDeckIntent(uid, d3.id, { kind: 'updateSlide', params: { slideId: s0, structuredContent: '   ' } }, okDeps), 'VALIDATION_ERROR');
+  const u3 = await actions.dispatchDeckIntent(uid, d3.id, { kind: 'updateSlide', params: { slideId: s0, rawText: '销售额 1200 万元，同比增长 20%，补充第二季度展望' } }, okDeps);
   check('改原文：页打回 pending、deck 回 outlined',
     u3.state.slides[0].structureStatus === 'pending' && u3.state.deck.status === 'outlined');
 
-  await actions.dispatchDeckAction(uid, d3.id, { action: 'structure' }, okDeps);
-  await actions.dispatchDeckAction(uid, d3.id, { action: 'confirm-structure' }, okDeps);
+  await actions.dispatchDeckIntent(uid, d3.id, { kind: 'structureSlides', params: {} }, okDeps);
+  await actions.dispatchDeckIntent(uid, d3.id, { kind: 'confirmStructure', params: {} }, okDeps);
   await expectThrows('冻结后 update-slide 被拒', () =>
-    actions.dispatchDeckAction(uid, d3.id, { action: 'update-slide', slideId: s0, title: 'x' }, okDeps), 'CONTENT_LOCKED');
+    actions.dispatchDeckIntent(uid, d3.id, { kind: 'updateSlide', params: { slideId: s0, title: 'x' } }, okDeps), 'CONTENT_LOCKED');
 
-  await actions.dispatchDeckAction(uid, d3.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, okDeps);
-  const g = await actions.dispatchDeckAction(uid, d3.id, { action: 'generate' }, okDeps);
+  await actions.dispatchDeckIntent(uid, d3.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, okDeps);
+  const g = await actions.dispatchDeckIntent(uid, d3.id, { kind: 'generateSlides', params: {} }, okDeps);
   await g.job.done;
   const st1 = decks.getDeckState(uid, d3.id);
   check('生成全绿 generated', st1.deck.status === 'generated', `实际 ${st1.deck.status}`);
   const v1 = st1.slides[0].versions.find((v) => v.versionNo === 1);
 
   const failEdit = makeMockFetcher([{ match: '/images/edits', payload: jsonResponse({ error: { message: 'mock i2i 500' } }, 500) }]);
-  const rf = await actions.dispatchDeckAction(uid, d3.id,
-    { action: 'refine-slide', slideId: s0, editInstruction: '改背景' },
+  const rf = await actions.dispatchDeckIntent(uid, d3.id, { kind: 'refineSlide', params: { slideId: s0, editInstruction: '改背景' } },
     { fetchImpl: failEdit, config: engineConfig });
   await rf.job.done;
   const st2 = decks.getDeckState(uid, d3.id);
@@ -1005,10 +1001,9 @@ console.log('\n[4c] update-slide / select-slide-version');
 
   const vFailed = decks.listVersions(s0).find((v) => v.status === 'failed');
   await expectThrows('failed 版本不可选', () =>
-    actions.dispatchDeckAction(uid, d3.id, { action: 'select-slide-version', slideId: s0, versionId: vFailed.versionId }, okDeps), 'VERSION_NOT_READY');
+    actions.dispatchDeckIntent(uid, d3.id, { kind: 'commitVersion', params: { slideId: s0, versionId: vFailed.versionId } }, okDeps), 'VERSION_NOT_READY');
 
-  const sv = await actions.dispatchDeckAction(uid, d3.id,
-    { action: 'select-slide-version', slideId: s0, versionId: v1.versionId }, okDeps);
+  const sv = await actions.dispatchDeckIntent(uid, d3.id, { kind: 'commitVersion', params: { slideId: s0, versionId: v1.versionId } }, okDeps);
   check('回退 v1：activeVersion 生效且整单回 generated',
     sv.state.slides[0].activeVersionId === v1.versionId && sv.state.deck.status === 'generated',
     `实际 ${sv.state.slides[0].activeVersionId} / ${sv.state.deck.status}`);
@@ -1018,8 +1013,12 @@ console.log('\n[4c] update-slide / select-slide-version');
     durationMinutes: 5, targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
   });
   await expectThrows('未确认内容切版本被拒', () =>
-    actions.dispatchDeckAction(uid, d4.id, { action: 'select-slide-version', slideId: 'x', versionId: 'y' }, okDeps), 'VERSION_SELECT_TOO_EARLY');
+    actions.dispatchDeckIntent(uid, d4.id, { kind: 'commitVersion', params: { slideId: 'x', versionId: 'y' } }, okDeps), 'VERSION_SELECT_TOO_EARLY');
 }
+
+await runDeckIntentTests({ check, expectThrows, auth, decks, fullDeps });
+await runDeckWorkbenchTests({ check });
+await runSurfaceIntentTests({ check, expectThrows, auth, singlePages, credits, uid, makeMockFetcher, editsOkHandler, PNG_1X1_B64, imageConfig, deck });
 
 console.log('\n[5] 余额不足整单 402');
 {
@@ -1032,13 +1031,13 @@ console.log('\n[5] 余额不足整单 402');
     title: '穷人项目', sourceFileName: 'a.txt', sourceText: '内容',
     durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
   });
-  await actions.dispatchDeckAction(poor.user.id, d2.id, { action: 'outline' }, fullDeps);
-  await actions.dispatchDeckAction(poor.user.id, d2.id, { action: 'structure' }, fullDeps);
-  await actions.dispatchDeckAction(poor.user.id, d2.id, { action: 'confirm-structure' }, fullDeps);
-  await actions.dispatchDeckAction(poor.user.id, d2.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, fullDeps);
+  await actions.dispatchDeckIntent(poor.user.id, d2.id, { kind: 'generateOutline', params: {} }, fullDeps);
+  await actions.dispatchDeckIntent(poor.user.id, d2.id, { kind: 'structureSlides', params: {} }, fullDeps);
+  await actions.dispatchDeckIntent(poor.user.id, d2.id, { kind: 'confirmStructure', params: {} }, fullDeps);
+  await actions.dispatchDeckIntent(poor.user.id, d2.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, fullDeps);
   await expectThrows('余额 5 < 20 → 402 INSUFFICIENT_CREDITS', async () => {
     try {
-      await actions.dispatchDeckAction(poor.user.id, d2.id, { action: 'generate' }, fullDeps);
+      await actions.dispatchDeckIntent(poor.user.id, d2.id, { kind: 'generateSlides', params: {} }, fullDeps);
     } catch (error) {
       throw Object.assign(new Error(error.message), { code: error.code, status: error.status });
     }
@@ -1052,8 +1051,8 @@ console.log('\n[6] 导出：图片版 pptx 真产出 + editable 501 + 导出中�
   // deck 在 [4] 末尾被 unlock 后重新生成一页用于导出
   const okFetcher = makeMockFetcher([...engineHandlers, { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
   const okDeps = { fetchImpl: okFetcher, config: engineConfig };
-  await actions.dispatchDeckAction(uid, deck.id, { action: 'confirm-structure' }, okDeps);
-  const rg = await actions.dispatchDeckAction(uid, deck.id, { action: 'generate', forceRegenerate: true }, okDeps);
+  await actions.dispatchDeckIntent(uid, deck.id, { kind: 'confirmStructure', params: {} }, okDeps);
+  const rg = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'generateSlides', params: { forceRegenerate: true } }, okDeps);
   await rg.job.done;
   const s = decks.getDeckState(uid, deck.id);
   check('重新生成全绿', s.deck.status === 'generated', `实际 ${s.deck.status}`);
@@ -1231,6 +1230,20 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   const okImageFetcher = makeMockFetcher([imageOkHandler, editsOkHandler]);
   const okDeps2 = { fetchImpl: okImageFetcher, config: imageConfig };
 
+  // 读路径一律走真实路由：收敛由鉴权门统一触发，测试里不写任何恢复调用
+  const deckRoute = await import('../src/app/api/deck/[id]/route.ts');
+  const projectsRoute = await import('../src/app/api/projects/route.ts');
+  const singlePageProjectRoute = await import('../src/app/api/single-page/project/route.ts');
+  const sessionCookie = { cookie: `anppt_v2_session=${encodeURIComponent(auth.createSessionForUser(uid2))}` };
+  const readJson = async (response) => (await response.json()).data;
+  const readDeckViaRoute = async (deckId) => readJson(await deckRoute.GET(
+    new Request(`http://localhost/api/deck/${deckId}`, { headers: sessionCookie }),
+    { params: Promise.resolve({ id: deckId }) },
+  ));
+  const readSingleProjectViaRoute = async (projectId) => readJson(await singlePageProjectRoute.GET(
+    new Request(`http://localhost/api/single-page/project?projectId=${encodeURIComponent(projectId)}`, { headers: sessionCookie }),
+  ));
+
   // --- deck：手工铺「生成中途进程死亡」现场（deck generating + 页 queued + 已扣费无退款）---
   const d9 = decks.createDeck(uid2, {
     title: '中断恢复测试', sourceFileName: 'r.txt', sourceText: '2025 年销售额 1200 万元。',
@@ -1256,18 +1269,18 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   decks.touchDeck(d9.id, { status: 'generating' });
   check('中断现场：扣费后余额 80', credits.getBalance(uid2) === 80, `实际 ${credits.getBalance(uid2)}`);
   await expectThrows('未恢复前 generate 永久 409（复现死锁）', () =>
-    actions.dispatchDeckAction(uid2, d9.id, { action: 'generate' }, okDeps2), 'GENERATION_RUNNING');
+    actions.dispatchDeckIntent(uid2, d9.id, { kind: 'generateSlides', params: {} }, okDeps2), 'GENERATION_RUNNING');
 
   // 活跃 job（心跳新鲜）不被误收敛
   const stateLive = decks.getDeckState(uid2, d9.id);
   check('活跃生成不被误收敛', stateLive.deck.status === 'generating' && stateLive.slides.every((s) => s.genStatus === 'queued'));
 
-  // 心跳超时（回拨 2h）→ getDeckState 懒恢复
+  // 心跳超时（回拨 2h）→ 工作台状态读接口自动收敛（无任何恢复调用）
   const dbMod = await import('../src/lib/server/db.ts');
   const genDbMod = await import('../src/lib/server/generation/db.ts');
   const staleTs = Date.now() - 2 * 60 * 60 * 1000;
   dbMod.getDb().prepare('UPDATE generation_jobs SET updated_at = ? WHERE id = ?').run(staleTs, job9.jobId);
-  const healed = decks.getDeckState(uid2, d9.id);
+  const healed = await readDeckViaRoute(d9.id);
   check('恢复：deck 死锁解除（confirmed，无成功页）', healed.deck.status === 'confirmed', `实际 ${healed.deck.status}`);
   check('恢复：中断页 → failed 可重试', healed.slides.every((s) => s.genStatus === 'failed' && s.genError.length > 0));
   check('恢复：job 置 failed', decks.latestJob(d9.id).status === 'failed');
@@ -1277,10 +1290,10 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
     .map((r) => String(r.idempotency_key));
   check('恢复：refund 键与正常失败退款同格式',
     slides9.every((s) => refundKeys.includes(credits.deriveRefundKey(`deck-generate:${d9.id}:${job9.jobId}:${s.slideId}`))));
-  const againHealed = decks.getDeckState(uid2, d9.id);
+  const againHealed = await readDeckViaRoute(d9.id);
   check('恢复幂等：重复读不重复退款', credits.getBalance(uid2) === 100 && againHealed.deck.status === 'confirmed');
 
-  const retry9 = await actions.dispatchDeckAction(uid2, d9.id, { action: 'retry-failed' }, okDeps2);
+  const retry9 = await actions.dispatchDeckIntent(uid2, d9.id, { kind: 'retryFailedSlides', params: {} }, okDeps2);
   await retry9.job.done;
   const state9 = decks.getDeckState(uid2, d9.id);
   check('恢复后 retry-failed 全部成功 → generated', state9.deck.status === 'generated' && state9.slides.every((s) => s.genStatus === 'succeeded'));
@@ -1296,12 +1309,84 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   genDbMod.getGenDb().prepare("UPDATE single_pages SET status = 'running' WHERE id = 'pg-r1'").run();
   credits.debitCredits(uid2, 10, { reason: '单页生成', idempotencyKey: manualKey, refType: 'single-page', refId: 'pg-r1' });
   check('单页中断现场：余额 60', credits.getBalance(uid2) === 60, `实际 ${credits.getBalance(uid2)}`);
-  check('单页恢复：reconcileSinglePage 收敛', recovery.reconcileSinglePage(uid2, 'pg-r1') === true);
+  // 单页工作台详情读一眼即收敛：读点没有恢复代码
+  const spHealed = await readSingleProjectViaRoute(sp.page.projectId);
+  const spHealedPage = spHealed.pages.find((row) => row.pageId === 'pg-r1');
+  check('单页恢复：详情读点收敛中断页（无恢复调用）', spHealedPage?.status === 'failed', `实际 ${spHealedPage?.status}`);
   const pageAfter = singlePages.getOwnedPage(uid2, 'pg-r1');
   check('单页恢复：页 → failed', pageAfter.status === 'failed');
   check('单页恢复：孤儿扣费补退（余额回 70）', credits.getBalance(uid2) === 70, `实际 ${credits.getBalance(uid2)}`);
   const spAgain = await singlePages.generateSinglePage(uid2, { pageId: 'pg-r1', content: '恢复后重新生成' }, okDeps2);
   check('单页恢复：重新生成不再 409 且成功', spAgain.status === 'succeeded');
+
+  // --- 单一收敛实现：判活 / 收敛 / 补退集中在一处（整套 / 单页 / 可编辑导出共用）---
+  {
+    const settled = [];
+    const drillKey = 'single-page:pg-drill:job_drill';
+    credits.debitCredits(uid2, 10, { reason: '收敛实现自检', idempotencyKey: drillKey, refType: 'single-page', refId: 'pg-drill' });
+    const balanceDrill = credits.getBalance(uid2);
+    const healedCount = recovery.reconcileInterrupted([
+      { key: 'live', domain: 'deck', userId: uid2, interrupted: false, chargeKey: drillKey, refType: 'deck', refId: 'd-live', settle: () => settled.push('live') },
+      { key: 'dead', domain: 'single-page', userId: uid2, interrupted: true, chargeKey: drillKey, refundReason: '自检退回', refType: 'single-page', refId: 'pg-drill', settle: () => settled.push('dead') },
+    ]);
+    check('单一收敛实现：只收敛判定为中断的任务', healedCount === 1 && settled.join(',') === 'dead', `实际 ${healedCount} ${settled.join(',')}`);
+    check('单一收敛实现：按实扣金额补退', credits.getBalance(uid2) === balanceDrill + 10, `实际 ${credits.getBalance(uid2)}`);
+    recovery.reconcileInterrupted([
+      { key: 'dead', domain: 'single-page', userId: uid2, interrupted: true, chargeKey: drillKey, refType: 'single-page', refId: 'pg-drill', settle: () => {} },
+    ]);
+    check('单一收敛实现：重复收敛不双退', credits.getBalance(uid2) === balanceDrill + 10, `实际 ${credits.getBalance(uid2)}`);
+  }
+
+  // --- 读点即收敛（整套链）：项目列表读一眼就解除死锁，调用方不碰恢复代码 ---
+  {
+    const dList = decks.createDeck(uid2, {
+      title: '列表读点', sourceFileName: 'l.txt', sourceText: '2025 年营收 300 万元。',
+      durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+    });
+    decks.replaceSlides(dList.id, OUTLINE_FIXTURE);
+    for (const slide of decks.listSlides(dList.id)) {
+      decks.updateSlideStructure(dList.id, slide.slideId, { ok: true, structuredContent: '【标题】t\n【正文】b', warnings: [], errors: [] });
+    }
+    decks.touchDeck(dList.id, { status: 'confirmed', confirmedAt: Date.now() });
+    decks.touchDeck(dList.id, { stylePackId: STYLE_PACKS[0].id });
+    const jobList = decks.createJob(uid2, dList.id, 'deck-generate', 2);
+    decks.updateJob(jobList.jobId, { status: 'running' });
+    for (const slide of decks.listSlides(dList.id)) {
+      decks.createSlideVersion(slide, { kind: 'generate', prompt: 'p', jobId: jobList.jobId });
+      decks.updateSlideGen(dList.id, slide.slideId, { genStatus: 'queued' });
+      credits.debitCredits(uid2, 10, {
+        reason: '列表读点扣费', idempotencyKey: `deck-generate:${dList.id}:${jobList.jobId}:${slide.slideId}`, refType: 'deck', refId: dList.id,
+      });
+    }
+    decks.touchDeck(dList.id, { status: 'generating' });
+    dbMod.getDb().prepare('UPDATE generation_jobs SET updated_at = ? WHERE id = ?').run(staleTs, jobList.jobId);
+    const balanceList = credits.getBalance(uid2);
+    // 读函数本身不再顺手收敛：恢复只在鉴权门，读点不必写恢复代码
+    check('读函数不再顺手恢复（收敛归鉴权门）', decks.getDeckState(uid2, dList.id).deck.status === 'generating');
+    // 列表读接口（不是读函数）：新增读点只要走鉴权门就自动收敛
+    const listed = await readJson(await projectsRoute.GET(
+      new Request('http://localhost/api/projects?projectType=deck', { headers: sessionCookie }),
+    ));
+    const listedItem = listed.items.find((item) => item.id === dList.id);
+    check('读点：项目列表读一眼即收敛中断的整套生成', listedItem?.status === 'confirmed', `实际 ${listedItem?.status}`);
+    check('读点：列表读点按实扣金额补退（无显式恢复调用）', credits.getBalance(uid2) === balanceList + 20, `实际 ${credits.getBalance(uid2)}`);
+  }
+
+  // --- 读点即收敛（单页链）：批量状态轮询读一眼就恢复 ---
+  {
+    const spPoll = await singlePages.generateSinglePage(uid2, { pageId: 'pg-r2', content: '轮询读点恢复页' }, okDeps2);
+    const pollKey = 'single-page:pg-r2:job_pollcrash';
+    genDbMod.getGenDb().prepare(
+      "INSERT INTO single_page_versions (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at) VALUES (?, 'pg-r2', 'generate', 'p', 'queued', '', '', '', 'job_pollcrash', ?, ?, ?)",
+    ).run('ver_poll', pollKey, staleTs, staleTs);
+    genDbMod.getGenDb().prepare("UPDATE single_pages SET status = 'running' WHERE id = 'pg-r2'").run();
+    credits.debitCredits(uid2, 10, { reason: '单页生成', idempotencyKey: pollKey, refType: 'single-page', refId: 'pg-r2' });
+    const balancePoll = credits.getBalance(uid2);
+    const polled = await readSingleProjectViaRoute(spPoll.page.projectId);
+    const pollRow = polled.pages.find((row) => row.pageId === 'pg-r2');
+    check('读点：批量状态轮询收敛中断页', pollRow?.status === 'failed', `实际 ${pollRow?.status}`);
+    check('读点：轮询读点按实扣金额补退（无显式恢复调用）', credits.getBalance(uid2) === balancePoll + 10, `实际 ${credits.getBalance(uid2)}`);
+  }
 
   // --- 物理清理：软删超期 → 行 + 生成图删除；账本永久保留 ---
   const ledgerBeforePurge = dbMod.getDb()
@@ -1372,7 +1457,7 @@ console.log('\n[17] 金奖版式测试包（开关板门控真模板）');
     targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
   });
   await expectThrows('普通用户选用金奖测试包按 404 拒绝', () =>
-    actions.dispatchDeckAction(uid, goldDeck.id, { action: 'style', stylePackId: GOLD_PACK_ID }, fullDeps), 'NOT_FOUND');
+    actions.dispatchDeckIntent(uid, goldDeck.id, { kind: 'setStyle', params: { stylePackId: GOLD_PACK_ID } }, fullDeps), 'NOT_FOUND');
 
   const goldTester = await auth.registerWithPassword(
     { account: 'goldtester01', password: 'password123', confirmPassword: 'password123' }, '127.0.3.1');
@@ -1381,8 +1466,7 @@ console.log('\n[17] 金奖版式测试包（开关板门控真模板）');
     title: '金奖实测', sourceFileName: '', sourceText: '测试金奖包', durationMinutes: 15,
     targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
   });
-  const goldStyle = await actions.dispatchDeckAction(goldTester.user.id, goldTesterDeck.id,
-    { action: 'style', stylePackId: GOLD_PACK_ID }, fullDeps);
+  const goldStyle = await actions.dispatchDeckIntent(goldTester.user.id, goldTesterDeck.id, { kind: 'setStyle', params: { stylePackId: GOLD_PACK_ID } }, fullDeps);
   check('测试用户选用金奖测试包成功', goldStyle.state.deck.stylePackId === GOLD_PACK_ID);
 }
 
@@ -1407,11 +1491,11 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     title: '图片编辑工具', sourceFileName: '', sourceText: '测试图片级编辑', durationMinutes: 15,
     targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
   });
-  await actions.dispatchDeckAction(uid18, d18.id, { action: 'outline' }, editDeps);
-  await actions.dispatchDeckAction(uid18, d18.id, { action: 'structure' }, editDeps);
-  await actions.dispatchDeckAction(uid18, d18.id, { action: 'confirm-structure' }, editDeps);
-  await actions.dispatchDeckAction(uid18, d18.id, { action: 'style', stylePackId: STYLE_PACKS[0].id }, editDeps);
-  const gen18 = await actions.dispatchDeckAction(uid18, d18.id, { action: 'generate' }, editDeps);
+  await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'generateOutline', params: {} }, editDeps);
+  await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'structureSlides', params: {} }, editDeps);
+  await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'confirmStructure', params: {} }, editDeps);
+  await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, editDeps);
+  const gen18 = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'generateSlides', params: {} }, editDeps);
   await gen18.job.done;
   const s18 = decks.getDeckState(uid18, d18.id);
   check('图片工具前置：两页生成成功', s18.slides.every((s) => s.genStatus === 'succeeded'));
@@ -1420,13 +1504,13 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
   const markDataUrl = `data:image/png;base64,${PNG_1X1_B64}`;
   const balBeforeGated = credits.getBalance(uid18);
   await expectThrows('开关 off：erase-slide 404', () =>
-    actions.dispatchDeckAction(uid18, d18.id, { action: 'erase-slide', slideId: s18.slides[0].slideId, markImageDataUrl: markDataUrl }, editDeps), 'NOT_FOUND');
+    actions.dispatchDeckIntent(uid18, d18.id, { kind: 'eraseSlide', params: { slideId: s18.slides[0].slideId, markImageDataUrl: markDataUrl } }, editDeps), 'NOT_FOUND');
   await expectThrows('开关 off：text-edit-slide 404', () =>
-    actions.dispatchDeckAction(uid18, d18.id, { action: 'text-edit-slide', slideId: s18.slides[0].slideId, editInstruction: '改字' }, editDeps), 'NOT_FOUND');
+    actions.dispatchDeckIntent(uid18, d18.id, { kind: 'editSlideText', params: { slideId: s18.slides[0].slideId, editInstruction: '改字' } }, editDeps), 'NOT_FOUND');
   await expectThrows('开关 off：fuse-slide 404', () =>
-    actions.dispatchDeckAction(uid18, d18.id, { action: 'fuse-slide', slideId: s18.slides[0].slideId, fusionPackId: STYLE_PACKS[0].id }, editDeps), 'NOT_FOUND');
+    actions.dispatchDeckIntent(uid18, d18.id, { kind: 'fuseSlide', params: { slideId: s18.slides[0].slideId, fusionPackId: STYLE_PACKS[0].id } }, editDeps), 'NOT_FOUND');
   await expectThrows('开关 off：set-reference 404', () =>
-    actions.dispatchDeckAction(uid18, d18.id, { action: 'set-reference', slideId: s18.slides[0].slideId }, editDeps), 'NOT_FOUND');
+    actions.dispatchDeckIntent(uid18, d18.id, { kind: 'setReferenceImage', params: { slideId: s18.slides[0].slideId } }, editDeps), 'NOT_FOUND');
   check('开关 off 时无任何扣费', credits.getBalance(uid18) === balBeforeGated);
 
   for (const key of EDIT_FLAG_KEYS) flagsMod.setFeatureFlag(key, 'public', uid18);
@@ -1438,8 +1522,7 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
 
   // 高精清除：双图 edits（原图+标记图），固定提示词
   const eraseBefore = credits.getBalance(uid18);
-  const eraseResult = await actions.dispatchDeckAction(uid18, d18.id,
-    { action: 'erase-slide', slideId: s18.slides[0].slideId, markImageDataUrl: markDataUrl }, editDeps);
+  const eraseResult = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'eraseSlide', params: { slideId: s18.slides[0].slideId, markImageDataUrl: markDataUrl } }, editDeps);
   await eraseResult.job.done;
   const eraseForm = lastEditsForm();
   const erasePrompt = eraseForm instanceof FormData ? String(eraseForm.get('prompt') || '') : '';
@@ -1451,8 +1534,7 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     eraseBefore - credits.getBalance(uid18) === refineUnit, `实际余额 ${credits.getBalance(uid18)}`);
 
   // 图上改字：单图 edits，提示词 = 用户指令 + 硬约束
-  const textResult = await actions.dispatchDeckAction(uid18, d18.id,
-    { action: 'text-edit-slide', slideId: s18.slides[0].slideId, editInstruction: '把标题改成「年度报告」' }, editDeps);
+  const textResult = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'editSlideText', params: { slideId: s18.slides[0].slideId, editInstruction: '把标题改成「年度报告」' } }, editDeps);
   await textResult.job.done;
   const textForm = lastEditsForm();
   const textPrompt = textForm instanceof FormData ? String(textForm.get('prompt') || '') : '';
@@ -1463,11 +1545,10 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
 
   // 模板融合：同页型样张作第二图；非法包 400；门控包对普通用户 404
   await expectThrows('融合包不存在按 400 拒绝', () =>
-    actions.dispatchDeckAction(uid18, d18.id, { action: 'fuse-slide', slideId: s18.slides[0].slideId, fusionPackId: 'nope-pack' }, editDeps), 'VALIDATION_ERROR');
+    actions.dispatchDeckIntent(uid18, d18.id, { kind: 'fuseSlide', params: { slideId: s18.slides[0].slideId, fusionPackId: 'nope-pack' } }, editDeps), 'VALIDATION_ERROR');
   await expectThrows('普通用户融合门控金奖包按 404 拒绝', () =>
-    actions.dispatchDeckAction(uid18, d18.id, { action: 'fuse-slide', slideId: s18.slides[0].slideId, fusionPackId: GOLD_PACK_ID }, editDeps), 'NOT_FOUND');
-  const fuseResult = await actions.dispatchDeckAction(uid18, d18.id,
-    { action: 'fuse-slide', slideId: s18.slides[1].slideId, fusionPackId: STYLE_PACKS[0].id }, editDeps);
+    actions.dispatchDeckIntent(uid18, d18.id, { kind: 'fuseSlide', params: { slideId: s18.slides[0].slideId, fusionPackId: GOLD_PACK_ID } }, editDeps), 'NOT_FOUND');
+  const fuseResult = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'fuseSlide', params: { slideId: s18.slides[1].slideId, fusionPackId: STYLE_PACKS[0].id } }, editDeps);
   await fuseResult.job.done;
   const fuseForm = lastEditsForm();
   const fusePrompt = fuseForm instanceof FormData ? String(fuseForm.get('prompt') || '') : '';
@@ -1478,13 +1559,11 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
 
   // 设为参考图：0 扣费写库；锚点优先作为生成参考图；微调附带锚点第二图
   const refBefore = credits.getBalance(uid18);
-  const refResult = await actions.dispatchDeckAction(uid18, d18.id,
-    { action: 'set-reference', slideId: s18.slides[0].slideId }, editDeps);
+  const refResult = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'setReferenceImage', params: { slideId: s18.slides[0].slideId } }, editDeps);
   check('设为参考图写库（state 透出锚点页）', refResult.state.deck.anchorSlideId === s18.slides[0].slideId);
   check('设为参考图 0 扣费', credits.getBalance(uid18) === refBefore);
 
-  const regen18 = await actions.dispatchDeckAction(uid18, d18.id,
-    { action: 'generate-slide', slideId: s18.slides[1].slideId }, editDeps);
+  const regen18 = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'generateSlide', params: { slideId: s18.slides[1].slideId } }, editDeps);
   await regen18.job.done;
   const regenCalls = editFetcher.calls.filter((c) => c.url.includes('/images/generations'));
   const regenBody = JSON.parse(regenCalls[regenCalls.length - 1].init.body);
@@ -1492,15 +1571,14 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     String(regenBody.reference_images?.[0]?.url || '').startsWith('data:image/png;base64,'),
     `实际 ${String(regenBody.reference_images?.[0]?.url || '').slice(0, 30)}`);
 
-  const refine18 = await actions.dispatchDeckAction(uid18, d18.id,
-    { action: 'refine-slide', slideId: s18.slides[1].slideId, editInstruction: '标题放大一点' }, editDeps);
+  const refine18 = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'refineSlide', params: { slideId: s18.slides[1].slideId, editInstruction: '标题放大一点' } }, editDeps);
   await refine18.job.done;
   const refineForm = lastEditsForm();
   check('指令微调附带锚点作第二参考图并带锚点提示',
     refineForm instanceof FormData && refineForm.getAll('image').length === 2
       && String(refineForm.get('prompt') || '').includes('风格锚点'));
 
-  const clearResult = await actions.dispatchDeckAction(uid18, d18.id, { action: 'set-reference', slideId: null }, editDeps);
+  const clearResult = await actions.dispatchDeckIntent(uid18, d18.id, { kind: 'setReferenceImage', params: { slideId: null } }, editDeps);
   check('取消参考图后锚点清空', clearResult.state.deck.anchorSlideId === '');
 
   // atlascloud 灾备：多图编辑降级为单图 + 意图文字描述
@@ -1595,15 +1673,15 @@ console.log('\n[19] 免费 LLM 动作频控（30 次/10 分钟/用户，共享�
     targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
   });
   // 首次 outline（无 force）+ 29 次 force 重生成 = 30 次全部放行
-  await actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline' }, fullDeps);
+  await actions.dispatchDeckIntent(rlUid, rlDeck.id, { kind: 'generateOutline', params: {} }, fullDeps);
   for (let i = 0; i < 29; i += 1) {
-    await actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline', force: true }, fullDeps);
+    await actions.dispatchDeckIntent(rlUid, rlDeck.id, { kind: 'generateOutline', params: { force: true } }, fullDeps);
   }
   await expectThrows('第 31 次免费 LLM 动作被 429 拒', () =>
-    actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline', force: true }, fullDeps), 'LLM_RATE_LIMITED');
+    actions.dispatchDeckIntent(rlUid, rlDeck.id, { kind: 'generateOutline', params: { force: true } }, fullDeps), 'LLM_RATE_LIMITED');
   await expectThrows('同桶：structure 也被拒', () =>
-    actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'structure', force: true }, fullDeps), 'LLM_RATE_LIMITED');
-  const reusedAfterLimit = await actions.dispatchDeckAction(rlUid, rlDeck.id, { action: 'outline' }, fullDeps);
+    actions.dispatchDeckIntent(rlUid, rlDeck.id, { kind: 'structureSlides', params: { force: true } }, fullDeps), 'LLM_RATE_LIMITED');
+  const reusedAfterLimit = await actions.dispatchDeckIntent(rlUid, rlDeck.id, { kind: 'generateOutline', params: {} }, fullDeps);
   check('限流后无 force 的 outline 复用不受影响', reusedAfterLimit.extra.reused === true);
 
   const rateLimitMod = await import('../src/lib/server/rate-limit.ts');
