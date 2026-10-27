@@ -46,6 +46,14 @@ export interface BeautifyBanner {
   text: string;
 }
 
+/**
+ * 工作台首屏门：先看开关再看登录——off 时直接显示「功能尚未开放」，
+ * 不把用户先送去登录（入口已消失，登录也进不去）。
+ */
+export function resolveBeautifyGate(flags: Record<string, boolean>): "closed" | "open" {
+  return flags.ppt_replicate ? "open" : "closed";
+}
+
 export function newBeautifySession(): string {
   return `rp${Math.random().toString(36).slice(2, 10)}`;
 }

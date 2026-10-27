@@ -109,14 +109,13 @@ async function runSlideGeneration(
     refineExtraNote?: string;
     deckContext?: DeckContext;
     template?: TemplateRouteContext | null;
+    /** 任务启动时估价的单价快照：逐页扣费与退款都按它，不重新读价 */
+    unitPrice: number;
   },
   deps: GenerateDeps,
 ): Promise<'succeeded' | 'failed'> {
   const config = deps.config ?? getGenerationConfig();
-  const unitPrice = estimateCredits({
-    action: kind === 'deck-refine' ? 'deck_page_refine' : 'deck_page_generate',
-    pages: 1,
-  }).unitPrice;
+  const { unitPrice } = opts;
   // 幂等键含 jobId（契约口径 deck-generate:{deckId}:{jobId}，逐页追加 slideId 保证唯一）
   const { chargeKey, refundKey } = chargeRefundKeys(`deck-generate:${deck.id}:${jobId}:${slide.slideId}`);
   const { prompt, referencePath, anchorReference } = promptForSlide(
@@ -294,7 +293,8 @@ export async function startDeckGeneration(
     throw new ApiError('NOTHING_TO_GENERATE', '所有页面都已生成完毕，无需重复生成；如需重做请在风格页使用「重新生成」', 400, false);
   }
 
-  // 整单估价 + 余额校验：不足整单 402，不建 job 不扣费
+  // 整单估价 + 余额校验：不足整单 402，不建 job 不扣费。
+  // 单价在这里定格一次，后续逐页扣费/退款都按快照走，避免任务跑动中被换价导致估价与实扣漂移。
   const estimate = estimateCredits({
     action: kind === 'deck-refine' ? 'deck_page_refine' : 'deck_page_generate',
     pages: targets.length,
@@ -345,6 +345,7 @@ export async function startDeckGeneration(
         const slide = targets[cursor];
         cursor += 1;
         const result = await runSlideGeneration(deck, slide, job.jobId, kind, {
+          unitPrice: estimate.unitPrice,
           refineInstruction: options.refineInstruction,
           refineExtraImages: options.refineExtraImages,
           refineExtraNote: options.refineExtraNote,

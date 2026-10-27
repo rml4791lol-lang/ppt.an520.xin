@@ -55,7 +55,7 @@ const FORMAT_ROWS = [
   {
     scene: "转可编辑 PPTX",
     formats: "站内作品 / PDF / 图片",
-    limit: "单次最多 20 页；20🌟/页",
+    limit: "单次最多 20 页；按页计费",
     note: "还原程度受页面复杂度、字体和上游服务影响，导出后建议人工检查。",
   },
 ];
@@ -63,7 +63,7 @@ const FORMAT_ROWS = [
 const FAQ = [
   {
     q: "生成出来的是图片还是可编辑 PPT？",
-    a: "默认生成的是图片版 PPT，视觉效果稳定，适合直接演示和汇报。需要文字、形状可编辑时，可以在生成完成后选择「转可编辑 PPTX」，按 20🌟/页计费，单次最多 20 页。",
+    a: "默认生成的是图片版 PPT，视觉效果稳定，适合直接演示和汇报。需要文字、形状可编辑时，可以在生成完成后选择「转可编辑 PPTX」，按页计费，单次最多 20 页。",
   },
   {
     q: "为什么上传 PDF 后提示解析失败？",
@@ -198,7 +198,7 @@ export default function HelpPage() {
             <ul className="mt-4 space-y-2 text-sm leading-6 text-ink-2">
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />一次最多 40 页，单文件不超过 30MB。</li>
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />PPTX 请先另存为 PDF，浏览器无法直接把 PPTX 拆成位图。</li>
-              <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />生成按 10🌟/页计费，失败未完成部分自动退回。</li>
+              <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />生成按页计费，失败未完成部分自动退回。</li>
             </ul>
             <Link href="/beautify" className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:text-brand-strong">
               打开 PPT 美化 <ArrowRightIcon width={14} height={14} />
@@ -217,7 +217,7 @@ export default function HelpPage() {
               适合需要二次改字、换配色或交给同事继续编辑的场合。
             </p>
             <ul className="mt-4 space-y-2 text-sm leading-6 text-ink-2">
-              <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />20🌟/页，单次最多 20 页。</li>
+              <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />按页计费，单次最多 20 页。</li>
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />转换完成后在「下载中心」获取，不重复扣费。</li>
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />复杂图表和特殊字体的还原度会有差异，请导出后检查。</li>
             </ul>
@@ -233,8 +233,8 @@ export default function HelpPage() {
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           {[
             { title: "注册赠送", value: `${config.signupBonusPoints} 🌟`, text: "新用户注册后自动到账，可直接用于生成。" },
-            { title: "页面生成", value: `${config.pointsPerPage} 🌟/页`, text: "标准模式按实际成功的页面扣除，失败未完成部分退回。" },
-            { title: "可编辑导出", value: "20 🌟/页", text: "转换成功才扣费；上游失败会退回，单次最多 20 页。" },
+            { title: "页面生成", value: "按页计费", text: "标准模式按实际成功的页面扣除，失败未完成部分退回。" },
+            { title: "可编辑导出", value: "按页计费", text: "转换成功才扣费；上游失败会退回，单次最多 20 页。" },
           ].map((item) => (
             <div key={item.title} className="rounded-2xl border border-line bg-card p-5 shadow-card">
               <p className="text-xs text-ink-4">{item.title}</p>

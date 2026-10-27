@@ -29,6 +29,18 @@ const eslintConfig = defineConfig([
               target: "./src/plugins/pricing",
               from: "./src/plugins/models",
             },
+            // 插件不得 import 平台内部实现（ADR-0001 G4）：运行参数经 ctx 注入的 config 服务取用，
+            // 插件只依赖 src/lib/plugin/contracts 里的契约类型。
+            {
+              target: "./src/plugins",
+              from: "./src/lib/server",
+            },
+            // 插件不得 import 具体功能模块（ADR-0001 G4）：插件要独立可分发，模块实现必须随插件迁移。
+            // ppt-replicate 的 strangler 残留在这两个文件上登记例外（见下方 overrides 与 PLUGIN-ARCHITECTURE §5）。
+            {
+              target: "./src/plugins",
+              from: "./src/modules",
+            },
             {
               target: "./src/plugins/models",
               from: "./src/plugins/pricing",
@@ -41,6 +53,19 @@ const eslintConfig = defineConfig([
   // 登记例外：lib/plugin/default.ts 是插件组合根（boot defaultProfile 必须 import 插件清单）。
   {
     files: ["src/lib/plugin/default.ts"],
+    rules: { "import/no-restricted-paths": "off" },
+  },
+  // 登记例外（strangler 迁移期，ADR-0001 G4）：ppt-replicate 的 UI 贡献点仍依赖模块实现——
+  // ui.ts 懒加载模块面板，beautify-tab.tsx 复用模块的文件交接工具。迁移按 PLUGIN-ARCHITECTURE §5
+  // 的「ppt-replicate 整块迁入」执行，完成后删除本例外、zone 对全插件生效。
+  {
+    files: ["src/plugins/ppt-replicate/ui.ts", "src/plugins/ppt-replicate/client/beautify-tab.tsx"],
+    rules: { "import/no-restricted-paths": "off" },
+  },
+  // 登记例外：生成恢复唯一入口是恢复域的组装点——模块表只由模块读写，平台这里只注入判活口径、
+  // 调度模块导出的结算入口（「平台件不得 import 模块」的通用禁令让位于依赖倒置）。
+  {
+    files: ["src/lib/server/generation/recovery.ts"],
     rules: { "import/no-restricted-paths": "off" },
   },
   // Override default ignores of eslint-config-next.

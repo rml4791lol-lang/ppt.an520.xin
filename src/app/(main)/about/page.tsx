@@ -76,7 +76,7 @@ export default function AboutPage() {
             </p>
             <p>
               <strong className="text-ink">交付：</strong>
-              默认导出图片版 PPTX；需要继续编辑时，可以按 20🌟/页转可编辑 PPTX，
+              默认导出图片版 PPTX；需要继续编辑时，可以按页计费转可编辑 PPTX，
               单次最多 20 页，导出后建议人工检查字体、图表和版式。
             </p>
           </div>
