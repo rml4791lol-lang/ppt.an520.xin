@@ -2,9 +2,8 @@
 import type { AnProfile } from '@/lib/plugin/profile';
 import { pricingPlugin } from './pricing/plugin';
 import { modelsPlugin } from './models/plugin';
-import { pptReplicatePlugin } from './ppt-replicate/plugin';
 
 export const defaultProfile: AnProfile = {
   name: 'default',
-  plugins: [pricingPlugin, modelsPlugin, pptReplicatePlugin],
+  plugins: [pricingPlugin, modelsPlugin],
 };

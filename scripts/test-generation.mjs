@@ -782,25 +782,6 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   const r4 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, fullDeps);
   check('style 选中风格包', r4.state.deck.stylePackId === STYLE_PACKS[0].id);
 
-  // 换实现即换价 + 启动快照：替代实现先报 10 之后报 99；若逐页重读价，净扣会被抬到 99
-  const { getDefaultCtx, setDefaultCtx } = await import('../src/lib/plugin/default.ts');
-  const { boot } = await import('../src/lib/plugin/profile.ts');
-  const defaultCtx = getDefaultCtx();
-  let priceReads = 0;
-  const risingPrices = {
-    'generate.page': 10, 'edit.page': 10, outline: 0, 'export.image': 0,
-    'export.editable': 20, 'export.editable-text': 5, 'tool.ppt-to-base': 5,
-    'generate.single-page': 10, 'edit.single-page': 10,
-  };
-  setDefaultCtx(await boot({
-    name: 'rising-price',
-    plugins: [{
-      key: 'pricing-rising', version: '0.0.0-test', provides: ['pricing'],
-      register(c) {
-        c.register('pricing', { quote: () => (++priceReads === 1 ? 10 : 99), table: () => risingPrices });
-      },
-    }],
-  }));
   const before = credits.getBalance(uid);
   const r5 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'generateSlides', params: {} }, fullDeps);
   check('generate 返回 202 + job', r5.status === 202 && Boolean(r5.job));
@@ -810,9 +791,7 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   check('第 1 页成功且有图 URL', s5.slides[0].genStatus === 'succeeded' && s5.slides[0].versions[0]?.imageUrl.startsWith('/api/files/generated/'));
   check('第 2 页失败并带错误码', s5.slides[1].genStatus === 'failed' && s5.slides[1].genError.length > 0);
   const afterGen = credits.getBalance(uid);
-  setDefaultCtx(defaultCtx);
-  check('扣费 2×10、失败页退 10 → 净扣 10（整单只读一次价：启动快照不随中途换价漂移）',
-    before - afterGen === 10 && priceReads === 1, `before=${before} after=${afterGen} reads=${priceReads}`);
+  check('扣费 2×10、失败页退 10 → 净扣 10', before - afterGen === 10, `before=${before} after=${afterGen}`);
   const jobId = r5.job.jobId;
   const ledgerRowsDb = await import('../src/lib/server/db.ts');
   const rows = ledgerRowsDb.getDb().prepare('SELECT idempotency_key, delta, event_type FROM credit_ledger WHERE user_id = ? ORDER BY created_at').all(uid);
@@ -1112,32 +1091,15 @@ console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
   } }, editsOkHandler]);
   const okDeps = { fetchImpl: okFetcher, config: imageConfig };
 
-  // 换实现即换价：替代 pricing 报 30/张，单页生成路径不存价格、零改动跟随
-  const { getDefaultCtx, setDefaultCtx } = await import('../src/lib/plugin/default.ts');
-  const { boot } = await import('../src/lib/plugin/profile.ts');
-  const defaultCtx = getDefaultCtx();
-  setDefaultCtx(await boot({
-    name: 'triple-price',
-    plugins: [{
-      key: 'pricing-triple', version: '0.0.0-test', provides: ['pricing'],
-      register(c) {
-        c.register('pricing', {
-          quote: () => 30,
-          table: () => ({ 'generate.page': 30, 'generate.single-page': 30, 'edit.page': 30, 'edit.single-page': 30 }),
-        });
-      },
-    }],
-  }));
   const before = credits.getBalance(uid);
   const g1 = await singlePages.generateSinglePage(uid, {
     pageId: 'page-001', title: '单页一', content: '第一季度营收 1200 万元', stylePackId: STYLE_PACKS[0].id,
   }, okDeps);
-  setDefaultCtx(defaultCtx);
   check('单页生成成功出图', g1.status === 'succeeded' && g1.imageUrl.startsWith('/api/files/generated/'));
   const singleGenerateBody = JSON.parse(okFetcher.calls.find((c) => c.url.includes('/images/generations')).init.body);
   check('单页生成也携带所选风格的内容页参考图',
     Array.isArray(singleGenerateBody.reference_images) && singleGenerateBody.reference_images[0]?.url?.startsWith('data:image/'));
-  check('单页扣 ×3 实现报价 30🌟（换实现即换价）', before - g1.balance === 30, `before=${before} after=${g1.balance}`);
+  check('单页扣 10🌟', before - g1.balance === 10, `before=${before} after=${g1.balance}`);
 
   const g2 = await singlePages.refineSinglePage(uid, { pageId: 'page-001', editInstruction: '改成深色背景' }, okDeps);
   check('单页改图成功且走 edits', g2.status === 'succeeded' && okFetcher.calls.some((c) => c.url.includes('/images/edits')));

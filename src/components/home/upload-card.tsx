@@ -8,6 +8,7 @@ import {
   CloseIcon,
   FileIcon,
   ImageIcon,
+  MonitorIcon,
   PlusIcon,
   SparklesIcon,
   TrashIcon,
@@ -15,12 +16,15 @@ import {
 } from "@/components/icons";
 import { ApiClientError } from "@/lib/client/api";
 import { createPagedCopyDeck, parseDeckDocument } from "@/lib/client/deck-api";
+import { useFeatureFlag } from "@/components/use-feature-flag";
 import { useGatedStylePacks } from "@/components/use-gated-style-packs";
-import { PluginSlotPanel, pluginIcon, usePluginEntries } from "@/components/plugin-ui";
+import { stashBeautifyFiles } from "@/modules/ppt-replicate/client/beautify-handoff";
 import type { StylePack } from "@/data/style-packs";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
 const DOC_ACCEPT = [".txt", ".md", ".pdf", ".docx"];
+const PPT_ACCEPT = [".ppt", ".pptx"];
+const BEAUTIFY_ACCEPT = [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".ppt", ".pptx"];
 const MAX_PAGE_CHARS = 1500;
 
 const CUSTOM_PAGE_MIN = 4;
@@ -40,11 +44,12 @@ const QUALITY_OPTIONS = [
   { value: "fine", label: "精细生图模式", note: "即将上线", disabled: true },
 ];
 
-type PlatformTabKey = "import" | "paged";
+type TabKey = "import" | "paged" | "beautify";
 
-const TABS: { key: PlatformTabKey; label: string; icon: typeof FileIcon }[] = [
+const TABS: { key: TabKey; label: string; icon: typeof FileIcon }[] = [
   { key: "import", label: "导入文档", icon: FileIcon },
   { key: "paged", label: "按页录入", icon: ImageIcon },
+  { key: "beautify", label: "PPT美化", icon: MonitorIcon },
 ];
 
 function Dropdown({
@@ -301,40 +306,26 @@ function StylePicker({
 
 export function UploadCard({ packs }: { packs: StylePack[] }) {
   const router = useRouter();
-  const [tab, setTab] = useState<string>(
-    () =>
-      (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab")) ||
-      "import",
+  const [tab, setTab] = useState<TabKey>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "beautify"
+      ? "beautify"
+      : "import",
   );
   const [style, setStyle] = useState<StylePack | null>(null);
   const [duration, setDuration] = useState("15");
   const [customPages, setCustomPages] = useState("20");
   const [quality, setQuality] = useState("standard");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [pptFile, setPptFile] = useState<File | null>(null);
   const [pages, setPages] = useState<string[]>([""]);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<null | "import" | "paged">(null);
-  const pluginTabs = usePluginEntries("upload-card");
+  const beautifyOpen = useFeatureFlag("ppt_replicate");
   const gatedPacks = useGatedStylePacks();
   const allPacks = useMemo(
     () => (gatedPacks.length > 0 ? [...packs, ...gatedPacks] : packs),
     [packs, gatedPacks],
   );
-
-  const tabs = useMemo(
-    () => [
-      ...TABS,
-      ...pluginTabs.map((entry) => ({
-        key: entry.id,
-        label: entry.label,
-        icon: pluginIcon(entry.icon),
-      })),
-    ],
-    [pluginTabs],
-  );
-
-  // 深链页签/插件入口不存在时，渲染回落到第一个平台页签（开关只影响可见入口，不改壳）
-  const activeTab = tabs.some((item) => item.key === tab) ? tab : "import";
 
   // 风格卡「使用此风格」链接带 ?style={slug}：进入首页时预选该风格
   // （slug 优先，兼容 id / name），否则用户点了链接还要手动重选一遍
@@ -434,18 +425,31 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
     }
   };
 
+  const submitBeautify = () => {
+    if (!beautifyOpen) {
+      flash("PPT 美化即将上线，敬请期待");
+      return;
+    }
+    if (pptFile && /\.pptx?$/i.test(pptFile.name)) {
+      flash("PPTX 请先另存为 PDF 再上传");
+      return;
+    }
+    stashBeautifyFiles(pptFile ? [pptFile] : []);
+    router.push("/beautify");
+  };
+
   return (
     <div className="rounded-2xl border border-line bg-card p-3 shadow-card sm:p-4">
       <div className="flex flex-col gap-4 lg:flex-row">
         {/* Tab 栏：桌面左侧纵向，移动顶部横向 */}
         <div className="flex shrink-0 gap-1 overflow-x-auto lg:w-36 lg:flex-col lg:overflow-visible">
-          {tabs.map((t) => (
+          {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
               className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-3 text-sm transition lg:w-full ${
-                activeTab === t.key
+                tab === t.key
                   ? "bg-brand-soft font-medium text-brand"
                   : "text-ink-3 hover:bg-page hover:text-ink"
               }`}
@@ -457,7 +461,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
         </div>
 
         <div className="min-w-0 flex-1">
-          {activeTab === "import" && (
+          {tab === "import" && (
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-1">
                 <p className="text-sm text-ink-3">
@@ -521,7 +525,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
             </div>
           )}
 
-          {activeTab === "paged" && (
+          {tab === "paged" && (
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-1">
                 <p className="text-sm text-ink-3">
@@ -602,8 +606,59 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
             </div>
           )}
 
-          {pluginTabs.map((entry) =>
-            activeTab === entry.id ? <PluginSlotPanel key={entry.id} entry={entry} /> : null,
+          {tab === "beautify" && (
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+                <p className="text-sm text-ink-3">
+                  {beautifyOpen
+                    ? "上传参考稿，画面跟原页，文案换成新主题或大纲"
+                    : "上传已有 PPT，AI 按所选风格逐页翻新美化"}
+                </p>
+                {!beautifyOpen && <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />}
+              </div>
+              <div className="mt-4">
+                <Dropzone
+                  accept={beautifyOpen ? BEAUTIFY_ACCEPT : PPT_ACCEPT}
+                  file={pptFile}
+                  onFile={(file) => {
+                    if (beautifyOpen && file && /\.pptx?$/i.test(file.name)) {
+                      flash("PPTX 请先另存为 PDF 再上传");
+                      return;
+                    }
+                    setPptFile(file);
+                  }}
+                  title={beautifyOpen ? "拖入 PDF 或图片，开始美化" : "拖入旧 PPT，一键美化翻新"}
+                  hint={
+                    beautifyOpen
+                      ? "PDF · PNG · JPG · WebP · 单文件最大 30MB · PPTX 请先另存 PDF"
+                      : "PPT · PPTX · 单文件最大 30MB"
+                  }
+                />
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {!beautifyOpen && (
+                  <Dropdown
+                    value={quality}
+                    options={QUALITY_OPTIONS}
+                    onChange={setQuality}
+                    className="min-w-60"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={submitBeautify}
+                  disabled={submitting !== null}
+                  className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:opacity-50 sm:ml-auto"
+                >
+                  开始美化
+                </button>
+              </div>
+              {beautifyOpen && (
+                <p className="mt-2 px-1 text-xs text-ink-4">
+                  不选文件也可进入工作台。生成 10🌟/页，转可编辑另计 20🌟/页。
+                </p>
+              )}
+            </div>
           )}
 
           {notice && (

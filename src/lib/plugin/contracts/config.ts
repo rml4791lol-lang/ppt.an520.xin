@@ -12,19 +12,9 @@ export interface ModelsConfig {
   imageBackupEditModel: string;
 }
 
-/**
- * 价格部署旋钮的原始值：默认表、覆盖解析与单页单价都归 pricing 插件
- * （ADR-0001 G1——平台层不存价格，也不解析价格），这里只交字符串原值。
- */
-export interface PricingSource {
-  /** CREDIT_ACTION_PRICES 原始 JSON；空 = 用插件默认表 */
-  creditActionPrices: string;
-  /** ANPPT_V2_SINGLE_PAGE_CREDITS 原始值；空 = 用插件默认值 */
-  singlePageCredits: string;
-}
-
 export interface HostConfigService {
-  pricingSource(): PricingSource;
+  /** env.ts 计费键 → 单价（🌟），CREDIT_ACTION_PRICES 覆盖生效 */
+  creditActionPrices(): Record<string, number>;
   /** 生成链模型清单（含管理端运行时覆盖） */
   models(): ModelsConfig;
 }

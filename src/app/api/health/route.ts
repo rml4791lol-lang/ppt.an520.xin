@@ -1,5 +1,6 @@
 // 健康检查：供监控探针/负载均衡探测。无需登录；只做一次日志目录可写探针。
-// 监控脚本（anppt-health-monitor.py）契约：top-level ok + db / llm / image / editable / logging。
+// 监控脚本（anppt-health-monitor.py）契约：top-level ok + db / llm / image / editable / logging / plugins。
+import { getPluginManifest } from '@/lib/plugin/default';
 import { getDb } from '@/lib/server/db';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { getGenDb } from '@/lib/server/generation/db';
@@ -81,6 +82,7 @@ export async function GET(): Promise<Response> {
     ok: db,
     service: 'anppt-v2',
     release: releaseId(),
+    plugins: getPluginManifest(),
     db,
     llm: { configured: llmConfigured },
     image: { configured: imageConfigured },

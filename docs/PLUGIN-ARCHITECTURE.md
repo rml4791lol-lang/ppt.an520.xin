@@ -42,22 +42,22 @@ src/plugins/<key>/
 - `provides`：本插件注册到 ctx 的服务键清单（如 `pricing`、`models`）。
 - `pricing`：本插件涉及的计费动作 key 清单（只声明动作，**不写数字**；数字只在 pricing 插件的价格表里）。
 - `config`：本插件的运行参数声明（进 profile，不埋进代码）。平台运行参数（env / 生成链）不直读平台模块：平台在 boot 时把只读 `config` 服务注入 ctx（契约 `src/lib/plugin/contracts/config.ts`），插件 `ctx.use('config')` 取用（ADR-0001 G4）。
-- `ui`（2026-09-06 补）：本插件的 UI 贡献声明——`entries: [{slot, label, href?, component?, order?, flag?}]`。entry 必须是**可静态审计的数据**（VS Code contribution points 的教训：回调时代无法静态分析）；`order` 显式定序（不靠注册顺序）；`flag` 粒度可细到单条 entry（对齐 VS Code `when` 子句）；`component` 存懒加载指令（动态 import / `next/dynamic`），插件 JS 不进首屏 bundle。壳按注册表渲染入口，不 import 插件。**落地（2026-10-27，ADR-0001 G2）**：组合根 `src/plugins/ui-registry.ts`，壳侧钩子 `src/components/plugin-ui.tsx`；`ppt-replicate` 的三条入口已迁入 `ui.entries`。
+- `ui`（2026-09-06 补）：本插件的 UI 贡献声明——`entries: [{slot, label, href?, component?, order?, flag?}]`。entry 必须是**可静态审计的数据**（VS Code contribution points 的教训：回调时代无法静态分析）；`order` 显式定序（不靠注册顺序）；`flag` 粒度可细到单条 entry（对齐 VS Code `when` 子句）；`component` 存懒加载指令（动态 import / `next/dynamic`），插件 JS 不进首屏 bundle。壳按注册表渲染入口，不 import 插件。
 - 插件之间**禁止直接 import**，只能通过 ctx 服务协作；插件也不得 import 平台内部（`src/lib/server`）。lint 强制。
 
 ## 2.5 UI：壳与挂载点（2026-09-06）
 
 - **壳永不插件化**：导航/侧栏/布局/登录态/设计系统（图标、配色 token、共享组件）是平台层，稳定统一。
-- **内容插件化**：功能 UI 全部在插件 `client/` 下；壳只提供挂载点（slot）：当前落地 `sidebar`、`upload-card`、`template-library`。新增功能 = 注册表多一行，不改壳代码。
+- **内容插件化**：功能 UI 全部在插件 `client/` 下；壳只提供挂载点（slot）：`sidebar` 入口、`home-tab`、`template-library-panel` 等。新增功能 = 注册表多一行，不改壳代码。
 - **页面薄壳**：Next 硬约束路由留在 `src/app`，页面文件只做 Suspense + 插件组件（成例：`/beautify/page.tsx` 17 行）。
 - **开关控生死**：`ui.flag` 指向开关板 key——off 时入口不渲染、API 404、页面显示「功能尚未开放」（成例：四件图片编辑工具、ppt_replicate）。
 - **设计约束**：插件 UI 只许用壳的设计 token 与共享组件，不许自带风格（硬编码色值这类违规后续用 lint 拦）。
-- 收拢动作：现存散在壳里的 `if (开关)` 接线，迁移每块时顺手收进该插件的 `ui.entries`，不单独开工程。**已完成（2026-10-27，G2）**：`ppt_replicate` 在侧栏 / upload-card / 模板库三处的硬编码分支清零。
+- 收拢动作：现存散在壳里的 `if (开关)` 接线（upload-card/侧栏/模板库），在 Phase 3 迁移每块时顺手收进该插件的 `ui.entries`，不单独开工程。
 
 ## 3. 运行时三件（平台层，src/lib/plugin/）
 
 - `ctx.ts`：服务注册表。`register(key, impl)` / `use(key)`；`use` 一个未注册的键 = 启动期报错（fail fast，不许运行期 undefined）。
-- `profile.ts`：配置单加载。profile = 有序插件清单（顺序即依赖序）+ 各插件 config；默认 profile 是生产形态，测试可组合替代实现。`boot(profile, host)` / `bootSync(profile, host)` 在插件注册前注入宿主服务（如 `config`），插件注册时取配置，缺服务即启动期报错。
+- `profile.ts`：配置单加载。profile = 有序插件清单（顺序即依赖序）+ 各插件 config；默认 profile 是生产形态，测试可组合替代实现。`boot(profile, host)` / `bootSync(profile, host)` 在插件注册前注入宿主服务（如 `config`），插件注册时取配置，缺服务即启动期报错。`assembleSync(profile, host, requiredServices)` 在 boot 后验收平台消费的服务键并产出装配清单（插件 + 版本）；`src/instrumentation.ts` 在服务就绪前调用组合根 `default.ts`，缺键即进程启动失败，清单经 `/api/health.plugins` 可读（ADR-0001 G3）。
 - `types.ts`：`AnPlugin` 接口与冻结数据契约的唯一定义处。
 
 ## 4. 冻结清单（改动需开 Issue 拍板）
@@ -73,9 +73,8 @@ src/plugins/<key>/
 
 先锋（验证运行时，纯增量、不改现有调用方）：
 
-1. `pricing` 插件：**价格表的存储与解析都归插件**（`prices.ts`，含 `CREDIT_ACTION_PRICES` 与单页单价旋钮），暴露 `ctx.pricing.quote(actionKey)`；平台不存价格。**验收（2026-10-27 达成，ADR-0001 G1）：换一份实现（如从 DB 读价）换进 profile，全站估价与扣费随之变，业务代码零改动。**
+1. `pricing` 插件：价格表收拢为插件（读现有 `env.ts` 常量起步），暴露 `ctx.pricing.quote(actionKey)`。**验收：换一份价格配置 = 只换 profile，全站零代码改动。**
 2. `models` 插件：模型清单 + 回退链，暴露 `ctx.models.text()/image()`。**验收：下架一个模型 = 改一个数组元素。**
-3. `ppt-replicate` 插件（UI 贡献点先行）：侧栏入口、首页「PPT美化」页签、模板库「自己的 PPT」页签由 `ui.entries` 声明，壳只按 `flag` 过滤；面板组件懒加载。服务端实现暂留 `src/modules/ppt-replicate`，随 `ppt-replicate` 整体迁移。**验收（2026-10-27 达成，ADR-0001 G2）：关掉 `ppt_replicate` → 三条入口同时消失、API 404、`/beautify` 显示「功能尚未开放」，壳代码零改动。**
 
 迁移（风险从低到高，每次一块、全量门必绿）：模板库 → 导出中心 → ppt-replicate（复刻流水线五段：接入/内容/提示词/生图/导出，数据契约 Ref/Page/Result 冻结）→ 账户计费（钱最后动）。
 

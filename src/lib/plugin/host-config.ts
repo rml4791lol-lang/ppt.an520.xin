@@ -1,18 +1,11 @@
 // 宿主配置适配器：平台内部配置 → 插件契约。每次调用现读，保留 env 覆盖与
 // 管理端运行时覆盖的既有语义（插件服务方法同样是调用时取值）。
+import { getEnv } from '@/lib/server/env';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import type { HostConfigService } from './contracts/config';
 
-function envValue(raw: string | undefined): string {
-  return String(raw ?? '').trim();
-}
-
 export const hostConfig: HostConfigService = {
-  // 价格解析归 pricing 插件（ADR-0001 G1），平台只交原值
-  pricingSource: () => ({
-    creditActionPrices: envValue(process.env.CREDIT_ACTION_PRICES),
-    singlePageCredits: envValue(process.env.ANPPT_V2_SINGLE_PAGE_CREDITS),
-  }),
+  creditActionPrices: () => getEnv().creditActionPrices,
   models() {
     const c = getGenerationConfig();
     return {
