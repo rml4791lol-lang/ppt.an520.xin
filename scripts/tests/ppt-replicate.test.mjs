@@ -452,6 +452,64 @@ export async function runPptReplicateTests(ctx) {
       replicate.planReplicateCopy({ topic: '妇科门诊培训', pageCount: 41 }, { fetchImpl: planFetcher, config: llmConfig }),
       'VALIDATION_ERROR');
 
+    const facade = await import('../../src/modules/ppt-replicate/server/facade.ts');
+    const facadeDraft = facade.saveReplicateDraft(uid, {
+      title: 'Facade 实体测试',
+      pages: [{ pageId: 'rp-facade-1', title: '实体页', content: '实体测试要点', imagePath: shell.relPath }],
+    });
+    check('模块 facade 创建项目并返回项目/页数',
+      Boolean(facadeDraft.projectId) && facadeDraft.pageCount === 1);
+    const facadeDetail = facade.getReplicateProject(uid, facadeDraft.projectId);
+    check('facade 查询项目详情带 source 与页',
+      facadeDetail.project.source === 'replicate'
+        && facadeDetail.pages.length === 1
+        && facadeDetail.pages[0].pageId === 'rp-facade-1'
+        && facadeDetail.pages[0].shellPath === shell.relPath);
+    check('facade 读页返回文案与壳路径',
+      facade.getReplicatePage(uid, 'rp-facade-1').content === '实体测试要点'
+        && facade.listReplicatePages(uid, facadeDraft.projectId).length === 1
+        && facade.listReplicatePageStatuses(uid, facadeDraft.projectId)[0].status === 'idle');
+    facade.saveReplicateDraft(uid, {
+      projectId: facadeDraft.projectId,
+      pages: [{ pageId: 'rp-facade-1', title: '实体页', content: '改写后的要点', imagePath: shell.relPath }],
+    });
+    check('facade 保存草稿可写回页文案',
+      facade.getReplicatePage(uid, 'rp-facade-1').content === '改写后的要点');
+    const facadeDb = (await import('../../src/lib/server/generation/db.ts')).getGenDb();
+    const facadeTs = Date.now();
+    facadeDb.prepare(
+      `INSERT INTO single_page_versions
+        (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at)
+       VALUES (?, ?, 'generate', '', 'succeeded', '', '/api/files/generated/facade.png', '', '', '', ?, ?)`,
+    ).run('ver-facade-1', 'rp-facade-1', facadeTs, facadeTs);
+    check('facade 读版本列表', facade.listReplicatePageVersions(uid, 'rp-facade-1').length === 1);
+    await expectThrows('facade 版本查询拒绝越权 pageId', () =>
+      facade.listReplicatePageVersions('victim_user', 'rp-facade-1'), 'PAGE_NOT_FOUND');
+    const facadeSelected = facade.selectReplicatePageVersion(uid, 'rp-facade-1', 'ver-facade-1');
+    check('facade 写版本：切换 activeVersion 且平台详情可见',
+      facadeSelected.activeVersionId === 'ver-facade-1'
+        && facadeSelected.status === 'succeeded'
+        && singlePages.getSingleProjectDetail(uid, facadeDraft.projectId).pages[0].activeVersionId === 'ver-facade-1');
+    check('facade 创建的项目在平台列表标记 source=replicate',
+      projects.listProjects(uid).items.find((item) => item.id === facadeDraft.projectId)?.source === 'replicate');
+    const facadeQuote = facade.quoteReplicateCredits(facade.REPLICATE_BILLING_ACTIONS.pageGenerate, 3);
+    const platformQuote = credits.estimateCredits({ action: 'single_page_generate', pages: 3 });
+    check('facade 计费动作声明与平台估价一致',
+      facade.REPLICATE_BILLING_ACTIONS.pageGenerate === 'single_page_generate'
+        && facade.REPLICATE_BILLING_ACTIONS.pageRefine === 'single_page_refine'
+        && facade.REPLICATE_BILLING_ACTIONS.editableExport === 'export_editable'
+        && facadeQuote.unitPrice === platformQuote.unitPrice
+        && facadeQuote.credits === platformQuote.credits);
+    check('facade 懒恢复入口委托平台（无中断时不改状态）',
+      facade.reconcileReplicatePage(uid, 'rp-facade-1') === false
+        && facade.reconcileReplicateProject(uid, facadeDraft.projectId) === false
+        && facade.getReplicatePage(uid, 'rp-facade-1').status === 'succeeded');
+    check('facade 暴露复刻提示词契约（平台唯一调用面）',
+      facade.resolveReplicateColorMode('new-theme') === 'new-theme'
+        && facade.parseIncomingStructure({ family: 'cards' })?.family === 'cards'
+        && typeof facade.buildReplicateCopyPrompt === 'function'
+        && typeof facade.buildReplicateInstruction === 'function');
+
     const rpShell = await storage.saveFile('uploads', uid, Buffer.from(PNG_1X1_B64, 'base64'), { kind: 'replicate', ext: '.png' }, llmConfig);
     const rpPurge = await singlePages.generateSinglePage(uid, {
       pageId: 'rp-purge', content: '过期清理', imagePath: rpShell.relPath, mode: 'replicate',

@@ -12,7 +12,6 @@ import { runImage2PptTests } from './tests/image2ppt.test.mjs';
 import { runWpsAipptTests } from './tests/wps-aippt.test.mjs';
 import { runPluginRuntimeTests } from './tests/plugin-runtime.test.mjs';
 import { runPptToBaseTests, runPptToBaseServerTests } from './tests/ppt-to-base.test.mjs';
-import { runDeckIntentTests } from './tests/deck-intents.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
@@ -1021,8 +1020,6 @@ console.log('\n[4c] update-slide / select-slide-version');
   await expectThrows('未确认内容切版本被拒', () =>
     actions.dispatchDeckAction(uid, d4.id, { action: 'select-slide-version', slideId: 'x', versionId: 'y' }, okDeps), 'VERSION_SELECT_TOO_EARLY');
 }
-
-await runDeckIntentTests({ check, expectThrows, auth, decks, fullDeps });
 
 console.log('\n[5] 余额不足整单 402');
 {

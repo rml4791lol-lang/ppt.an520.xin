@@ -32,7 +32,6 @@ import { assertStylePackUsable, getTemplate, getTemplatePages, resolveTemplateKi
 import { assertFeatureVisible } from '../feature-flags';
 import { findUserById } from '../auth';
 import { hitRateLimit } from '../rate-limit';
-import { parseDeckIntent, toDeckActionCall, type DeckIntent } from '../../deck-intents';
 
 export interface ActionDeps extends EngineDeps, GenerateDeps {}
 
@@ -455,32 +454,4 @@ export async function dispatchDeckAction(
     default:
       throw validationError(`未知 action：${action}`);
   }
-}
-
-/**
- * 意图通道：typed intent 经 toDeckActionCall 还原成动作名与参数后，走同一条 dispatchDeckAction。
- * 开关硬门、冻结校验、扣费与幂等全在原路，这里只翻译信封。
- */
-export async function dispatchDeckIntent(
-  userId: string,
-  deckId: string,
-  intent: DeckIntent,
-  deps: ActionDeps = {},
-): Promise<ActionResult> {
-  const call = toDeckActionCall(intent);
-  // action 后置：params 无法覆盖目标动作名
-  return dispatchDeckAction(userId, deckId, { ...call.params, action: call.action }, deps);
-}
-
-/** action RPC 统一入口：body 带 intent 走意图通道，否则沿用旧的无类型入口 */
-export async function dispatchDeckRequest(
-  userId: string,
-  deckId: string,
-  body: Record<string, unknown>,
-  deps: ActionDeps = {},
-): Promise<ActionResult> {
-  if (body.intent === undefined) return dispatchDeckAction(userId, deckId, body, deps);
-  const intent = parseDeckIntent(body.intent);
-  if (!intent) throw validationError('未知意图');
-  return dispatchDeckIntent(userId, deckId, intent, deps);
 }

@@ -2,7 +2,7 @@ import { jsonOk, readJsonBody } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute, paramOf } from '@/lib/server/generation/route';
 import { getDeckState } from '@/lib/server/generation/decks';
-import { dispatchDeckRequest } from '@/lib/server/generation/actions';
+import { dispatchDeckAction } from '@/lib/server/generation/actions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,12 +17,11 @@ export const GET = defineApiRoute(async (request, ctx) => {
 /** action RPC：{action: outline | add-slide | delete-slide | reorder-slides | split-slide |
  * structure | structure-slide | confirm-structure | unlock-structure | style |
  * generate | generate-slide | refine-slide | retry-failed |
- * erase-slide | text-edit-slide | fuse-slide | set-reference（后四个挂开关板）, ...}
- * 也可发 {intent: {kind, params}} 走类型化通道（src/lib/deck-intents.ts） */
+ * erase-slide | text-edit-slide | fuse-slide | set-reference（后四个挂开关板）, ...} */
 export const POST = defineApiRoute(async (request, ctx) => {
   const { user } = requireUser(request);
   const id = await paramOf(ctx, 'id');
   const body = await readJsonBody(request);
-  const result = await dispatchDeckRequest(user.id, id, body);
+  const result = await dispatchDeckAction(user.id, id, body);
   return jsonOk({ ...result.state, ...result.extra }, { status: result.status });
 }, { mutation: true });
