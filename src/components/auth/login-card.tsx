@@ -2,50 +2,9 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-
-/**
- * 后端认证接口（src/app/api/auth/**，已实现）：
- * - POST /api/auth/otp/request  { identifier: 邮箱或手机号 }           发送验证码（邮件或短信）
- * - POST /api/auth/otp/verify   { identifier: 邮箱或手机号, code }     验证码登录（新用户自动注册并送星星）
- * - POST /api/auth/login        { account: 邮箱/手机号/用户名, password }  密码登录
- * - POST /api/auth/register     { account, email?, password, confirmPassword }  注册
- * 统一响应 {ok:true,data?} / {ok:false,error:{code,message}}；登录成功后写 Cookie Session。
- * 所有非 GET 请求必须带 x-anppt-action: 1 头（CSRF 守卫）。
- */
-const API = {
-  sendCode: "/api/auth/otp/request",
-  loginCode: "/api/auth/otp/verify",
-  loginPassword: "/api/auth/login",
-  register: "/api/auth/register",
-} as const;
+import { api, type AuthResult } from "@/lib/client/api";
 
 type Mode = "code" | "password";
-
-async function postJson(url: string, body: Record<string, unknown>) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-anppt-action": "1" },
-    body: JSON.stringify(body),
-  });
-  let json: { ok?: boolean; error?: { message?: string } | string; message?: string } | null = null;
-  try {
-    json = await res.json();
-  } catch {
-    /* 非 JSON 响应 */
-  }
-  if (res.ok && json?.ok) return { ok: true as const };
-  const errMsg =
-    typeof json?.error === "object" && json.error !== null
-      ? json.error.message
-      : typeof json?.error === "string"
-        ? json.error
-        : undefined;
-  const msg =
-    errMsg ??
-    json?.message ??
-    (res.status === 404 ? "登录服务尚未接入，敬请期待" : "请求失败，请稍后再试");
-  return { ok: false as const, message: msg };
-}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^1[3-9]\d{9}$/;
@@ -89,7 +48,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
     }
     setError(null);
     setSending(true);
-    const r = await postJson(API.sendCode, { identifier: target });
+    const r = await api.auth.requestOtp(target);
     setSending(false);
     if (!r.ok) {
       setError(r.message);
@@ -110,7 +69,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
   const submit = async () => {
     setError(null);
     setSubmitting(true);
-    let r: { ok: true } | { ok: false; message: string };
+    let r: AuthResult;
     if (registering) {
       if (!/^[a-z0-9_]{3,32}$/.test(username.trim()))
         r = { ok: false, message: "用户名需 3–32 位，小写字母、数字或下划线" };
@@ -118,7 +77,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
       else if (password.length < 8) r = { ok: false, message: "密码至少 8 位" };
       else if (password !== confirm) r = { ok: false, message: "两次输入的密码不一致" };
       else
-        r = await postJson(API.register, {
+        r = await api.auth.register({
           account: username.trim(),
           email: email.trim(),
           password,
@@ -128,11 +87,11 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
       const target = normalizeIdentifierInput(email);
       if (!isValidIdentifier(target)) r = { ok: false, message: "请输入正确的邮箱地址或手机号" };
       else if (!code.trim()) r = { ok: false, message: "请输入验证码" };
-      else r = await postJson(API.loginCode, { identifier: target, code: code.trim() });
+      else r = await api.auth.loginWithOtp({ identifier: target, code: code.trim() });
     } else {
       if (!identifier.trim()) r = { ok: false, message: "请输入邮箱或用户名" };
       else if (!password) r = { ok: false, message: "请输入密码" };
-      else r = await postJson(API.loginPassword, { account: identifier.trim(), password });
+      else r = await api.auth.loginWithPassword({ account: identifier.trim(), password });
     }
     setSubmitting(false);
     if (!r.ok) {

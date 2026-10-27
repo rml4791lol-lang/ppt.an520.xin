@@ -13,7 +13,7 @@ import {
   ShieldIcon,
   SparklesIcon,
 } from "@/components/icons";
-import { getSession } from "@/lib/client/api";
+import { api } from "@/lib/client/api";
 
 interface MeView {
   loggedIn: boolean;
@@ -208,29 +208,8 @@ export function OnlyOfficeClient() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadMe = getSession()
-      .catch(() => ({ authenticated: false, user: null }))
-      .then(async (session) => {
-        if (!session.authenticated) {
-          return { loggedIn: false, unlocked: false };
-        }
-        const meResponse = await fetch("/api/me", { cache: "no-store" });
-        const mePayload = await meResponse.json().catch(() => null);
-        return {
-          loggedIn: Boolean(meResponse.ok && mePayload?.ok),
-          unlocked: Boolean(meResponse.ok && mePayload?.data?.benefits?.onlyOfficeToolkit),
-        };
-      })
-      .catch(() => ({ loggedIn: false, unlocked: false }));
-
-    const loadRelease = fetch("/api/tools/onlyoffice/release", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null);
-        return response.ok && payload?.ok && payload.data?.assets
-          ? (payload.data as ReleaseView)
-          : FALLBACK_RELEASE;
-      })
-      .catch(() => FALLBACK_RELEASE);
+    const loadMe = api.onlyoffice.benefit();
+    const loadRelease = api.onlyoffice.getRelease().catch(() => FALLBACK_RELEASE);
 
     Promise.all([loadMe, loadRelease]).then(([nextMe, nextRelease]) => {
       if (cancelled) return;
@@ -357,7 +336,7 @@ export function OnlyOfficeClient() {
         <div className="mt-6 grid gap-5 lg:grid-cols-3">
           {INSTALLERS.map((installer) => {
             const asset = release.assets[installer.arch] ?? FALLBACK_RELEASE.assets[installer.arch];
-            const downloadHref = `/api/tools/onlyoffice/download/${installer.arch}`;
+            const downloadHref = api.onlyoffice.downloadHref(installer.arch);
             return (
               <article
                 key={installer.arch}
