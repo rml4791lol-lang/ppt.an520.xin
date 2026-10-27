@@ -580,6 +580,8 @@ export function listSingleProjectPageStatuses(userId: string, projectId: string)
     .prepare('SELECT id FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
     .get(cleanString(projectId, 80), userId) as Row | undefined;
   if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
+  // 读点即收敛：批量状态轮询也要能解除中断页，调用方不必自己记得恢复
+  reconcileSingleProject(userId, String(project.id));
   const rows = db
     .prepare(
       `SELECT p.id, p.page_index, p.status, p.error, p.active_version_id, p.updated_at,

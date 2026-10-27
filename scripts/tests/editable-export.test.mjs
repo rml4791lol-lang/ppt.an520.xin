@@ -276,6 +276,33 @@ export async function runEditableExportTests(ctx) {
       check('懒恢复成功不触碰余额', credits.getBalance(uid) === before);
     }
 
+    // ---- 懒恢复读点：导出列表读一眼就重跑中断的导出（调用方不显式调用恢复）----
+    {
+      const now = Date.now();
+      genDb.prepare(`INSERT INTO export_jobs
+          (id, user_id, ref_type, ref_id, kind, status, page_count, file_path, file_url, error, upstream_task_id, charged_credits, created_at, updated_at)
+         VALUES ('exp_lazy_read', ?, 'deck', ?, 'editable', 'processing', 2, '', '', '', '', 40, ?, ?)`)
+        .run(uid, deck.id, now - 60_000, now - 60_000);
+      let pollN = 0;
+      const readFetcher = makeMockFetcher([
+        { match: '/v2/open/tasks/task_read', payload: () => (pollN++ > 0
+          ? { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/read.pptx', page_count: 2 } } }
+          : { code: 0, message: 'ok', data: { status: 'pending' } }) },
+        { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_read', status: 'pending' } } },
+        { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_read' } } },
+        { match: 'read.pptx', payload: new Response(Buffer.from('read-pptx-binary')) },
+      ]);
+      const beforeRead = credits.getBalance(uid);
+      exportsLib.listExports(uid, {}, codiaDeps(readFetcher));
+      let readStatus = 'processing';
+      for (let i = 0; i < 150 && readStatus !== 'succeeded'; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        readStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read')?.status || '');
+      }
+      check('懒恢复读点：listExports 读一眼即重跑中断的导出', readStatus === 'succeeded', `实际 ${readStatus}`);
+      check('懒恢复读点：重跑不重复扣星', credits.getBalance(uid) === beforeRead);
+    }
+
     // ---- 未 generated deck → 409 ----
     {
       const dNg = decks.createDeck(uid, {
