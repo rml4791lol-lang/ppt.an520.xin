@@ -11,9 +11,6 @@ import {
   walkSourceFiles,
 } from './client-test-helpers.mjs';
 
-// 票面范围外（管理员问题日志面板），手册 §7 已登记为刻意保留的豁免。
-const BARE_FETCH_ALLOWLIST = new Set(['src/components/admin/problems-client.tsx']);
-
 const MIGRATED_VIEWS = [
   'src/components/projects/projects-client.tsx',
   'src/components/account/credits-client.tsx',
@@ -281,9 +278,8 @@ export async function runClientApiTests({ check }) {
     const componentsDir = path.join(repoRoot, 'src/components');
     const bareFetchFiles = walkSourceFiles(componentsDir)
       .filter((file) => /(?<![\w.$])fetch\(/.test(readFileSync(file, 'utf8')))
-      .map((file) => path.relative(repoRoot, file))
-      .filter((rel) => !BARE_FETCH_ALLOWLIST.has(rel));
-    check('组件目录无裸 fetch（仅豁免 admin/problems-client）',
+      .map((file) => path.relative(repoRoot, file));
+    check('组件目录无裸 fetch（无豁免）',
       bareFetchFiles.length === 0, bareFetchFiles.join(', '));
 
     const urlLiterals = MIGRATED_VIEWS.filter((rel) => /\/api\//.test(source(rel)));

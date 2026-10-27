@@ -101,7 +101,7 @@ NODE
 - 下载中心：`src/app/(main)/exports/page.tsx`（来源文件名、真实页数/进度、状态、反复下载；processing 自动刷新）。侧栏有「下载中心」入口。
 - 外部文件转可编辑：侧栏 `/tools/editable-converter` 已上线，支持 PDF 与图片排序；未登录先引导登录，不会误发受保护请求。
 - **会话只取一次（2026-10-27）**：`src/lib/client/api.ts` 的 `getSession()` 做进程内 in-flight 去重，壳/导出中心/项目/单页工作台/onlyoffice/可编辑转换共用它；此前 6 个组件各打一次 `/api/auth/session`。登录或登出后必须调 `resetSessionCache()`，否则读到旧会话。
-- **前端唯一请求入口（2026-10-27）**：一律走 `apiFetch()`（信封解包 + 写操作 `x-anppt-action` CSRF 头 + `ApiClientError` 的 401/402 语义）。`admin-client` 曾自带一套 `adminFetch`/`mutationInit` 把错误降级成普通 `Error`，已删除；新增页面不要再自建 adapter。裸 `fetch(` 从 22 处降到 12 处，剩余集中在 projects/recharge/credits/onlyoffice/login 的读接口，迁移时按能力命名，别再引 URL 字面量进组件。
+- **前端唯一请求入口（2026-10-27）**：一律走 `apiFetch()`（信封解包 + 写操作 `x-anppt-action` CSRF 头 + `ApiClientError` 的 401/402 语义）。`admin-client` 曾自带一套 `adminFetch`/`mutationInit` 把错误降级成普通 `Error`，已删除；新增页面不要再自建 adapter。**组件目录裸 `fetch(` 已归零**（2026-10-27，含管理员问题日志面板）；刻意保留的豁免：无。新增读接口按能力命名加进 `src/lib/client/api.ts`，不要再把 URL 字面量或信封解包写进组件。
 - **扣费键唯一来源（2026-10-27）**：可编辑导出的 `credit_ledger.idempotency_key` 由 `modules/editable-export/server/charge-keys.ts` 的 `editableChargeKey({kind, refId, exportId})` 生成，扣费与退款共用。此前两处各拼一份模板（`editable.ts:307` / `:807`），漂移会让退款派生到别的键上——表现是钱扣了不退且不报错。
 - 本地编辑器：侧栏 `/tools/onlyoffice`（`src/components/tools/onlyoffice-client.tsx`）已上线；未充值不显示下载链接，三个 Windows 下载路由再次做服务端权益校验。页面口径固定为「第三方开源免费的 ONLYOFFICE Desktop Editors + AnPPT 的下载整理/校验/兼容服务」，2026-10-13 起首屏先讲清「装的是什么、拿来做什么、为什么用它」，再往下才是下载区与权益对比，避免读者误以为软件是自研产品或需付费购买。
 

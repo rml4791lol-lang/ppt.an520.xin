@@ -147,7 +147,7 @@ let pageCount = 0;
 
 console.log('[4] 导出图片版 PPTX');
 {
-  const r = await api(`/api/deck/${deckId}/export-image`, { method: 'POST', body: {} });
+  const r = await api(`/api/deck/${deckId}/export-image`, { method: 'POST', body: { intent: { kind: 'exportDeckImage', params: { deckId } } } });
   check('导出 201', r.status === 201, `实际 ${r.status} ${JSON.stringify(r.json)?.slice(0, 160)}`);
   const url = r.json?.data?.url || '';
   if (url) {

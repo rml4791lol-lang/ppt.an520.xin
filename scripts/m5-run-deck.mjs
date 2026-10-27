@@ -130,7 +130,7 @@ let deckId = '';
   }
 
   // [4] 导出
-  const r6 = await api(`/api/deck/${deckId}/export-image`, { method: 'POST', body: {} });
+  const r6 = await api(`/api/deck/${deckId}/export-image`, { method: 'POST', body: { intent: { kind: 'exportDeckImage', params: { deckId } } } });
   if (r6.status !== 201) throw new Error(`导出失败 ${r6.status} ${JSON.stringify(r6.json)?.slice(0, 160)}`);
   const url = r6.json?.data?.url || '';
   const file = await fetch(`${BASE}${url}`, { headers: { cookie } });
