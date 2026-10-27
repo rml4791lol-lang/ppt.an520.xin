@@ -108,16 +108,8 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-<<<<<<< HEAD
-node scripts/test-generation.mjs  # 当前 536 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 163 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
-||||||| ad02eff
-node scripts/test-generation.mjs  # 当前 519 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 163 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
-=======
 node scripts/test-generation.mjs  # 当前 536 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 170 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
->>>>>>> spec/deepening
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
 npm run build
