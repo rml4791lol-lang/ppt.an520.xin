@@ -38,6 +38,9 @@ function source(relPath) {
   return readFileSync(path.join(repoRoot, relPath), 'utf8');
 }
 
+// ts hooks 由 scripts/test-generation.mjs 在加载本文件前注册，动态引入才能解析 src 下的 .ts
+let deckGates = null;
+
 // 只填可用性推导会读到的字段，其余留空（真实形状由 src/lib/client/deck-api.ts 定义）
 function makeState(overrides = {}) {
   const base = {
@@ -61,12 +64,20 @@ function makeState(overrides = {}) {
     pageSummary: { total: 0, idle: 0, queued: 0, running: 0, succeeded: 0, failed: 0, stale: 0 },
     contentLocked: false,
   };
-  return {
+  const state = {
     ...base,
     ...overrides,
     deck: { ...base.deck, ...(overrides.deck || {}) },
     pageSummary: { ...base.pageSummary, ...(overrides.pageSummary || {}) },
   };
+  // 与服务端同源：可用集合由 deck-gates 按同一份事实算出（fixture 不手写顺序约束）
+  state.availableIntents = deckGates.availableIntentsOf(deckGates.deckGateFacts({
+    status: state.deck.status,
+    stylePackId: state.deck.stylePackId,
+    slides: () => state.slides,
+    hasActiveJob: Boolean(state.activeJob),
+  }));
+  return state;
 }
 
 function makeSlide(structureStatus, genStatus) {
@@ -85,6 +96,7 @@ const DECK_CHAIN = [
 ];
 
 export async function runDeckWorkbenchTests({ check }) {
+  deckGates = await import('../../src/lib/deck-gates.ts');
   const { deckIntentAction } = await import('../../src/lib/client/deck-api.ts');
   const { deriveDeckAvailability } = await import('../../src/lib/client/deck-availability.ts');
 
@@ -163,7 +175,7 @@ export async function runDeckWorkbenchTests({ check }) {
       && confirmed.pendingGeneration === 1);
 
   const generating = availabilityAt({
-    deck: { status: 'confirmed' },
+    deck: { status: 'confirmed', stylePackId: 'pack-x' },
     contentLocked: true,
     activeJob: {
       jobId: 'j1', kind: 'deck-generate', status: 'running',
@@ -186,7 +198,7 @@ export async function runDeckWorkbenchTests({ check }) {
       && generated.hasGenerated === true && generated.pendingGeneration === 0);
 
   const partial = availabilityAt({
-    deck: { status: 'partial' },
+    deck: { status: 'partial', stylePackId: 'pack-x' },
     contentLocked: true,
     slides: [makeSlide('ok', 'succeeded'), makeSlide('ok', 'failed')],
     pageSummary: { total: 2, succeeded: 1, failed: 1 },
@@ -195,6 +207,28 @@ export async function runDeckWorkbenchTests({ check }) {
     partial.canRetryFailed === true && partial.allGenerated === false
       && partial.hasGenerated === true && partial.canExport === true
       && partial.pendingGeneration === 1);
+
+  // ---------- 顺序约束读服务端可用集合 ----------
+  const locked = availabilityAt({
+    deck: { status: 'confirmed', stylePackId: 'pack-x' },
+    contentLocked: true,
+    slides: [makeSlide('ok', 'idle')],
+    pageSummary: { total: 1, idle: 1 },
+  });
+  check('可用性：冻结后内容不可改，可用集合把内容类意图换成 unlock',
+    locked.contentEditable === false
+      && !locked.availableIntents.includes('updateSlide')
+      && locked.availableIntents.includes('unlockStructure')
+      && locked.availableIntents.includes('generateSlides'),
+    JSON.stringify(locked.availableIntents));
+  const failedNoStyle = availabilityAt({
+    deck: { status: 'partial' },
+    contentLocked: true,
+    slides: [makeSlide('ok', 'failed')],
+    pageSummary: { total: 1, failed: 1 },
+  });
+  check('可用性：重试按钮跟可用集合走（缺风格时不算可重试）',
+    failedNoStyle.canRetryFailed === false && failedNoStyle.availableIntents.length >= 0);
 
   // ---------- 静态约束：链路不再出现无类型请求体 ----------
   const rawBodies = DECK_CHAIN.filter((rel) => source(rel).includes('Record<string, unknown>'));

@@ -1,37 +1,31 @@
-// deck typed intent 影子通道契约测试：意图↔动作名双射、适配器原样透传、线上解析护栏、
-// 一条真实路径（结构提交）端到端。由 scripts/test-generation.mjs 汇总调用，全程 mock。
+// deck typed intent 契约测试：意图是唯一入口；顺序约束由 src/lib/deck-gates.ts 一份不变量生成，
+// 拒绝码/文案与 state.availableIntents 同源。由 scripts/test-generation.mjs 汇总调用，全程 mock。
 import { readFileSync } from 'node:fs';
 
 export async function runDeckIntentTests(ctx) {
-  const { check, expectThrows, auth, decks, fullDeps } = ctx;
+  const { check, auth, decks, fullDeps } = ctx;
   const intents = await import('../../src/lib/deck-intents.ts');
+  const gates = await import('../../src/lib/deck-gates.ts');
   const actions = await import('../../src/lib/server/generation/actions.ts');
-  const { DECK_INTENT_ACTIONS, toDeckActionCall, parseDeckIntent } = intents;
+  const { STYLE_PACKS } = await import('../../src/data/style-packs.ts');
+  const { DECK_INTENT_KINDS, parseDeckIntent } = intents;
 
-  console.log('\n[4d] deck typed intent 影子通道');
-  // 动作名清单直接读路由源码的 switch，避免维护第三份手抄清单
+  console.log('\n[4d] deck typed intent：唯一入口 / 前置不变量 / 可用集合');
+
+  // ---------- 契约：dispatch 覆盖全部 kind，旧 action 词汇消失 ----------
   const actionsSrc = readFileSync(new URL('../../src/lib/server/generation/actions.ts', import.meta.url), 'utf8');
-  const legacyActions = [...new Set([...actionsSrc.matchAll(/case '([a-z-]+)':/g)].map((m) => m[1]))];
-  const mappedActions = Object.values(DECK_INTENT_ACTIONS);
-  check('意图覆盖 body.action 全部 20 个动作名（源码 switch ↔ 映射表双向齐全）',
-    legacyActions.length === 20
-      && mappedActions.length === 20
-      && legacyActions.every((name) => mappedActions.includes(name))
-      && mappedActions.every((name) => legacyActions.includes(name)),
-    `legacy=${legacyActions.length} mapped=${mappedActions.length}`);
-  check('20 个意图一一对应动作名（无双射塌陷）', new Set(mappedActions).size === 20);
-
-  const call1 = toDeckActionCall({ kind: 'confirmStructure', params: {} });
-  check('适配器：无参意图 → action=confirm-structure + 空参数',
-    call1.action === 'confirm-structure' && JSON.stringify(call1.params) === '{}');
-  const call2 = toDeckActionCall({ kind: 'setStyle', params: { stylePackId: 'pack-a' } });
-  check('适配器：参数原样透传（不裁剪不补默认值）',
-    call2.action === 'style' && JSON.stringify(call2.params) === '{"stylePackId":"pack-a"}');
-  const markImage = 'data:image/png;base64,AAAA';
-  const call3 = toDeckActionCall({ kind: 'eraseSlide', params: { slideId: 's1', markImageDataUrl: markImage } });
-  check('适配器：多参意图原样还原动作名与参数',
-    call3.action === 'erase-slide'
-      && call3.params.slideId === 's1' && call3.params.markImageDataUrl === markImage);
+  const routeSrc = readFileSync(new URL('../../src/app/api/deck/[id]/route.ts', import.meta.url), 'utf8');
+  const switchKinds = [...new Set([...actionsSrc.matchAll(/case '([A-Za-z]+)':/g)].map((m) => m[1]))];
+  check('dispatch 的 case 覆盖全部意图（源码 switch ↔ DECK_INTENT_KINDS 双向齐全）',
+    switchKinds.length === 20 && DECK_INTENT_KINDS.length === 20
+      && DECK_INTENT_KINDS.every((kind) => switchKinds.includes(kind))
+      && switchKinds.every((kind) => DECK_INTENT_KINDS.includes(kind)),
+    `switch=${switchKinds.length} kinds=${DECK_INTENT_KINDS.length}`);
+  check('意图 kind 唯一（无重复登记）', new Set(DECK_INTENT_KINDS).size === 20);
+  check('无类型入口已删除：dispatch 不再有 dispatchDeckAction / body.action',
+    !actionsSrc.includes('dispatchDeckAction') && !actionsSrc.includes('body.action'));
+  check('路由边界只解意图（readDeckIntent），不再收 action 信封',
+    routeSrc.includes('readDeckIntent') && !routeSrc.includes('parseDeckRequest'));
 
   check('解析：合法意图收窄通过',
     parseDeckIntent({ kind: 'commitVersion', params: { slideId: 's1', versionId: 'v1' } })?.kind === 'commitVersion');
@@ -43,12 +37,30 @@ export async function runDeckIntentTests(ctx) {
       && parseDeckIntent('confirmStructure') === null
       && parseDeckIntent({ kind: 'confirmStructure', params: [] }) === null);
 
-  // ---------- 端到端：结构提交走意图通道 ----------
+  // ---------- 不变量：同一份规则给出拒绝理由与可用集合 ----------
+  const factsOf = (state) => gates.deckGateFacts({
+    status: state.deck.status,
+    stylePackId: state.deck.stylePackId,
+    slides: () => state.slides,
+    hasActiveJob: Boolean(state.activeJob),
+  });
+  const dispatch = (userId, deckId, kind, params = {}) =>
+    actions.dispatchDeckIntent(userId, deckId, { kind, params }, fullDeps);
+  const catchError = async (fn) => {
+    try {
+      await fn();
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+
   const user = await auth.registerWithPassword(
     { account: 'intentuser', password: 'password123', confirmPassword: 'password123' },
     '127.0.0.41',
   );
-  const deck = decks.createDeck(user.user.id, {
+  const uid = user.user.id;
+  const deck = decks.createDeck(uid, {
     title: '意图通道测试',
     sourceFileName: 'intent.docx',
     sourceText: '2025 年营收 1200 万元，同比增长 20%。',
@@ -57,57 +69,79 @@ export async function runDeckIntentTests(ctx) {
     qualityTier: 'standard',
     stylePackId: '',
   });
-  await actions.dispatchDeckAction(user.user.id, deck.id, { action: 'outline' }, fullDeps);
-  await actions.dispatchDeckAction(user.user.id, deck.id, { action: 'structure' }, fullDeps);
+  await dispatch(uid, deck.id, 'generateOutline');
 
-  // ---------- 路由边界：原始 JSON → DeckRequest（路由不再拿未收窄的 body） ----------
-  const { parseDeckRequest } = actions;
-  const intentRequest = parseDeckRequest({ intent: { kind: 'confirmStructure' } });
-  check('路由边界：intent 信封收窄成意图通道（缺省 params 补空对象）',
-    'intent' in intentRequest && intentRequest.intent.kind === 'confirmStructure'
-      && JSON.stringify(intentRequest.intent.params) === '{}');
-  const legacyRequest = parseDeckRequest({ action: 'style', stylePackId: 'pack-a' });
-  check('路由边界：旧 action 信封参数收进 params（不再裸传原始 body）',
-    !('intent' in legacyRequest) && legacyRequest.action === 'style'
-      && legacyRequest.params.stylePackId === 'pack-a' && !('action' in legacyRequest.params));
-  const bareRequest = parseDeckRequest({ action: 'retry-failed' });
-  check('路由边界：无参旧信封 → params 空对象',
-    !('intent' in bareRequest) && Object.keys(bareRequest.params).length === 0);
-  await expectThrows('路由边界：空 body 仍报「缺少 action」', () => parseDeckRequest({}), 'VALIDATION_ERROR');
-  await expectThrows('路由边界：非法 intent 仍报「未知意图」', () =>
-    parseDeckRequest({ intent: { kind: 'nope' } }), 'VALIDATION_ERROR');
+  // 大纲出来但未梳理：confirmStructure 被不变量标记不可用，拒绝文案逐字来自它
+  let state = decks.getDeckState(uid, deck.id);
+  const incompleteDenial = gates.deckGateDenial('confirmStructure', factsOf(state));
+  check('未完成梳理时 confirmStructure 不在可用集合（理由由不变量给出）',
+    incompleteDenial?.code === 'STRUCTURE_INCOMPLETE'
+      && !state.availableIntents.includes('confirmStructure')
+      && state.availableIntents.includes('structureSlides'),
+    JSON.stringify({ denial: incompleteDenial, available: state.availableIntents }));
+  const incompleteError = await catchError(() => dispatch(uid, deck.id, 'confirmStructure'));
+  check('未完成梳理直接提交结构 → 拒绝理由逐字来自不变量',
+    incompleteError?.code === incompleteDenial?.code
+      && incompleteError?.message === incompleteDenial?.message,
+    `实际 ${incompleteError?.code} ${incompleteError?.message}`);
 
-  const confirmed = await actions.dispatchDeckRequest(
-    user.user.id, deck.id, { intent: { kind: 'confirmStructure', params: {} } }, fullDeps);
-  check('结构提交经意图通道 → confirmed 且内容冻结',
-    confirmed.status === 200 && confirmed.state.deck.status === 'confirmed' && confirmed.state.contentLocked === true,
-    `实际 ${confirmed.state.deck.status}`);
-  await expectThrows('意图确认后仍套用同一冻结门（legacy outline 被拒）', () =>
-    actions.dispatchDeckRequest(user.user.id, deck.id, { action: 'outline', params: { force: true } }, fullDeps), 'CONTENT_LOCKED');
-  await expectThrows('意图同样受开关板硬门约束（erase-slide 未开放 → NOT_FOUND）', () =>
-    actions.dispatchDeckRequest(user.user.id, deck.id, { intent: { kind: 'eraseSlide', params: { slideId: 'x', markImageDataUrl: markImage } } }, fullDeps), 'NOT_FOUND');
-  await expectThrows('未知意图 → VALIDATION_ERROR（不静默降级成旧入口）', () =>
-    actions.dispatchDeckRequest(user.user.id, deck.id, { intent: { kind: 'nope', params: {} } }, fullDeps), 'VALIDATION_ERROR');
+  // 全页梳理完成 → confirmStructure 进入可用集合
+  await dispatch(uid, deck.id, 'structureSlides');
+  state = decks.getDeckState(uid, deck.id);
+  check('全部梳理完成后 confirmStructure 进入可用集合',
+    state.availableIntents.includes('confirmStructure')
+      && gates.deckGateDenial('confirmStructure', factsOf(state)) === null);
 
-  // ---------- 旧入口经统一入口仍然可用 ----------
-  const legacyDeck = decks.createDeck(user.user.id, {
-    title: '旧入口回归',
-    sourceFileName: 'legacy.docx',
-    sourceText: '旧入口仍然可用。',
-    durationMinutes: 10,
-    targetPageCount: 2,
-    qualityTier: 'standard',
-    stylePackId: '',
-  });
-  await actions.dispatchDeckAction(user.user.id, legacyDeck.id, { action: 'outline' }, fullDeps);
-  await actions.dispatchDeckAction(user.user.id, legacyDeck.id, { action: 'structure' }, fullDeps);
-  const legacyConfirmed = await actions.dispatchDeckRequest(
-    user.user.id, legacyDeck.id, { action: 'confirm-structure', params: {} }, fullDeps);
-  check('旧无类型入口经统一入口仍可用（语义未改）',
-    legacyConfirmed.status === 200 && legacyConfirmed.state.deck.status === 'confirmed');
+  // 确认冻结：内容类意图整体退出可用集合，unlockStructure 进入
+  const confirmed = await dispatch(uid, deck.id, 'confirmStructure');
+  state = confirmed.state;
+  const lockedIntents = [
+    'generateOutline', 'addSlide', 'removeSlide', 'reorderSlides', 'splitSlide',
+    'updateSlide', 'structureSlides', 'structureSlide', 'confirmStructure',
+  ];
+  check('确认后内容类意图全部退出可用集合、unlockStructure 进入',
+    confirmed.status === 200 && state.contentLocked === true
+      && lockedIntents.every((kind) => !state.availableIntents.includes(kind))
+      && state.availableIntents.includes('unlockStructure'),
+    JSON.stringify(state.availableIntents));
 
-  // ---------- 路由层：同一条 POST 同时服务意图与旧信封（脚本兼容） ----------
-  const routeDeck = decks.createDeck(user.user.id, {
+  // 未解锁就改结构 → CONTENT_LOCKED，文案来自同一条不变量
+  const lockedDenial = gates.deckGateDenial('updateSlide', factsOf(state));
+  const lockedError = await catchError(() =>
+    dispatch(uid, deck.id, 'updateSlide', { slideId: state.slides[0].slideId, title: '未解锁改名' }));
+  check('冻结后改结构 → CONTENT_LOCKED 且拒绝文案来自不变量',
+    lockedError?.code === 'CONTENT_LOCKED' && lockedError?.message === lockedDenial?.message,
+    `实际 ${lockedError?.code} ${lockedError?.message}`);
+
+  // 生成前置：未选风格不可生成；选风格后进入可用集合
+  check('未选风格时 generateSlides 不在可用集合（理由来自生成前置）',
+    !state.availableIntents.includes('generateSlides')
+      && gates.deckGateDenial('generateSlides', factsOf(state))?.code === 'STYLE_REQUIRED');
+  await dispatch(uid, deck.id, 'setStyle', { stylePackId: STYLE_PACKS[0].id });
+  state = decks.getDeckState(uid, deck.id);
+  check('选风格后 generateSlides 进入可用集合',
+    state.availableIntents.includes('generateSlides'));
+
+  // 解锁：内容动作回到可用集合，unlock 退出
+  const unlocked = await dispatch(uid, deck.id, 'unlockStructure');
+  check('解锁后内容类意图回到可用集合、unlock 退出',
+    unlocked.status === 200 && unlocked.extra.invalidated === 0
+      && unlocked.state.contentLocked === false
+      && unlocked.state.availableIntents.includes('updateSlide')
+      && !unlocked.state.availableIntents.includes('unlockStructure'));
+
+  const unlockedAgain = await dispatch(uid, deck.id, 'unlockStructure');
+  check('已解锁时再次 unlock 是幂等 no-op（不新增拒绝面）',
+    unlockedAgain.status === 200 && unlockedAgain.extra.alreadyUnlocked === true);
+  check('页级意图不登记 deck 级可用集合（改图/参考图逐页判断）',
+    !unlocked.state.availableIntents.includes('refineSlide')
+      && !unlocked.state.availableIntents.includes('setReferenceImage'));
+  check('响应类型无索引签名兜底：dispatch 的 extra 按 kind 收窄',
+    !actionsSrc.includes('Record<string, unknown>')
+      && actionsSrc.includes('extra: DeckIntentExtra[K]'));
+
+  // ---------- 路由边界：同一条 POST 只服务意图 ----------
+  const routeDeck = decks.createDeck(uid, {
     title: '路由信封测试',
     sourceFileName: '',
     sourceText: '路由只做鉴权、收窄参数、调业务层。',
@@ -116,10 +150,10 @@ export async function runDeckIntentTests(ctx) {
     qualityTier: 'standard',
     stylePackId: '',
   });
-  await actions.dispatchDeckAction(user.user.id, routeDeck.id, { action: 'outline' }, fullDeps);
-  const routeSlideId = decks.getDeckState(user.user.id, routeDeck.id).slides[0].slideId;
+  await dispatch(uid, routeDeck.id, 'generateOutline');
+  const routeSlideId = decks.getDeckState(uid, routeDeck.id).slides[0].slideId;
   const deckRoute = await import('../../src/app/api/deck/[id]/route.ts');
-  const token = auth.createSessionForUser(user.user.id);
+  const token = auth.createSessionForUser(uid);
   const callRoute = (body) =>
     deckRoute.POST(
       new Request(`http://localhost/api/deck/${routeDeck.id}`, {
@@ -138,16 +172,18 @@ export async function runDeckIntentTests(ctx) {
     intent: { kind: 'updateSlide', params: { slideId: routeSlideId, title: '路由改名' } },
   });
   const intentBody = await intentRes.json();
-  check('路由：意图通道返回全量 state + 该意图 extra（contentChanged 平铺）',
+  check('路由：意图通道返回全量 state + 该意图 extra + 可用集合',
     intentRes.status === 200 && intentBody.data.deck && Array.isArray(intentBody.data.slides)
-      && intentBody.data.contentChanged === true && intentBody.data.slides[0].title === '路由改名',
+      && intentBody.data.contentChanged === true && intentBody.data.slides[0].title === '路由改名'
+      && Array.isArray(intentBody.data.availableIntents),
     JSON.stringify({ status: intentRes.status, extra: intentBody.data?.contentChanged }));
 
-  const beforeLegacy = decks.getDeckState(user.user.id, routeDeck.id).slides.length;
   const legacyRes = await callRoute({ action: 'add-slide' });
   const legacyBody = await legacyRes.json();
-  check('路由：旧 {action} 信封经同一入口仍可用（脚本不受影响）',
-    legacyRes.status === 200 && legacyBody.data.slides.length === beforeLegacy + 1);
+  check('路由：旧 {action} 信封被删除（400 缺少意图）',
+    legacyRes.status === 400 && legacyBody?.error?.code === 'VALIDATION_ERROR'
+      && legacyBody?.error?.message.includes('意图'),
+    `实际 ${legacyRes.status} ${legacyBody?.error?.message}`);
 
   const badIntentRes = await callRoute({ intent: { kind: 'nope' } });
   const badIntentBody = await badIntentRes.json();

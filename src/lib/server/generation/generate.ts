@@ -29,6 +29,7 @@ import {
   type SlidePromptInput,
 } from './style-packs';
 import { markJobActive, markJobDone } from './recovery';
+import { deckGateFacts, generationPrecondition } from '../../deck-gates';
 import { ensureDeckBlueprint } from './blueprint';
 import { buildOutlinePageMapping, resolveTemplateReferenceImage, type TemplateRouteContext } from './mapping';
 import { getTemplate, getTemplatePages, resolveTemplateKind } from '../templates';
@@ -43,18 +44,6 @@ export interface StartedJob {
   total: number;
   /** 测试用：等待整批结束。路由默认后台执行（void）。 */
   done: Promise<void>;
-}
-
-function assertGeneratable(deck: DeckRow): void {
-  if (deck.status === 'generating') {
-    throw new ApiError('GENERATION_RUNNING', '生成正在进行中，请稍候', 409, true);
-  }
-  if (!['confirmed', 'generated', 'partial'].includes(deck.status)) {
-    throw new ApiError('STRUCTURE_NOT_CONFIRMED', '请先完成内容梳理并确认结构', 409, false);
-  }
-  if (!deck.stylePackId) {
-    throw new ApiError('STYLE_REQUIRED', '请先选择设计风格', 400, false);
-  }
 }
 
 function promptForSlide(
@@ -276,8 +265,12 @@ export async function startDeckGeneration(
   const config = deps.config ?? getGenerationConfig();
   const runDeps: GenerateDeps = { ...deps, config };
   const deck = getOwnedDeck(userId, deckId);
-  assertGeneratable(deck);
   const allSlides = listSlides(deck.id);
+  // 生成前置与 deck 动作前置同一份规则（deck-gates）：措辞与顺序不分叉
+  const denial = generationPrecondition(
+    deckGateFacts({ status: deck.status, stylePackId: deck.stylePackId, slides: () => allSlides }),
+  );
+  if (denial) throw new ApiError(denial.code, denial.message, denial.status, denial.retryable);
   if (allSlides.length === 0) throw new ApiError('NO_SLIDES', '大纲为空，请先生成大纲', 400, false);
 
   let targets: DeckSlideRow[];

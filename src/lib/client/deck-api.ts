@@ -95,6 +95,8 @@ export interface DeckState {
   activeJob: DeckActiveJob | null;
   pageSummary: DeckPageSummary;
   contentLocked: boolean;
+  /** deck 级顺序约束允许的意图（服务端按 src/lib/deck-gates.ts 同一份规则算出） */
+  availableIntents: DeckIntentKind[];
 }
 
 /** 意图的响应 data = 全量 state + 该意图的 extra 平铺（见 actions.ts 路由） */
