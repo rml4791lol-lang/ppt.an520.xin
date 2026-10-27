@@ -2,22 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-
-interface Summary {
-  balance?: number;
-  totalGranted?: number;
-  totalSpent?: number;
-  granted30d?: number;
-  spent30d?: number;
-}
-
-interface LedgerEntry {
-  delta: number;
-  balanceAfter?: number;
-  reason?: string;
-  eventType?: string;
-  createdAt?: number | string;
-}
+import {
+  api,
+  ApiClientError,
+  type CreditLedgerEntry,
+  type CreditSummary,
+} from "@/lib/client/api";
 
 function AuthWall({ onReload }: { onReload: () => void }) {
   return (
@@ -42,7 +32,7 @@ function AuthWall({ onReload }: { onReload: () => void }) {
   );
 }
 
-const CARDS: { key: keyof Summary; label: string; hint: string }[] = [
+const CARDS: { key: keyof CreditSummary; label: string; hint: string }[] = [
   { key: "balance", label: "可用星星", hint: "可用于生成和导出" },
   { key: "totalGranted", label: "累计获得", hint: "注册赠送、充值与兑换" },
   { key: "totalSpent", label: "累计已使用", hint: "生成消耗，失败自动退回" },
@@ -50,8 +40,8 @@ const CARDS: { key: keyof Summary; label: string; hint: string }[] = [
 ];
 
 export function CreditsClient() {
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [ledger, setLedger] = useState<LedgerEntry[] | null>(null);
+  const [summary, setSummary] = useState<CreditSummary | null>(null);
+  const [ledger, setLedger] = useState<CreditLedgerEntry[] | null>(null);
   const [unauthorized, setUnauthorized] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -59,27 +49,24 @@ export function CreditsClient() {
     setLoading(true);
     setUnauthorized(false);
     try {
-      const [sumRes, ledgerRes] = await Promise.all([
-        fetch("/api/credits/summary", { cache: "no-store" }),
-        fetch("/api/credits/ledger", { cache: "no-store" }),
+      const [sumResult, ledgerResult] = await Promise.allSettled([
+        api.credits.summary(),
+        api.credits.ledger(),
       ]);
-      if (sumRes.status === 401 || ledgerRes.status === 401) {
+      const unauthorized = [sumResult, ledgerResult].some(
+        (result) =>
+          result.status === "rejected" &&
+          result.reason instanceof ApiClientError &&
+          result.reason.isUnauthorized,
+      );
+      if (unauthorized) {
         setUnauthorized(true);
         setSummary(null);
         setLedger(null);
         return;
       }
-      if (sumRes.ok) {
-        const json = await sumRes.json().catch(() => null);
-        if (json?.ok) setSummary(json.data ?? {});
-      }
-      if (ledgerRes.ok) {
-        const json = await ledgerRes.json().catch(() => null);
-        if (json?.ok) {
-          const list = json.data?.items ?? json.data?.entries ?? json.data?.records;
-          if (Array.isArray(list)) setLedger(list);
-        }
-      }
+      if (sumResult.status === "fulfilled") setSummary(sumResult.value ?? null);
+      if (ledgerResult.status === "fulfilled") setLedger(ledgerResult.value.items);
     } catch {
       /* 后端未就绪时保持占位 */
     } finally {
@@ -132,7 +119,7 @@ export function CreditsClient() {
               >
                 <div>
                   <p className="text-sm text-ink">
-                    {entry.reason ?? "星星变动"}
+                    {entry.reason || "星星变动"}
                   </p>
                   {entry.createdAt && (
                     <p className="mt-0.5 text-xs text-ink-4">

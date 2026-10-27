@@ -16,13 +16,14 @@ src/components/     平台级共享客户端组件（图标/布局/通用 hook�
 src/lib/server/     平台件 —— auth / credits / recharge / payments / documents / exports /
                     generation/*(状态机/DSL/引擎/生图/调度/恢复/单页运行时)
 src/lib/client-api.ts  前端唯一 API 入口
+src/lib/*-intents.ts  前后端共用的意图契约，不含实现（信封形状在 intent-envelope.ts）
 src/data/           静态数据 —— 风格包/套餐/页型等，纯数据无逻辑
 src/lib/server/db.ts   持久层 —— node:sqlite（WAL），业务层不手写 SQL 之外的存储细节
 ```
 
 - 新功能先问"属于哪一层"，代码只放那一层；路由里出现业务判断 = 分层错误。
 - **模块纪律**：模块可依赖平台件与共享组件，平台件不得 import 模块；模块之间不交叉 import（交叉需求下沉平台层）。模块的开关/计价/测试/文档是模块四件套，缺一不可。
-- **边界由 lint 强制执行**（2026-09-06）：`eslint.config.mjs` 的 `import/no-restricted-paths` 拦「`src/lib` → `src/modules`」；合法例外（如 single-pages.ts 承载复刻分支）以 overrides 逐个登记，新增例外必须同步注释原因。`src/components/` 里既有纯共享件（icons/layout），也有页面级编排件（upload-card/template-library 等）——编排件允许接线模块入口（import 模块 client），纯共享件不得依赖模块。
+- **边界由 lint 强制执行**（2026-09-06）：`eslint.config.mjs` 的 `import/no-restricted-paths` 拦「`src/lib` → `src/modules`」与「`src/plugins` → `src/lib/server` / `src/modules`」（插件运行参数经 ctx 注入、模块实现随插件迁移，见 ADR-0001 G4）；合法例外以 overrides 逐个登记（当前：插件组合根 `src/lib/plugin/default.ts`、生成恢复组装点 `src/lib/server/generation/recovery.ts`——后者须调度模块自有的结算入口，模块表只由模块写；以及 ppt-replicate 的 strangler 残留 `src/plugins/ppt-replicate/{ui.ts,client/beautify-tab.tsx}`，删例条件见 PLUGIN-ARCHITECTURE §5），新增例外必须同步注释原因。**已知遗留（2026-10-27，勿当已收口）**：① 模块表 DDL 仍写在平台 `src/lib/server/generation/db.ts`（`single_page_*` / `ppt_to_base_jobs` 等），模块尚无自己的建表入口；② `src/lib/server/generation/recovery.ts` 的 lint 例外是整文件关闭 `import/no-restricted-paths`，不是按行/按 import 精确豁免——后续收口应缩到具体依赖或改为显式注入。`src/components/` 里既有纯共享件（icons/layout），也有页面级编排件（upload-card/template-library 等）——编排件允许接线模块入口（import 模块 client），纯共享件不得依赖模块。功能入口优先走插件 `ui.entries`（组合根 `src/plugins/ui-registry.ts`，壳只按 `flag` 过滤、组件懒加载），不在壳里写 `if (开关)`（ADR-0001 G2）。
 - 存量归拢（裁定 2026-09-06）：新功能一律进 `src/modules/`；老代码按样板（ppt-replicate）逐步归拢，顺序 ~~editable-export~~（已成）→ image-edit-tools → single-page → deck → payments → admin → auth，每次只搬一块、搬完全量门必须绿。
 - 静态数据优先：能写死在 `src/data/` 的不建表；必须运行时可改（管理员要调）才进 DB 或加密运行时配置。
 

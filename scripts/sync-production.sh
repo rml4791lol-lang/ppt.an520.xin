@@ -3,7 +3,7 @@
 # Safe by default: refuses to touch a dirty or diverged working tree.
 set -u
 
-REPO="${ANPPT_PRODUCTION_WORKTREE:-/Users/an/ZCodeProject/anppt-v2.production}"
+REPO="${ANPPT_PRODUCTION_WORKTREE:-/Users/an/Desktop/Atlas/ppt.an520.xin网站}"
 LOG_DIR="$HOME/Library/Logs"
 LOG="$LOG_DIR/anppt-v2-git-sync.log"
 mkdir -p "$LOG_DIR"

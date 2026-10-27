@@ -17,6 +17,14 @@ import {
   StarIcon,
   UsersIcon,
 } from "@/components/icons";
+import { apiFetch } from "@/lib/client/api";
+import {
+  checkAdminIntegration,
+  generateRedemptionCodes,
+  setAdminFeatureFlag,
+  setAdminUserRole,
+  updateAdminConfig,
+} from "@/lib/client/admin-api";
 
 type ConfigGroup = "llm" | "image" | "editable" | "capacity";
 type ConfigSource = "runtime" | "environment" | "default" | "missing";
@@ -126,12 +134,6 @@ interface OverviewPayload {
   audits?: AuditView[];
 }
 
-interface ApiEnvelope<T> {
-  ok: boolean;
-  data?: T;
-  error?: { code?: string; message?: string };
-}
-
 interface CheckResult {
   kind: IntegrationKind;
   ok: true;
@@ -175,26 +177,6 @@ const AUDIT_LABEL: Record<string, string> = {
   "user.watch": "加入重点监控",
   "user.unwatch": "取消重点监控",
 };
-
-async function adminFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { cache: "no-store", ...init });
-  const payload = (await response.json().catch(() => null)) as ApiEnvelope<T> | null;
-  if (!response.ok || !payload?.ok || payload.data === undefined) {
-    throw new Error(payload?.error?.message || "服务器开小差了，请稍后重试");
-  }
-  return payload.data;
-}
-
-function mutationInit(method: string, body?: unknown): RequestInit {
-  return {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "x-anppt-action": "1",
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  };
-}
 
 function formatDate(value: number | null | undefined): string {
   if (!value) return "暂无";
@@ -337,9 +319,9 @@ export function AdminClient({ admin }: AdminClientProps) {
     if (!quiet) setRefreshing(true);
     try {
       const [nextOverview, nextConfig, nextFlags] = await Promise.all([
-        adminFetch<OverviewPayload>("/api/admin/overview"),
-        adminFetch<ConfigPayload>("/api/admin/config"),
-        adminFetch<{ flags: FeatureFlag[] }>("/api/admin/feature-flags"),
+        apiFetch<OverviewPayload>("/api/admin/overview"),
+        apiFetch<ConfigPayload>("/api/admin/config"),
+        apiFetch<{ flags: FeatureFlag[] }>("/api/admin/feature-flags"),
       ]);
       setOverview(nextOverview);
       setConfig(nextConfig);
@@ -354,7 +336,7 @@ export function AdminClient({ admin }: AdminClientProps) {
 
   const loadCompact = useCallback(async () => {
     try {
-      const compact = await adminFetch<OverviewPayload>("/api/admin/overview?compact=1");
+      const compact = await apiFetch<OverviewPayload>("/api/admin/overview?compact=1");
       setOverview((current) => current ? {
         ...current,
         generatedAt: compact.generatedAt,
@@ -432,10 +414,7 @@ export function AdminClient({ admin }: AdminClientProps) {
     }
     setBusyAction("save-config");
     try {
-      const result = await adminFetch<{ config: ConfigPayload }>(
-        "/api/admin/config",
-        mutationInit("PUT", { values, clearKeys: [...clearKeys] }),
-      );
+      const result = await updateAdminConfig<{ config: ConfigPayload }>({ values, clearKeys: [...clearKeys] });
       setConfig(result.config);
       setDraft({});
       setClearKeys(new Set());
@@ -456,10 +435,7 @@ export function AdminClient({ admin }: AdminClientProps) {
     }
     setBusyAction(`check-${kind}`);
     try {
-      const result = await adminFetch<CheckResult>(
-        "/api/admin/integrations/check",
-        mutationInit("POST", { kind, values }),
-      );
+      const result = await checkAdminIntegration<CheckResult>({ kind, values });
       setCheckResults((current) => ({ ...current, [kind]: result }));
       showToast(result.message);
     } catch (error) {
@@ -473,10 +449,7 @@ export function AdminClient({ admin }: AdminClientProps) {
     const nextRole = user.role === "tester" ? "user" : "tester";
     setBusyAction(`role-${user.id}`);
     try {
-      await adminFetch<{ role: string }>(
-        `/api/admin/users/${encodeURIComponent(user.id)}/role`,
-        mutationInit("POST", { role: nextRole }),
-      );
+      await setAdminUserRole({ userId: user.id, role: nextRole });
       showToast(nextRole === "tester" ? `${user.displayName} 已设为测试用户` : `${user.displayName} 已取消测试用户`);
       await loadFull(true);
     } catch (error) {
@@ -489,10 +462,7 @@ export function AdminClient({ admin }: AdminClientProps) {
   const setFlag = async (key: string, state: FeatureFlagState) => {
     setBusyAction(`flag-${key}`);
     try {
-      const result = await adminFetch<{ flags: FeatureFlag[] }>(
-        "/api/admin/feature-flags",
-        mutationInit("PUT", { key, state }),
-      );
+      const result = await setAdminFeatureFlag<{ flags: FeatureFlag[] }>({ key, state });
       setFlags(result.flags);
       showToast("功能开关已更新");
     } catch (error) {
@@ -505,15 +475,12 @@ export function AdminClient({ admin }: AdminClientProps) {
   const generateCodes = async () => {
     setBusyAction("generate-codes");
     try {
-      const result = await adminFetch<{ codes: string[] }>(
-        "/api/admin/redemption-codes",
-        mutationInit("POST", {
-          credits: Number(codeForm.credits),
-          count: Number(codeForm.count),
-          batch: codeForm.batch,
-          expiresDays: codeForm.expiresDays ? Number(codeForm.expiresDays) : null,
-        }),
-      );
+      const result = await generateRedemptionCodes<{ codes: string[] }>({
+        credits: Number(codeForm.credits),
+        count: Number(codeForm.count),
+        batch: codeForm.batch,
+        expiresDays: codeForm.expiresDays ? Number(codeForm.expiresDays) : null,
+      });
       setGeneratedCodes(result.codes);
       showToast(`已生成 ${result.codes.length} 张兑换码，明文仅在这里展示`);
       await loadFull(true);

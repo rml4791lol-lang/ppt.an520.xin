@@ -1,9 +1,21 @@
-// pricing 契约：插件动作 key 与 env 计费键的映射、服务类型——平台层唯一定义处。
+// pricing 契约：计费动作 key 清单与服务类型——平台层唯一定义处。
 // 插件（src/plugins/pricing）按它注册实现；消费方（credits.ts 等）只依赖本文件与服务键，
 // 谁也不 import 谁的实现（docs/PLUGIN-ARCHITECTURE.md §4 冻结清单）。
 
-/** 插件动作 key → env.ts creditActionPrices 键 */
-export const PRICING_ACTION_MAP: Record<string, string> = {
+/** 插件动作 key 字面量联合：新增动作先改这里，映射与默认价格表缺项都会编译报错 */
+export type PricingActionKey =
+  | 'generate.page'
+  | 'edit.page'
+  | 'export.editable'
+  | 'export.editable-text'
+  | 'export.image'
+  | 'outline'
+  | 'tool.ppt-to-base'
+  | 'generate.single-page'
+  | 'edit.single-page';
+
+/** 插件动作 key → 平台公开动作键（客户端 /api/credits/estimate 与部署覆盖用的同一套键） */
+export const PRICING_ACTION_MAP: Record<PricingActionKey, string> = {
   'generate.page': 'deck_page_generate',
   'edit.page': 'deck_page_refine',
   'export.editable': 'export_editable',
@@ -11,15 +23,17 @@ export const PRICING_ACTION_MAP: Record<string, string> = {
   'export.image': 'export_image',
   outline: 'outline',
   'tool.ppt-to-base': 'ppt_to_base',
+  'generate.single-page': 'single_page_generate',
+  'edit.single-page': 'single_page_refine',
 };
 
-const ENV_KEY_TO_ACTION: Record<string, string> = Object.fromEntries(
-  Object.entries(PRICING_ACTION_MAP).map(([action, envKey]) => [envKey, action]),
-);
+const ACTION_TO_ACTION_KEY = Object.fromEntries(
+  Object.entries(PRICING_ACTION_MAP).map(([actionKey, action]) => [action, actionKey]),
+) as Record<string, PricingActionKey>;
 
-/** env 计费键 → 插件动作 key；未接入的动作键返回 null（调用方走兼容回退） */
-export function actionKeyForEnvKey(envKey: string): string | null {
-  return ENV_KEY_TO_ACTION[envKey] ?? null;
+/** 公开动作键 → 插件动作 key；未接入的动作键返回 null（调用方按未知动作拒绝） */
+export function actionKeyForAction(action: string): PricingActionKey | null {
+  return ACTION_TO_ACTION_KEY[action] ?? null;
 }
 
 export interface PricingService {

@@ -16,7 +16,7 @@ export function StepStyle({
   ctx: DeckCtx;
   onGenerate: () => void;
 }) {
-  const { state, run, toast } = ctx;
+  const { state, availability, run, toast } = ctx;
   const [category, setCategory] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const gatedPacks = useGatedStylePacks();
@@ -27,11 +27,7 @@ export function StepStyle({
 
   const selectedId = state.deck.stylePackId || null;
   const selectedPack = allPacks.find((p) => p.id === selectedId) ?? null;
-  const hasGenerated = state.deck.status === "generated" || state.deck.status === "partial";
-  const generating = state.deck.status === "generating"
-    || state.slides.some((s) => s.genStatus === "queued" || s.genStatus === "running");
-  const pendingCount = state.slides.filter((s) => s.genStatus !== "succeeded").length;
-  const canGenerate = state.contentLocked; // 需先确认冻结
+  const { hasGenerated, generating, pendingGeneration: pendingCount, canGenerate } = availability;
 
   const filtered = useMemo(
     () =>
@@ -53,7 +49,7 @@ export function StepStyle({
       toast("暂不支持清除为「无风格」，可直接改选其他风格。");
       return;
     }
-    const result = await run("style", { stylePackId });
+    const result = await run({ kind: "setStyle", params: { stylePackId } });
     setSaving(false);
     if (!result) toast("选择风格失败，请重新尝试。");
   };
@@ -68,7 +64,7 @@ export function StepStyle({
 
       <h2 className="text-base font-semibold text-ink">选择设计风格</h2>
       <p className="mt-1 text-sm text-ink-3">
-        为整套页面选定一种风格，确认后将按所选风格生成整套页面（10🌟/页，失败自动退还）。
+        为整套页面选定一种风格，确认后将按所选风格生成整套页面（按页计费，失败自动退还）。
       </p>
 
       {/* 分类筛选 */}
@@ -234,10 +230,10 @@ export function StepStyle({
               {generating
                 ? "正在生成中…"
                 : hasGenerated && pendingCount === 0
-                  ? `使用此风格重新生成 · ${state.slides.length * 10}🌟`
+                  ? "使用此风格重新生成"
                   : pendingCount < state.slides.length
-                    ? `生成剩余 ${pendingCount} 页 · ${pendingCount * 10}🌟`
-                    : `生成整套页面 · ${state.slides.length * 10}🌟`}
+                    ? `生成剩余 ${pendingCount} 页`
+                    : "生成整套页面"}
             </button>
           </div>
         </div>

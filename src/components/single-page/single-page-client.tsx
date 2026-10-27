@@ -15,7 +15,7 @@ import {
   StarIcon,
   TrashIcon,
 } from "@/components/icons";
-import { ApiClientError } from "@/lib/client/api";
+import { ApiClientError, getSession } from "@/lib/client/api";
 import {
   exportSinglePagesImagePptx,
   generateSinglePage,
@@ -123,11 +123,11 @@ export function SinglePageClient() {
       }
       setHydrated(true);
 
-      fetch("/api/auth/session", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((json) => {
+      getSession()
+        .catch(() => ({ authenticated: false, user: null }))
+        .then((session) => {
           if (cancelled) return;
-          const user = json?.ok && json.data?.authenticated ? json.data.user : null;
+          const user = session.user;
           setLoggedIn(!!user);
           if (user) void getCreditBalance().then((value) => {
             if (!cancelled) setBalance(value);
@@ -299,7 +299,7 @@ export function SinglePageClient() {
       let pid = projectId;
       let succeeded = 0;
       for (let k = 0; k < versionCount; k++) {
-        setGenProgress(`正在生成第 ${k + 1}/${versionCount} 个版本…（每版 10🌟）`);
+        setGenProgress(`正在生成第 ${k + 1}/${versionCount} 个版本…`);
         const res = await generateSinglePage({
           pageId: page.pageId,
           projectId: pid ?? undefined,
@@ -810,7 +810,7 @@ export function SinglePageClient() {
             <div className="px-1 text-xs leading-6 text-ink-4">
               <p className="font-medium text-ink-3">如何开始</p>
               <p className="mt-1">1. 在中间画布粘贴文本，或通过「添加页面」上传 PPT 原图。</p>
-              <p className="mt-1">2. 选择风格后开始生成（每版 10🌟，失败自动退还）。</p>
+              <p className="mt-1">2. 选择风格后开始生成（每版按次计费，失败自动退还）。</p>
               <p className="mt-1">3. 生成后可继续对话式优化，最后导出图片版 PPTX（免费）。</p>
               <p className="mt-3 rounded-lg bg-page px-3 py-2">未登录也可编辑草稿，生成时再登录。</p>
             </div>

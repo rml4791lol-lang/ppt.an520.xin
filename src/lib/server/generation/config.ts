@@ -78,9 +78,6 @@ export interface GenerationConfig {
   wpsAipptCookie: string;
   wpsAipptBaseUrl: string;
   wpsAipptTimeoutMs: number;
-  /** 单页生成器单价（🌟/张）。env.ts 的 CREDIT_ACTION_PRICES 尚无 single 动作，
-   *  这里自带默认值；deck 页价走 credits.estimateCredits('deck_page_generate')。 */
-  singlePageCredits: number;
   /** 上游成本估算单价（单位：分）。0 = 未配置，计量只记真实单位（tokens/次数）不估钱。 */
   costLlmInputFenPerMtok: number;
   costLlmOutputFenPerMtok: number;
@@ -179,7 +176,6 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     wpsAipptCookie: trim(effectiveEnv.ANPPT_V2_WPS_AIPPT_COOKIE),
     wpsAipptBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_WPS_AIPPT_BASE_URL) || 'https://ippt.wps.cn'),
     wpsAipptTimeoutMs: Math.min(600_000, intFrom(effectiveEnv.ANPPT_V2_WPS_AIPPT_TIMEOUT_MS, 300_000)),
-    singlePageCredits: intFrom(effectiveEnv.ANPPT_V2_SINGLE_PAGE_CREDITS, 10),
     costLlmInputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_INPUT_FEN_PER_MTOK, 0),
     costLlmOutputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_OUTPUT_FEN_PER_MTOK, 0),
     costLlmBackupInputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_BACKUP_INPUT_FEN_PER_MTOK, 0),

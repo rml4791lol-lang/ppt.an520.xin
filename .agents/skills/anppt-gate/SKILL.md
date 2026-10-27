@@ -13,11 +13,14 @@ npx tsc --noEmit                   # .next/types 缺失先跑 npx next typegen
 node scripts/test-backend.mjs      # 账户/支付/后台/开关板域
 node scripts/test-generation.mjs   # 生成/导出/计费域，全 mock，禁止真实付费调用
 npm run build && git diff --check
+# 冲突标记检查：合并解冲突时最容易留下 <<<<<<< ，而 lint/tsc/build/diff --check 都不会报它
+! grep -rn '^<<<<<<< ' --include='*.md' --include='*.ts' --include='*.tsx' --include='*.mjs' . | grep -v node_modules | grep -q .
 ```
 
 纪律：
 
 - 测试断言数变化 → 同步 README 与 docs/DEBUG-HANDBOOK.md §8 的数字
+- 解冲突后必须跑冲突标记检查：`grep -rn '^<<<<<<< ' . --include='*.md' --include='*.ts' --include='*.tsx'`（闸门不会替你发现它，2026-10-27 踩过）
 - 测试里 Codia/生图/VLM 一律 mock；真机验证走 dev 小额度（`npm run dev -- -p 3120`）
 - 不在 build 进行时起 dev（抢 .next 目录）
 - 不执行 git commit/push/reset/rebase，除非用户明确要求

@@ -1,14 +1,14 @@
 // 单页生成器（创意页面生成器）：generate / refine / 导出图片版 PPTX。
-// 与 deck 共用生图上游与扣费语义：每张 singlePageCredits（默认 10🌟），失败自动退还。
+// 与 deck 共用生图上游与扣费语义：单价在任务启动时向 pricing 插件取一次快照，失败自动退还。
 import { ApiError, validationError } from '../http';
 import { withTransaction } from '../db';
-import { chargeRefundKeys, debitCredits, refundCredits } from '../credits';
+import { chargeRefundKeys, debitCredits, estimateCredits, refundCredits } from '../credits';
 import { logProblem } from '../problem-log';
 import { findUserById } from '../auth';
 import { assertFeatureVisible } from '../feature-flags';
 import { getGenerationConfig } from './config';
 import { genId, getGenDb, nowMs } from './db';
-import { markSinglePageActive, markSinglePageDone, reconcileSinglePage } from './recovery';
+import { markSinglePageActive, markSinglePageDone } from './recovery';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { parseOwnedUploadRelPath, readSiteFile, saveFile } from './storage';
 import {
@@ -19,15 +19,6 @@ import {
   type SlidePromptInput,
 } from './style-packs';
 import { cleanString } from './types';
-import {
-  buildReplicateCopyPrompt,
-  buildReplicateInstruction,
-  parseIncomingStructure,
-  resolveReplicateColorMode,
-  type ReplicateColorMode,
-  type SlideStructureCard,
-} from '@/modules/ppt-replicate/server/replicate';
-
 export type SinglePageDeps = ImageDeps;
 
 type Row = Record<string, string | number | null>;
@@ -66,7 +57,7 @@ function toPageRow(row: Row): SinglePageRow {
   };
 }
 
-function cleanPageId(value: unknown): string {
+export function cleanPageId(value: unknown): string {
   const id = cleanString(value, 80);
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) throw validationError('pageId 不合法（仅字母数字-_）');
   return id;
@@ -94,7 +85,7 @@ function readProjectSource(userId: string, projectId: string): SingleProjectSour
   return resolveProjectSource(row.source);
 }
 
-function getOrCreateProject(
+export function getOrCreateProject(
   userId: string,
   projectId: string | undefined,
   title: string | undefined,
@@ -121,7 +112,7 @@ function getOrCreateProject(
   return id;
 }
 
-function upsertPage(
+export function upsertPage(
   userId: string,
   input: {
     pageId: string;
@@ -192,62 +183,6 @@ function upsertPage(
   return getOwnedPage(userId, input.pageId);
 }
 
-/** PPT 美化草稿：只保存项目/页面/参考稿路径，不生成、不扣星。 */
-export function saveReplicateDraft(
-  userId: string,
-  input: {
-    projectId?: string;
-    title?: string;
-    pages: Array<{
-      pageId?: string;
-      title?: string;
-      content?: string;
-      imagePath?: string;
-    }>;
-  },
-): { projectId: string; pageCount: number } {
-  const rawPages = Array.isArray(input.pages) ? input.pages : [];
-  if (rawPages.length === 0) throw validationError('草稿至少要有 1 页');
-  if (rawPages.length > 40) throw new ApiError('TOO_MANY_PAGES', '一次最多保存 40 页', 400, false);
-  const title = cleanString(input.title, 120) || 'PPT 美化';
-  const db = getGenDb();
-  return withTransaction(db, () => {
-    const projectId = getOrCreateProject(userId, input.projectId, title, 'replicate');
-    db.prepare('UPDATE single_page_projects SET title = ?, source = ?, updated_at = ? WHERE id = ?').run(
-      title,
-      'replicate',
-      nowMs(),
-      projectId,
-    );
-    const pages = rawPages.map((page, index) => {
-      const pageId = cleanString(page.pageId, 80) || genId('spp_page');
-      const imagePath = page.imagePath
-        ? parseOwnedUploadRelPath(userId, page.imagePath)
-        : null;
-      if (page.imagePath && !imagePath) {
-        throw new ApiError('INVALID_IMAGE_PATH', `第 ${index + 1} 页参考稿路径无效`, 400, false);
-      }
-      return {
-        pageId,
-        title: cleanString(page.title, 120) || `第 ${index + 1} 页`,
-        content: cleanString(page.content, 8000),
-        imagePath: imagePath || '',
-      };
-    });
-    for (const page of pages) {
-      upsertPage(userId, {
-        pageId: page.pageId,
-        projectId,
-        title: page.title,
-        content: page.content,
-        projectSource: 'replicate',
-        shellPath: page.imagePath,
-      });
-    }
-    return { projectId, pageCount: pages.length };
-  });
-}
-
 function buildPagePrompt(
   page: SinglePageRow,
   refineInstruction?: string,
@@ -285,19 +220,12 @@ export interface SingleGenerateInput {
   stylePackId?: string;
   /** 原稿图（/api/assets/upload 返回的 path）：提供后走 i2i 重设计而非纯文生图 */
   imagePath?: string;
-  /** replicate = 结构参考 + 真设计；缺省保持原稿重设计 */
-  mode?: string;
-  /** 仅 mode=replicate：follow-shell（默认）| new-theme */
-  colorMode?: string;
   /** 客户端幂等键（可选）；缺省用服务端 jobId */
   requestId?: string;
-  /** 为 true 时用 structure（可空）当结构卡，不再抽 VLM */
-  structureProvided?: boolean;
-  structure?: unknown;
 }
 
 /** 校验原稿图路径归属当前用户（uploads/{userId}/...），返回规范化相对路径 */
-function assertOwnedUpload(userId: string, imagePath: unknown): string {
+export function assertOwnedUpload(userId: string, imagePath: unknown): string {
   const rel = parseOwnedUploadRelPath(userId, cleanString(imagePath, 300));
   if (!rel) throw new ApiError('FILE_FORBIDDEN', '原稿图不存在或不属于当前账号', 403, false);
   return rel;
@@ -313,28 +241,37 @@ export interface SingleRunResult {
   balance: number;
 }
 
-async function runSinglePageJob(
+/**
+ * 单页运行时的唯一执行体：事务/扣费/退款/版本/恢复都只有这一份。
+ * 提示词由调用方按自己的契约算好传进来（复刻模块传结构/配色合同），本文件不认识具体功能。
+ */
+export async function runSinglePageJob(
   page: SinglePageRow,
   opts: {
     kind: 'single-generate' | 'single-refine';
     refineInstruction?: string;
     sourceImagePath?: string;
     requestId?: string;
-    replicate?: boolean;
-    colorMode?: ReplicateColorMode;
-    structureHint?: SlideStructureCard | null;
+    /** 调用方自带的生图正文；缺省按风格包装配 */
+    promptOverride?: string;
+    /** 调用方自带的改图指令全文（仅生成原稿重设计分支）；缺省用平台模板 */
+    editInstruction?: string;
   },
   deps: SinglePageDeps,
 ): Promise<SingleRunResult> {
   const config = deps.config ?? getGenerationConfig();
   const runDeps: SinglePageDeps = { ...deps, config };
-  const unitPrice = config.singlePageCredits;
+  // 一次任务一个单价快照：本页的扣费与失败退款都按它，不再二次读价
+  const unitPrice = estimateCredits({
+    action: opts.kind === 'single-refine' ? 'single_page_refine' : 'single_page_generate',
+    pages: 1,
+  }).unitPrice;
   const jobId = genId('job');
   // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费；
   // 退款键由扣费键定长派生（后缀式退款键在超长 requestId 下会被截回扣费键，退款静默失效）
   const { chargeKey, refundKey } = chargeRefundKeys(`single-page:${page.pageId}:${opts.requestId || jobId}`);
-  const { prompt, referencePath } = opts.replicate
-    ? { prompt: buildReplicateCopyPrompt({ title: page.title, content: page.content }), referencePath: null }
+  const { prompt, referencePath } = opts.promptOverride
+    ? { prompt: opts.promptOverride, referencePath: null }
     : buildPagePrompt(page, opts.refineInstruction);
 
   const versionId = genId('ver');
@@ -427,15 +364,8 @@ async function runSinglePageJob(
       } else if (opts.sourceImagePath) {
         const source = await readSiteFile(opts.sourceImagePath, config);
         if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
-        let instruction: string;
-        if (opts.replicate) {
-          instruction = `${prompt}\n\n${buildReplicateInstruction({
-            structure: opts.structureHint ?? null,
-            colorMode: opts.colorMode || 'follow-shell',
-          })}`;
-        } else {
-          instruction = `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
-        }
+        const instruction = opts.editInstruction
+          ?? `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
         image = await editImage({ image: source, instruction, userKey: page.userId }, runDeps);
       } else {
         const pack = resolveStylePack(page.stylePackId);
@@ -499,38 +429,21 @@ export async function generateSinglePage(
 ): Promise<SingleRunResult> {
   const content = cleanString(input.content, 8000);
   if (!content) throw validationError('页面内容不能为空');
-  const replicate = cleanString(input.mode, 20) === 'replicate';
-  const colorMode = resolveReplicateColorMode(input.colorMode);
   const sourceImagePath = input.imagePath ? assertOwnedUpload(userId, input.imagePath) : undefined;
-  if (replicate && !sourceImagePath) throw validationError('复刻需要上传壳页图');
   const existing = getGenDb()
     .prepare('SELECT project_id FROM single_pages WHERE id = ? AND user_id = ?')
     .get(cleanPageId(input.pageId), userId) as Row | undefined;
   const projectIdToCheck = input.projectId || (existing ? String(existing.project_id) : '');
-  if (projectIdToCheck && !replicate && readProjectSource(userId, projectIdToCheck) === 'replicate') {
+  if (projectIdToCheck && readProjectSource(userId, projectIdToCheck) === 'replicate') {
     throw new ApiError('REPLICATE_PROJECT', '这是美化作品，请到 PPT 美化继续生成', 409, false);
   }
-  // 先收敛历史中断（否则卡 running 的页会永远 409），upsertPage 内部再做运行中检查
-  reconcileSinglePage(userId, cleanPageId(input.pageId));
   const page = upsertPage(userId, {
     ...input,
     pageId: cleanPageId(input.pageId),
     content,
-    projectSource: replicate ? 'replicate' : 'single',
-    shellPath: replicate ? sourceImagePath : undefined,
+    projectSource: 'single',
   });
-  return runSinglePageJob(
-    page,
-    {
-      kind: 'single-generate',
-      sourceImagePath,
-      requestId: input.requestId,
-      replicate,
-      colorMode,
-      structureHint: input.structureProvided ? parseIncomingStructure(input.structure) : null,
-    },
-    deps,
-  );
+  return runSinglePageJob(page, { kind: 'single-generate', sourceImagePath, requestId: input.requestId }, deps);
 }
 
 export async function refineSinglePage(
@@ -538,7 +451,6 @@ export async function refineSinglePage(
   input: { pageId: string; editInstruction: string; requestId?: string },
   deps: SinglePageDeps = {},
 ): Promise<SingleRunResult> {
-  reconcileSinglePage(userId, cleanPageId(input.pageId));
   const page = getOwnedPage(userId, input.pageId);
   if (readProjectSource(userId, page.projectId) === 'replicate') {
     assertFeatureVisible('ppt_replicate', findUserById(userId));
@@ -599,16 +511,6 @@ export function listSingleProjectPageStatuses(userId: string, projectId: string)
     imageUrl: String(row.image_url || ''),
     updatedAt: Number(row.updated_at),
   }));
-}
-
-/** 打开项目/轮询批量状态前收敛崩溃中断页，返回是否有页面被修复。 */
-export function reconcileSingleProject(userId: string, projectId: string): boolean {
-  let changed = false;
-  for (const page of listSingleProjectPages(userId, projectId)) {
-    if (page.status !== 'queued' && page.status !== 'running') continue;
-    changed = reconcileSinglePage(userId, page.pageId) || changed;
-  }
-  return changed;
 }
 
 export function getActiveVersionImagePath(page: SinglePageRow): string {
@@ -678,7 +580,6 @@ export function getSingleProjectDetail(userId: string, projectId: string) {
     .prepare('SELECT * FROM single_page_projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
     .get(cleanString(projectId, 80), userId) as Row | undefined;
   if (!project) throw new ApiError('PROJECT_NOT_FOUND', '单页项目不存在', 404, false);
-  reconcileSingleProject(userId, String(project.id));
   const versionsByPage = listProjectVersions(String(project.id));
   const pages = listSingleProjectPages(userId, String(project.id)).map((page) => ({
     ...page,

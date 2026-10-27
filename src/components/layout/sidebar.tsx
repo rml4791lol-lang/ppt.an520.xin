@@ -14,13 +14,14 @@ import {
   HomeIcon,
   ImageIcon,
   LayersIcon,
-  MonitorIcon,
   ReceiptIcon,
   ShieldIcon,
   SparklesIcon,
   WandIcon,
 } from "@/components/icons";
 import { useFeatureFlag } from "@/components/use-feature-flag";
+import { pluginIcon, usePluginEntries } from "@/components/plugin-ui";
+import type { SidebarEntry } from "@/lib/plugin/types";
 
 interface NavItem {
   key: string;
@@ -53,6 +54,38 @@ function useHash() {
   return hash;
 }
 
+function pluginNavItem(entry: SidebarEntry): NavItem {
+  return {
+    key: entry.id,
+    label: entry.label,
+    href: entry.href,
+    icon: pluginIcon(entry.icon),
+    badge: entry.badge,
+  };
+}
+
+/** 插件入口按 after 锚点插进壳的分组；没有锚点的落到主分组尾部。 */
+function withPluginNav(groups: NavItem[][], entries: SidebarEntry[]): NavItem[][] {
+  if (entries.length === 0) return groups;
+  const out = groups.map((group) => [...group]);
+  const inserted = new Map<string, number>();
+  for (const entry of entries) {
+    const anchor = entry.after ?? "";
+    const group = anchor
+      ? out.find((candidate) => candidate.some((nav) => nav.key === anchor))
+      : undefined;
+    if (group) {
+      const index = group.findIndex((nav) => nav.key === anchor);
+      const offset = inserted.get(anchor) ?? 0;
+      group.splice(index + 1 + offset, 0, pluginNavItem(entry));
+      inserted.set(anchor, offset + 1);
+    } else {
+      out[0].push(pluginNavItem(entry));
+    }
+  }
+  return out;
+}
+
 export function SidebarNav({
   collapsed,
   serviceEmail,
@@ -69,16 +102,13 @@ export function SidebarNav({
   const pathname = usePathname();
   const hash = useHash();
   const [serviceOpen, setServiceOpen] = useState(false);
-  const showBeautify = useFeatureFlag("ppt_replicate");
   const showPptToBase = useFeatureFlag("ppt_to_base");
+  const pluginNav = usePluginEntries("sidebar");
 
   const groups: NavItem[][] = [
     [
       { key: "home", label: "首页", href: "/", icon: HomeIcon },
       { key: "styles", label: "设计风格", href: "/style-packs", icon: SparklesIcon },
-      ...(showBeautify
-        ? [{ key: "beautify", label: "PPT 美化", href: "/beautify", icon: MonitorIcon, badge: "试验" }]
-        : []),
       { key: "projects", label: "我的项目", href: "/projects", icon: FolderIcon },
       { key: "exports", label: "下载中心", href: "/exports", icon: DownloadIcon },
     ],
@@ -124,11 +154,12 @@ export function SidebarNav({
         ]]
       : []),
   ];
+  const navGroups = withPluginNav(groups, pluginNav);
 
   return (
     <div className="flex h-full flex-col">
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {groups.map((group, gi) => (
+        {navGroups.map((group, gi) => (
           <div key={gi} className={gi > 0 ? "mt-3 border-t border-line pt-3" : ""}>
             {group.map((item) => {
               const active = isActive(pathname, hash, item.href);

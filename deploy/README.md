@@ -21,9 +21,10 @@
 /opt/anppt-v2/bin/         服务端部署脚本（root 所属，团队只读执行）
 ```
 
-`production` 是线上分支，GitHub 仓库同分支是唯一代码事实源。服务器源码、发布目录和本地
-clean worktree `/Users/an/ZCodeProject/anppt-v2.production` 使用同一个提交；主开发工作区可以有
-未合并 WIP。launchd 每 5 分钟 `fetch + merge --ff-only`，脏工作区或分叉时只记日志、不覆盖本地改动。
+`production` 是线上分支，GitHub `rml4791lol-lang/ppt.an520.xin` 同分支是唯一代码事实源。
+服务器源码、发布目录与本地开发目录 `/Users/an/Desktop/Atlas/ppt.an520.xin网站` 使用同一个提交。
+2026-10-26 起只在这一个目录开发；原独立 clean worktree `anppt-v2.production` 与 launchd
+每 5 分钟同步已废弃（`deploy/install-local-sync.sh` 保留但不再安装）。
 
 ## 首次初始化（只做一次）
 
@@ -127,7 +128,7 @@ curl -sf https://ppt.an520.xin/api/me   # 期望 401（未登录）
 - 数据备份：
   - SQLite 每日 03:30 自动热备（`anppt-backup.timer` → `/opt/anppt-v2/shared/backup-db.sh`），`VACUUM INTO` 后用 gzip 存到 `/opt/anppt-v2/shared/backups/`，保留 14 天。手工触发：`sudo systemctl start anppt-backup.service`。
   - 备份只含账户/积分/订单/项目元数据；`uploads/`、`generated/`、`exports/` 原文件仍需另行归档。
-- 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy` + health 契约 + 问题日志落盘/体积 + 磁盘 + 备份新鲜度，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile`，再安装并手动跑一次；恢复时会发一封「服务已恢复」。
+- 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy` + health 契约（含 `plugins.error` 插件装配告警）+ 问题日志落盘/体积 + 磁盘 + 备份新鲜度，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile`，再安装并手动跑一次；恢复时会发一封「服务已恢复」。
 
 ```bash
 python3 -m py_compile deploy/anppt-health-monitor.py

@@ -20,12 +20,14 @@ import {
   verifyImage2PptWebhook,
   type Image2PptJobView,
 } from './image2ppt';
+import { editableChargeKey } from './charge-keys';
 import { withTransaction } from '@/lib/server/db';
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
 import { getOwnedDeck, listSlides } from '@/lib/server/generation/decks';
 import { getActiveVersionImagePath, listSingleProjectPages } from '@/lib/server/generation/single-pages';
+import { reconcileInterruptedRun } from '@/lib/server/generation/recovery';
 import { absPathForRelPath, readSiteFile, saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
@@ -304,9 +306,10 @@ async function prepareEditablePdf(row: ExportRow, config: GenerationConfig): Pro
 function refundEditableCharge(row: ExportRow): void {
   const charged = Number(row.charged_credits) || 0;
   if (charged <= 0) return;
-  const ledgerPrefix = String(row.kind) === 'editable_text' ? 'export-editable-text' : 'export-editable';
   try {
-    const { refundKey } = chargeRefundKeys(`${ledgerPrefix}:${row.ref_id}:${row.id}`);
+    const { refundKey } = chargeRefundKeys(
+      editableChargeKey({ kind: row.kind, refId: String(row.ref_id), exportId: String(row.id) }),
+    );
     refundCredits(String(row.user_id), charged, {
       reason: '可编辑导出失败退回',
       idempotencyKey: refundKey,
@@ -713,15 +716,6 @@ export async function startDeckEditableExport(
   );
 }
 
-/** 轻量文字档计价：独立动作 export_editable_text；CREDIT_ACTION_PRICES 被整体覆盖且缺该项时回退 5🌟/页 */
-function estimateTextEditable(pages: number) {
-  try {
-    return estimateCredits({ action: 'export_editable_text', pages });
-  } catch {
-    return { action: 'export_editable_text', unitPrice: 5, pages, credits: 5 * pages };
-  }
-}
-
 type LaunchDecision = { row: ExportRow; created: boolean };
 
 /**
@@ -744,9 +738,10 @@ async function launchEditableExport(
 ): Promise<StartedEditableExport> {
   const runDeps = snapshotEditableDeps(deps);
   const db = getGenDb();
-  const estimate = kind === 'editable_text'
-    ? estimateTextEditable(pageCount)
-    : estimateCredits({ action: 'export_editable', pages: pageCount });
+  const estimate = estimateCredits({
+    action: kind === 'editable_text' ? 'export_editable_text' : 'export_editable',
+    pages: pageCount,
+  });
   const decision = withTransaction(db, (): LaunchDecision => {
     const running = db
       .prepare(
@@ -804,8 +799,7 @@ async function launchEditableExport(
       now,
       now,
     );
-    const ledgerPrefix = kind === 'editable_text' ? 'export-editable-text' : 'export-editable';
-    const { chargeKey } = chargeRefundKeys(`${ledgerPrefix}:${refId}:${exportId}`);
+    const { chargeKey } = chargeRefundKeys(editableChargeKey({ kind, refId, exportId }));
     debitCredits(userId, estimate.credits, {
       reason: kind === 'editable_text' ? `转文字可编辑 PPTX（${pageCount} 页）` : `转可编辑 PPTX（${pageCount} 页）`,
       idempotencyKey: chargeKey,
@@ -999,9 +993,18 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
     return (getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow) ?? row;
   }
   if (nowMs() - Number(row.created_at) > RECOVERY_GRACE_MS) {
-    // 建行后未建上游任务（进程中断）：后台重跑整条管线
+    // 建行后超过宽限仍无上游任务 = 进程中断：走同一个收敛实现重跑整条管线（可编辑导出是续跑，不是退星）
     // （debit 幂等键 + Codia Idempotency-Key 防重，重跑安全）
-    ensureEditablePipeline(row, runDeps);
+    reconcileInterruptedRun({
+      key: exportId,
+      domain: 'editable-export',
+      userId: String(row.user_id),
+      settle: () => {
+        ensureEditablePipeline(row, runDeps);
+      },
+      refType: String(row.ref_type || 'deck'),
+      refId: String(row.ref_id || ''),
+    });
   }
   return row;
 }
@@ -1497,12 +1500,7 @@ export function quoteExport(userId: string, body: Record<string, unknown>) {
   } else {
     throw validationError('缺少 deckId / projectId / pageIds');
   }
-  let editableUnitPrice = 20;
-  try {
-    editableUnitPrice = estimateCredits({ action: 'export_editable', pages: 1 }).unitPrice;
-  } catch {
-    // CREDIT_ACTION_PRICES 被覆盖且不含 export_editable 时用默认 20🌟/页
-  }
+  const editableUnitPrice = estimateCredits({ action: 'export_editable', pages: 1 }).unitPrice;
   const config = getGenerationConfig();
   const providers = configuredEditableProviders(config);
   const editableAvailable = pageCount > 0 && providers.length > 0;

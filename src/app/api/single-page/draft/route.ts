@@ -1,7 +1,7 @@
 import { jsonOk, readJsonBody } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
-import { saveReplicateDraft } from '@/lib/server/generation/single-pages';
+import { saveReplicateDraft } from '@/modules/ppt-replicate/server/facade';
 import { assertFeatureVisible } from '@/lib/server/feature-flags';
 
 export const runtime = 'nodejs';

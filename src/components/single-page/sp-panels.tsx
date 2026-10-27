@@ -125,14 +125,14 @@ export function StylePanel({
           ) : (
             <>
               <SparklesIcon width={14} height={14} />
-              {selectedId ? `已选择风格包，开始生成 · ${versionCount * 10}🌟` : "选择风格包后开始生成"}
+              {selectedId ? "已选择风格包，开始生成" : "选择风格包后开始生成"}
             </>
           )}
         </button>
         <p className="mt-2 text-center text-[11px] leading-4 text-ink-4">
           正在调用生图模型，请稍候（可能需要十几秒到数十秒）
           <br />
-          每个版本 10🌟，失败自动退还
+          每个版本按次计费，失败自动退还
         </p>
       </div>
     </div>
@@ -196,7 +196,7 @@ export function RefineBar({
         }}
         className="shrink-0 rounded-full bg-brand px-4 py-2 text-xs font-medium text-white transition hover:bg-brand-strong disabled:opacity-40"
       >
-        {refining ? "重新设计中…" : "重新设计此页面 · 10🌟"}
+        {refining ? "重新设计中…" : "重新设计此页面 · 按次计费"}
       </button>
     </div>
   );
@@ -292,7 +292,7 @@ export function ExportPanel({
         <button
           type="button"
           disabled={doneCount === 0 || exporting || editableBusy || !onExportEditable}
-          title={doneCount === 0 ? "还没有已生成的页面，无法转换" : "把页面图转成元素级可编辑 PPTX（20🌟/页）"}
+          title={doneCount === 0 ? "还没有已生成的页面，无法转换" : "把页面图转成元素级可编辑 PPTX（按页计费）"}
           onClick={onExportEditable}
           className="w-full rounded-full border border-line-strong py-2.5 text-sm text-ink-2 transition hover:border-brand-line disabled:cursor-not-allowed disabled:opacity-40"
         >

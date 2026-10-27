@@ -2,12 +2,11 @@
 // 状态机（契约 §4）：
 //   parse → outline（可增/删/重排/拆页）→ structure → confirm-structure（内容冻结）
 //   → style → generate（逐页生图）→ deliver（图片版导出免费，可编辑导出占位）
-// 冻结后内容类 action 一律拒绝，需 unlock-structure 解锁（作废已生成页）。
+// 冻结后内容类意图一律拒绝，需 unlockStructure 解锁（作废已生成页）。
 import type { DatabaseSync } from 'node:sqlite';
 import { ApiError } from '../http';
 import { withTransaction } from '../db';
 import { genId, getGenDb, nowMs } from './db';
-import { reconcileDeckGeneration } from './recovery';
 import {
   cleanString,
   cleanStringArray,
@@ -19,6 +18,12 @@ import {
   type SlideRole,
   type StructureStatus,
 } from './types';
+import {
+  availableIntentsOf,
+  deckGateFacts,
+  isDeckContentLocked,
+  type DeckGateFacts,
+} from '../../deck-gates';
 
 export interface DeckRow {
   id: string;
@@ -672,10 +677,29 @@ export function updateSlideGen(
 
 // ---------- 全量状态（前端 2.5s 轮询用） ----------
 
+function isActiveJob(job: GenerationJobRow | null): job is GenerationJobRow {
+  return job?.status === 'queued' || job?.status === 'running';
+}
+
+/**
+ * deck 门控事实的唯一构造点：dispatch 前置校验与 state.availableIntents 必须同源。
+ * activeJob 若只进展示面，会出现「前端隐藏按钮、服务端放行」的分叉。
+ */
+export function buildDeckFacts(
+  deck: Pick<DeckRow, 'id' | 'status' | 'stylePackId'>,
+  job: GenerationJobRow | null,
+  slides?: () => DeckSlideRow[],
+): DeckGateFacts {
+  return deckGateFacts({
+    status: deck.status,
+    stylePackId: deck.stylePackId,
+    slides: slides ?? (() => listSlides(deck.id)),
+    hasActiveJob: isActiveJob(job),
+  });
+}
+
 export function getDeckState(userId: string, deckId: string) {
-  let deck = getOwnedDeck(userId, deckId);
-  // 懒恢复：重启/崩溃留下的 generating 死锁与孤儿扣费在读状态时收敛
-  if (reconcileDeckGeneration(deck)) deck = getOwnedDeck(userId, deck.id);
+  const deck = getOwnedDeck(userId, deckId);
   const slides = listSlides(deck.id);
   const job = latestJob(deckId);
   const versionsBySlide = new Map<string, SlideVersionRow[]>();
@@ -684,7 +708,7 @@ export function getDeckState(userId: string, deckId: string) {
     list.push(version);
     versionsBySlide.set(version.slideId, list);
   }
-  const contentLocked = ['confirmed', 'generating', 'generated', 'partial'].includes(deck.status);
+  const contentLocked = isDeckContentLocked(deck.status);
   const slideViews = slides.map((slide) => ({
     slideId: slide.slideId,
     pageIndex: slide.pageIndex,
@@ -718,6 +742,20 @@ export function getDeckState(userId: string, deckId: string) {
   for (const slide of slides) {
     if (slide.genStatus in summary) summary[slide.genStatus as keyof typeof summary] += 1;
   }
+  const activeJob = isActiveJob(job)
+    ? {
+          jobId: job.jobId,
+          kind: job.kind,
+          status: job.status,
+          total: job.total,
+          succeeded: job.succeeded,
+          failed: job.failed,
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+        }
+      : null;
+  // 顺序约束的展示面：哪些意图现在可执行由 deck-gates 同一份规则算出（客户端按钮读这份集合）
+  const availableIntents = availableIntentsOf(buildDeckFacts(deck, job, () => slides));
   return {
     deck: {
       id: deck.id,
@@ -735,20 +773,9 @@ export function getDeckState(userId: string, deckId: string) {
       updatedAt: deck.updatedAt,
     },
     slides: slideViews,
-    activeJob:
-      job && (job.status === 'queued' || job.status === 'running')
-        ? {
-            jobId: job.jobId,
-            kind: job.kind,
-            status: job.status,
-            total: job.total,
-            succeeded: job.succeeded,
-            failed: job.failed,
-            createdAt: job.createdAt,
-            updatedAt: job.updatedAt,
-          }
-        : null,
+    activeJob,
     pageSummary: summary,
     contentLocked,
+    availableIntents,
   };
 }
