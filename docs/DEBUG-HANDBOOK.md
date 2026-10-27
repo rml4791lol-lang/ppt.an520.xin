@@ -108,7 +108,7 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 519 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
+node scripts/test-generation.mjs  # 当前 520 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 163 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
@@ -249,7 +249,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 定位：上传参考稿保画面、换文案。不进大纲→风格包工作台。
 - **开关状态（2026-10-13）**：`ppt_replicate` 已由 beta 转 **public**，全员可见可用（侧栏「PPT 美化」、首页「PPT美化」页签、模板库「自己的 PPT」均按 `/api/features` 显隐；服务端硬门仍在）。上线前做了生产真机验收（admin 账号 1 页：结构卡 1/1、`/images/edits` 出图 1536×864、扣 10🌟、`source=replicate`、工作台缺省生成 409 `REPLICATE_PROJECT`），验收项目已删除。
 - **回滚**：管理端「功能开关板」把 `ppt_replicate` 转回 `beta`/`off` 即时生效（开关读库不缓存，无需发版重启）。
-- **模块目录（2026-09-06 归拢，首个自包含模块样板）**：`src/modules/ppt-replicate/`——`server/replicate.ts` 唯一服务端出口，`client/` 全部前端（工作台/ui/规则/请求/交接/拆页/URL/入口卡），边界与四件套见模块 README；薄壳留在 `src/app/(main)/beautify/page.tsx` 与 `src/app/api/tools/replicate/plan/route.ts`。
+- **模块目录（2026-09-06 归拢，首个自包含模块样板）**：`src/modules/ppt-replicate/`——`server/facade.ts` 是平台唯一调用面（项目/页/版本 + 提示词契约 + 计费动作声明），实现暂委托平台单页运行时；平台 `single-pages.ts` 的复刻分支只 import facade（facade 反向委托该文件属过渡态，扣费/退款/恢复仍只有平台一份）。`client/` 全部前端（工作台/ui/规则/请求/交接/拆页/URL/入口卡），边界与四件套见模块 README；薄壳留在 `src/app/(main)/beautify/page.tsx` 与 `src/app/api/tools/replicate/plan/route.ts`。
 - 入口：首页「PPT美化」、模板库「自己的 PPT」、侧栏「PPT 美化」、`/beautify`。旧地址 `/tools/replicate-ppt.html` 跳到 `/beautify`。未登录去 `/login?next=...`；开关不可见显示「功能尚未开放」。`robots` disallow `/beautify` 与 `/tools/`。
 - 前端拆分（均在模块 `client/` 下）：规则在 `beautify-pages.ts`（扣费名单/失败横幅/草稿/计划回写）；请求在 `beautify-api.ts`；UI 零件在 `beautify-ui.tsx`；`BeautifyClient` 只编排。内部 source 仍是 `replicate`。
 - 链路：参考稿（浏览器拆页）→ 上传壳图 → VLM 读每页画面结构（仅计划阶段）→ LLM 按主题/大纲/材料拆文案 → 逐页 `/images/edits` 换字保画面（10🌟）→ 可选 Codia 转可编辑（20🌟，20 页一批）。
@@ -345,7 +345,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 请求侧：`/api/deck/parse` 在 `formData()` 前检查 content-length（防超限 body 整段进内存），并按用户限 60 次/小时；`/api/tools/replicate/plan` 按用户限 40 次/小时。
 - 查询：`getDeckState` 改为一次取整套 `slide_versions`（`listVersionsByDeck`），单页项目详情一次取项目版本（`listProjectVersions`），项目列表用相关子查询批量取页数与封面，避免逐项目/逐页 N+1。
 - 缓存：公开的 style-pack-categories / showcase-cases / site-config 加 `public` 缓存；style-packs / templates 加 `private, max-age=60` + `Vary: Cookie`。
-- 验证：`node scripts/test-generation.mjs` 497 断言、`node scripts/test-backend.mjs` 163 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
+- 验证：`node scripts/test-generation.mjs` 520 断言、`node scripts/test-backend.mjs` 163 断言；并发生图公平性、中文 CID PDF、PDF/DOCX 解析与现有计费/导出链路均回归通过。
 
 - 备份：`deploy/backup-db.sh` + `deploy/anppt-backup.timer`（每日 03:30，`VACUUM INTO` → gzip，保留 14 天，目录 `/opt/anppt-v2/shared/backups`）。已做一次恢复校验：解压后 `PRAGMA integrity_check=ok`，用户/钱包/订单表可读。备份只含 SQLite；uploads/generated/exports 需另行归档。
 - 本机压测基线（2026-10-19，本地 `next start`，非生产 SLA）：20 用户、100 个 deck、600 次 `/api/me` + `/api/projects` + `/api/style-packs` 并发读，40 并发下 p50 18.4ms / p95 34.7ms / p99 115.2ms，0 失败；空库 600 请求 p95 24.7ms。生产进程常驻 RSS 约 195MB（峰值 246MB），远端可用内存 6.2GB。
