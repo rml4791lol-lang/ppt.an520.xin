@@ -6,6 +6,7 @@ import { rm } from 'node:fs/promises';
 import { ApiError } from '../http';
 import { getGenerationConfig } from './config';
 import { getGenDb, nowMs } from './db';
+import { reconcileDeckGeneration } from './recovery';
 import { absPathForRelPath, purgeExpiredKindUploads } from './storage';
 import { cleanString } from './types';
 
@@ -173,6 +174,15 @@ export function listProjects(
          ORDER BY d.updated_at DESC`,
       )
       .all(userId) as Row[];
+    // 读点即收敛：列表里卡在 generating 的 deck 先懒恢复——用户不打开详情也能解除死锁
+    for (const row of rows) {
+      if (String(row.status) !== 'generating') continue;
+      const deckId = String(row.id);
+      if (!reconcileDeckGeneration({ id: deckId, userId, status: 'generating' })) continue;
+      const healed = db.prepare('SELECT status, updated_at FROM decks WHERE id = ?').get(deckId) as Row | undefined;
+      row.status = String(healed?.status ?? row.status);
+      row.updated_at = Number(healed?.updated_at ?? row.updated_at);
+    }
     items = items.concat(rows.map(deckToItem));
   }
   if (!type || type === 'single-page') {
