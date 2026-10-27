@@ -2,14 +2,14 @@ import { recordAdminAudit, requireAdmin } from '@/lib/server/admin';
 import { checkAdminIntegration, type AdminIntegrationKind } from '@/lib/server/admin-integrations';
 import { defineRoute, jsonOk, readJsonBody, validationError } from '@/lib/server/http';
 import { adminIntentParams } from '@/lib/admin-intents';
-import { readIntentParams } from '@/lib/server/intents';
+import { readActionParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const POST = defineRoute(async (request) => {
   const { user } = requireAdmin(request);
-  const body = readIntentParams(await readJsonBody(request), (intent) => adminIntentParams('checkIntegration', intent));
+  const body = readActionParams(await readJsonBody(request), (intent) => adminIntentParams('checkIntegration', intent));
   const kind = String(body.kind || '') as AdminIntegrationKind;
   const values = body.values == null
     ? undefined

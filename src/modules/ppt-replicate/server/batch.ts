@@ -3,7 +3,6 @@ import { ApiError, validationError } from '@/lib/server/http';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
 import {
-  generateSinglePage,
   getOwnedPage,
   listSingleProjectPageStatuses,
   type SinglePageDeps,
@@ -11,6 +10,7 @@ import {
 } from '@/lib/server/generation/single-pages';
 import { cleanString } from '@/lib/server/generation/types';
 import { logProblem } from '@/lib/server/problem-log';
+import { generateReplicatePage } from './pages';
 import {
   parseIncomingStructure,
   resolveReplicateColorMode,
@@ -185,7 +185,7 @@ async function runBatch(
           succeeded += 1;
         } else {
           const hasStructure = Object.prototype.hasOwnProperty.call(structures, current.pageId);
-          const result = await generateSinglePage(
+          const result = await generateReplicatePage(
             userId,
             {
               pageId: current.pageId,
@@ -194,7 +194,6 @@ async function runBatch(
               content: current.content,
               stylePackId: current.stylePackId || undefined,
               imagePath: current.shellPath,
-              mode: 'replicate',
               colorMode,
               requestId: `${batchId}:${current.pageId}`,
               structureProvided: hasStructure,

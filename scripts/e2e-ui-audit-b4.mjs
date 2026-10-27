@@ -93,7 +93,7 @@ try {
   console.log(`    停留时 CTA=「${before}」`);
 
   // 另一会话触发单页生成 → deck 进入 generating（真实扣 10🌟）
-  const r = await api(`/api/deck/${DECK_ID}`, { method: 'POST', body: { intent: { kind: 'generateSlide', params: { slideId } } } });
+  const r = await api(`/api/deck/${DECK_ID}`, { method: 'POST', body: { action: 'generate-slide', slideId } });
   check('generate-slide 接口 202', r.status === 202, `实际 ${r.status} ${JSON.stringify(r.json)?.slice(0, 120)}`);
 
   // 本页轮询（2.5s/次）拿到 generating 后，CTA 应变为禁用「正在生成中…」

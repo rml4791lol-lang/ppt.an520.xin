@@ -10,6 +10,7 @@ export async function runPptReplicateTests(ctx) {
   console.log('\n[7c] 复刻 PPT（结构参考 + 真设计）');
   {
     const replicate = await import('../../src/modules/ppt-replicate/server/replicate.ts');
+    const replicatePages = await import('../../src/modules/ppt-replicate/server/pages.ts');
     const storage = await import('../../src/lib/server/generation/storage.ts');
     const urls = await import('../../src/modules/ppt-replicate/client/replicate-urls.ts');
     check('复刻预览 URL 只允许 /api/files/ 与 data:image',
@@ -135,11 +136,11 @@ export async function runPptReplicateTests(ctx) {
         && gapFetcher.calls.length === 1);
     check('归属校验拒绝 .. 穿越', storage.parseOwnedUploadRelPath(uid, traversalPath) === null);
     await expectThrows('复刻 imagePath 带 .. 返回 403', () =>
-      singlePages.generateSinglePage(uid, {
-        pageId: 'rp-traverse', content: '越权', imagePath: traversalPath, mode: 'replicate',
+      replicatePages.generateReplicatePage(uid, {
+        pageId: 'rp-traverse', content: '越权', imagePath: traversalPath,
       }, { fetchImpl: makeMockFetcher([editsOkHandler]), config: llmConfig }), 'FILE_FORBIDDEN');
     await expectThrows('复刻缺壳图校验失败', () =>
-      singlePages.generateSinglePage(uid, { pageId: 'rpnopath', content: '新标题\n要点一', mode: 'replicate' }, {
+      replicatePages.generateReplicatePage(uid, { pageId: 'rpnopath', content: '新标题\n要点一' }, {
         fetchImpl: makeMockFetcher([editsOkHandler]),
         config: llmConfig,
       }), 'VALIDATION_ERROR');
@@ -154,9 +155,9 @@ export async function runPptReplicateTests(ctx) {
       editsOkHandler,
     ]);
     const beforeRp = credits.getBalance(uid);
-    const rp1 = await singlePages.generateSinglePage(uid, {
+    const rp1 = await replicatePages.generateReplicatePage(uid, {
       pageId: 'rpok1', title: '新指标', content: '完成率 86%', imagePath: shell.relPath,
-      mode: 'replicate', colorMode: 'new-theme',
+      colorMode: 'new-theme',
       structureProvided: true,
       structure: { family: 'metric', zones: '左侧大数字', slots: '1 个指标', hierarchy: '数字最大', forbidden: ['旧营收数字'] },
     }, { fetchImpl: okFetcher, config: llmConfig });
@@ -178,7 +179,7 @@ export async function runPptReplicateTests(ctx) {
     const batch = await import('../../src/modules/ppt-replicate/server/batch.ts');
     const rpBeforeRegenerate = credits.getBalance(uid);
     const oldVersionId = singlePages.getOwnedPage(uid, 'rpok1').activeVersionId;
-    singlePages.saveReplicateDraft(uid, {
+    replicatePages.saveReplicateDraft(uid, {
       projectId: rp1.page.projectId,
       title: '批量重生成测试',
       pages: [{ pageId: 'rpok1', title: '新指标二版', content: '完成率改成 92%', imagePath: shell.relPath }],
@@ -203,7 +204,7 @@ export async function runPptReplicateTests(ctx) {
     check('文案变更后的批量重生成按页扣费', rpBeforeRegenerate - credits.getBalance(uid) === 10,
       `before=${rpBeforeRegenerate} after=${credits.getBalance(uid)}`);
 
-    singlePages.saveReplicateDraft(uid, {
+    replicatePages.saveReplicateDraft(uid, {
       projectId: rp1.page.projectId,
       title: '批量测试',
       pages: [
@@ -238,7 +239,7 @@ export async function runPptReplicateTests(ctx) {
     const batchListed = projects.listProjects(uid).items.find((item) => item.id === rp1.page.projectId);
     check('批量完成后项目更新时间跟随页面完成时间', batchListed && batchListed.updatedAt >= batchPageUpdatedAt);
 
-    const staleProject = singlePages.saveReplicateDraft(uid, {
+    const staleProject = replicatePages.saveReplicateDraft(uid, {
       title: '批量中断恢复',
       pages: [{ pageId: 'rp-batch-stale', title: '中断页', content: '中断文案', imagePath: shell.relPath }],
     });
@@ -275,9 +276,9 @@ export async function runPptReplicateTests(ctx) {
       { match: '/chat/completions', payload: () => { throw new Error('vlm down'); } },
       editsOkHandler,
     ]);
-    const rp2 = await singlePages.generateSinglePage(uid, {
+    const rp2 = await replicatePages.generateReplicatePage(uid, {
       pageId: 'rpok2', title: '跟随色', content: '完成率 86%', imagePath: shell.relPath,
-      mode: 'replicate', colorMode: 'follow-shell',
+      colorMode: 'follow-shell',
     }, { fetchImpl: degradeFetcher, config: llmConfig });
     const followForm = degradeFetcher.calls.find((c) => c.url.includes('/images/edits'))?.init?.body;
     const followPrompt = followForm instanceof FormData ? String(followForm.get('prompt') || '') : '';
@@ -288,9 +289,9 @@ export async function runPptReplicateTests(ctx) {
       { match: '/chat/completions', payload: vlmPayload },
       editsOkHandler,
     ]);
-    const rpHint = await singlePages.generateSinglePage(uid, {
+    const rpHint = await replicatePages.generateReplicatePage(uid, {
       pageId: 'rpok3', title: '复用结构', content: '完成率 86%', imagePath: shell.relPath,
-      mode: 'replicate', structureProvided: true,
+      structureProvided: true,
       structure: { family: 'cards', zones: '三卡', slots: '3 张卡', world: '水彩森林', forbidden: [] },
     }, { fetchImpl: skipVlm, config: llmConfig });
     const hintForm = skipVlm.calls.find((c) => c.url.includes('/images/edits'))?.init?.body;
@@ -304,9 +305,9 @@ export async function runPptReplicateTests(ctx) {
       { match: '/chat/completions', payload: vlmPayload },
       editsOkHandler,
     ]);
-    const rpNull = await singlePages.generateSinglePage(uid, {
+    const rpNull = await replicatePages.generateReplicatePage(uid, {
       pageId: 'rpok4', content: '完成率 86%', imagePath: shell.relPath,
-      mode: 'replicate', structureProvided: true, structure: null, colorMode: 'new-theme',
+      structureProvided: true, structure: null, colorMode: 'new-theme',
     }, { fetchImpl: skipNull, config: llmConfig });
     check('显式空结构卡跳过 VLM 仍保画面',
       rpNull.status === 'succeeded'
@@ -503,7 +504,7 @@ export async function runPptReplicateTests(ctx) {
     check('facade 懒恢复入口委托平台（无中断时不改状态）',
       facade.reconcileReplicateUser(uid) === false
         && facade.getReplicatePage(uid, 'rp-facade-1').status === 'succeeded');
-    check('facade 暴露复刻提示词契约（平台唯一调用面）',
+    check('facade 暴露复刻提示词契约',
       facade.resolveReplicateColorMode('new-theme') === 'new-theme'
         && facade.parseIncomingStructure({ family: 'cards' })?.family === 'cards'
         && typeof facade.buildReplicateCopyPrompt === 'function'
@@ -512,13 +513,18 @@ export async function runPptReplicateTests(ctx) {
       new URL('../../src/lib/server/generation/single-pages.ts', import.meta.url),
       'utf8',
     );
-    check('平台单页运行时对复刻分支的调用只经 facade',
-      singlePagesSrc.includes("from '@/modules/ppt-replicate/server/facade'")
-        && !singlePagesSrc.includes("from '@/modules/ppt-replicate/server/replicate'"));
+    const replicatePagesSrc = readFileSync(
+      new URL('../../src/modules/ppt-replicate/server/pages.ts', import.meta.url),
+      'utf8',
+    );
+    check('复刻实体已搬回模块：平台单页运行时不再 import 模块',
+      !singlePagesSrc.includes('@/modules/')
+        && !singlePagesSrc.includes('buildReplicateCopyPrompt')
+        && replicatePagesSrc.includes("from '@/lib/server/generation/single-pages'"));
 
     const rpShell = await storage.saveFile('uploads', uid, Buffer.from(PNG_1X1_B64, 'base64'), { kind: 'replicate', ext: '.png' }, llmConfig);
-    const rpPurge = await singlePages.generateSinglePage(uid, {
-      pageId: 'rp-purge', content: '过期清理', imagePath: rpShell.relPath, mode: 'replicate',
+    const rpPurge = await replicatePages.generateReplicatePage(uid, {
+      pageId: 'rp-purge', content: '过期清理', imagePath: rpShell.relPath,
     }, { fetchImpl: makeMockFetcher([editsOkHandler]), config: llmConfig });
     projects.deleteProject(uid, rpPurge.page.projectId);
     const genDbMod = await import('../../src/lib/server/generation/db.ts');

@@ -5,7 +5,7 @@ import { getDb } from '@/lib/server/db';
 import { defineApiRoute, paramOf } from '@/lib/server/generation/route';
 import { ApiError, jsonOk, readJsonBody } from '@/lib/server/http';
 import { adminIntentParams } from '@/lib/admin-intents';
-import { readIntentParams } from '@/lib/server/intents';
+import { readActionParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export const POST = defineApiRoute(async (request, ctx) => {
   const { user } = requireAdmin(request);
   const targetUserId = await paramOf(ctx, 'id');
-  const body = readIntentParams(await readJsonBody(request), (intent) => adminIntentParams('setUserRole', intent));
+  const body = readActionParams(await readJsonBody(request), (intent) => adminIntentParams('setUserRole', intent));
   const role = String(body.role ?? '');
   if (role !== 'tester' && role !== 'user') {
     throw new ApiError('VALIDATION_ERROR', 'role 只能是 tester 或 user', 400, false);

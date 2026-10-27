@@ -395,15 +395,10 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
     body: JSON.stringify({
-      intent: {
-        kind: 'updateRuntimeConfig',
-        params: {
-          values: {
-            ANPPT_V2_LLM_API_KEY: secretValue,
-            ANPPT_V2_LLM_MODEL: 'runtime-main-model',
-            ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY: '25',
-          },
-        },
+      values: {
+        ANPPT_V2_LLM_API_KEY: secretValue,
+        ANPPT_V2_LLM_MODEL: 'runtime-main-model',
+        ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY: '25',
       },
     }),
   }));
@@ -491,9 +486,7 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   const generatedResponse = await redemptionRoute.POST(adminRequest('http://localhost/api/admin/redemption-codes', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
-    body: JSON.stringify({
-      intent: { kind: 'generateRedemptionCodes', params: { credits: 1000, count: 1, batch: 'admin-test' } },
-    }),
+    body: JSON.stringify({ credits: 1000, count: 1, batch: 'admin-test' }),
   }));
   const generatedJson = await generatedResponse.json();
   check('管理员端可生成 1000 星兑换码',
@@ -556,12 +549,7 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
   const clearResponse = await configRoute.PUT(adminRequest('http://localhost/api/admin/config', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
-    body: JSON.stringify({
-      intent: {
-        kind: 'updateRuntimeConfig',
-        params: { clearKeys: ['ANPPT_V2_LLM_API_KEY', 'ANPPT_V2_LLM_MODEL', 'ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY'] },
-      },
-    }),
+    body: JSON.stringify({ clearKeys: ['ANPPT_V2_LLM_API_KEY', 'ANPPT_V2_LLM_MODEL', 'ANPPT_V2_IMAGE_GLOBAL_CONCURRENCY'] }),
   }));
   check('清除运行时覆盖成功', clearResponse.status === 200);
   const fallbackConfig = generationConfig.getGenerationConfig();
@@ -635,13 +623,13 @@ console.log('\n[11] 功能开关板 + 测试用户角色');
   const normalPut = await flagsRoute.PUT(new Request('http://localhost/api/admin/feature-flags', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1', cookie: flagCookie(reg.sessionToken) },
-    body: JSON.stringify({ intent: { kind: 'setFeatureFlag', params: { key: 'magic_erase', state: 'public' } } }),
+    body: JSON.stringify({ key: 'magic_erase', state: 'public' }),
   }), { params: Promise.resolve({}) });
   check('普通用户 PUT 开关 403', normalPut.status === 403, `实际 ${normalPut.status}`);
   const adminPut = await flagsRoute.PUT(flagAdminRequest('http://localhost/api/admin/feature-flags', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
-    body: JSON.stringify({ intent: { kind: 'setFeatureFlag', params: { key: 'magic_erase', state: 'public' } } }),
+    body: JSON.stringify({ key: 'magic_erase', state: 'public' }),
   }), { params: Promise.resolve({}) });
   check('管理员 PUT 开关成功并持久化', adminPut.status === 200 && flags.getFeatureFlagState('magic_erase') === 'public');
 
@@ -663,12 +651,7 @@ console.log('\n[11] 功能开关板 + 测试用户角色');
   const replicateBlocked = await genRoute.POST(new Request('http://localhost/api/single-page/generate', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1', cookie: flagCookie(reg.sessionToken) },
-    body: JSON.stringify({
-      intent: {
-        kind: 'generatePage',
-        params: { pageId: 'rpblock', content: '新内容', mode: 'replicate', imagePath: 'uploads/x/a.png' },
-      },
-    }),
+    body: JSON.stringify({ pageId: 'rpblock', content: '新内容', mode: 'replicate', imagePath: 'uploads/x/a.png' }),
   }), { params: Promise.resolve({}) });
   check('普通用户 POST 复刻 mode 返回 404', replicateBlocked.status === 404);
 
@@ -687,20 +670,20 @@ console.log('\n[11] 功能开关板 + 测试用户角色');
   const setRoleResponse = await roleRoute.POST(flagAdminRequest(`http://localhost/api/admin/users/${roleTarget.user.id}/role`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
-    body: JSON.stringify({ intent: { kind: 'setUserRole', params: { userId: roleTarget.user.id, role: 'tester' } } }),
+    body: JSON.stringify({ role: 'tester' }),
   }), { params: Promise.resolve({ id: roleTarget.user.id }) });
   check('管理员可设测试用户并实时生效',
     setRoleResponse.status === 200 && auth.findUserById(roleTarget.user.id)?.role === 'tester');
   const adminRoleResponse = await roleRoute.POST(flagAdminRequest(`http://localhost/api/admin/users/${ownerLogin.user.id}/role`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
-    body: JSON.stringify({ intent: { kind: 'setUserRole', params: { userId: ownerLogin.user.id, role: 'tester' } } }),
+    body: JSON.stringify({ role: 'tester' }),
   }), { params: Promise.resolve({ id: ownerLogin.user.id }) });
   check('管理员账号拒绝走测试开关', adminRoleResponse.status === 400, `实际 ${adminRoleResponse.status}`);
   const badRoleResponse = await roleRoute.POST(flagAdminRequest(`http://localhost/api/admin/users/${roleTarget.user.id}/role`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
-    body: JSON.stringify({ intent: { kind: 'setUserRole', params: { userId: roleTarget.user.id, role: 'admin' } } }),
+    body: JSON.stringify({ role: 'admin' }),
   }), { params: Promise.resolve({ id: roleTarget.user.id }) });
   check('role 只允许 tester/user', badRoleResponse.status === 400, `实际 ${badRoleResponse.status}`);
 

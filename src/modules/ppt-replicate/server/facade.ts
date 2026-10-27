@@ -1,6 +1,5 @@
-// 复刻模块唯一的对外服务端入口：项目 / 页 / 版本三个实体，以及它们与计费、懒恢复的关系。
-// 实现暂时逐项委托平台单页运行时（扣费/退款/版本/恢复全平台只有一份，不能在本模块另造）；
-// 后续把实体搬进本目录时只改这里，路由与平台调用面不动。
+// 复刻模块唯一的对外服务端入口：项目 / 页 / 版本、草稿写入与逐页生成，以及它们与计费、懒恢复的关系。
+// 实体与提示词归本模块（见 ./pages）；扣费/退款/版本表/懒恢复复用平台单页运行时的唯一一份实现。
 import { estimateCredits } from '@/lib/server/credits';
 import { reconcileUser } from '@/lib/server/generation/recovery';
 import {
@@ -9,7 +8,6 @@ import {
   listPageVersions,
   listSingleProjectPageStatuses,
   listSingleProjectPages,
-  saveReplicateDraft as saveReplicateDraftOnPlatform,
   selectSinglePageVersion,
   type SinglePageRow,
   type SinglePageStatusView,
@@ -18,7 +16,10 @@ import {
 
 export type { SinglePageRow, SinglePageStatusView, SinglePageVersionView };
 
-// 复刻分支持有的提示词契约也收在这里：平台复刻分支只认本入口，不直接摸模块内部文件。
+// 实体写口与生成入口在 ./pages；本文件只做对外收口，调用方不再摸模块内部文件。
+export { generateReplicatePage, saveReplicateDraft } from './pages';
+export type { ReplicateDraftInput, ReplicateGenerateInput } from './pages';
+// 提示词契约也是模块对外的一部分（拆页计划、批量任务与测试共用一份），仍在 facade 收口。
 export {
   buildReplicateCopyPrompt,
   buildReplicateInstruction,
@@ -26,16 +27,6 @@ export {
   resolveReplicateColorMode,
 } from './replicate';
 export type { ReplicateColorMode, SlideStructureCard } from './replicate';
-
-export type ReplicateDraftInput = Parameters<typeof saveReplicateDraftOnPlatform>[1];
-
-/** 创建/更新复刻项目并写入页（文案 + 壳图）：不生成、不扣星。 */
-export function saveReplicateDraft(
-  userId: string,
-  input: ReplicateDraftInput,
-): ReturnType<typeof saveReplicateDraftOnPlatform> {
-  return saveReplicateDraftOnPlatform(userId, input);
-}
 
 export type ReplicateProjectDetail = ReturnType<typeof getSingleProjectDetail>;
 

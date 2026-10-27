@@ -84,22 +84,22 @@ let deckId = '';
 
 // [2] 大纲 → 梳理 → 冻结 → 风格
 {
-  const r1 = await action(deckId, { intent: { kind: 'generateOutline', params: {  } } });
+  const r1 = await action(deckId, { action: 'outline' });
   if (r1.status !== 200) throw new Error(`outline 失败 ${r1.status} ${JSON.stringify(r1.json)?.slice(0, 200)}`);
   let s = await deckState(deckId);
   console.log(`[2] outline ${s.slides.length} 页:`);
   for (const sl of s.slides) console.log(`    p${sl.pageIndex} [${sl.role}] ${sl.pageType} | ${sl.title}`);
 
-  const r2 = await action(deckId, { intent: { kind: 'structureSlides', params: {  } } });
+  const r2 = await action(deckId, { action: 'structure' });
   if (r2.status !== 200) throw new Error(`structure 失败 ${r2.status}`);
   s = await deckState(deckId);
   const notOk = s.slides.filter((x) => x.structureStatus !== 'ok');
   if (notOk.length > 0) throw new Error(`梳理未全 ok: ${notOk.map((x) => x.pageIndex).join(',')}`);
 
-  const r3 = await action(deckId, { intent: { kind: 'confirmStructure', params: {  } } });
+  const r3 = await action(deckId, { action: 'confirm-structure' });
   if (r3.status !== 200) throw new Error(`confirm 失败 ${r3.status}`);
 
-  const r4 = await action(deckId, { intent: { kind: 'setStyle', params: { stylePackId } } });
+  const r4 = await action(deckId, { action: 'style', stylePackId });
   if (r4.status !== 200) throw new Error(`style 失败 ${r4.status} ${JSON.stringify(r4.json)?.slice(0, 200)}`);
   console.log(`[2] structure ok + locked + style=${stylePackId}`);
 }
@@ -107,7 +107,7 @@ let deckId = '';
 // [3] 生成
 {
   const before = (await api('/api/credits/balance')).json.data.balance;
-  const r5 = await action(deckId, { intent: { kind: 'generateSlides', params: {  } } });
+  const r5 = await action(deckId, { action: 'generate' });
   if (r5.status !== 202) throw new Error(`generate 失败 ${r5.status} ${JSON.stringify(r5.json)?.slice(0, 200)}`);
   console.log(`[3] 生成中…（开始前余额 ${before}）`);
 

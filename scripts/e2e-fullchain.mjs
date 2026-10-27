@@ -82,26 +82,26 @@ let deckId = '';
 
 console.log('[2] 大纲 → 梳理 → 冻结 → 风格');
 {
-  const r1 = await action(deckId, { intent: { kind: 'generateOutline', params: {  } } });
+  const r1 = await action(deckId, { action: 'outline' });
   check('outline 200', r1.status === 200, `实际 ${r1.status} ${JSON.stringify(r1.json)?.slice(0, 160)}`);
   let s = await deckState(deckId);
   check('状态 outlined 且 ≤3 页', s.deck.status === 'outlined' && s.slides.length >= 1 && s.slides.length <= 3,
     `实际 ${s.deck.status}/${s.slides.length} 页`);
 
-  const r2 = await action(deckId, { intent: { kind: 'structureSlides', params: {  } } });
+  const r2 = await action(deckId, { action: 'structure' });
   check('structure 200', r2.status === 200, `实际 ${r2.status}`);
   s = r2.json?.data ?? (await deckState(deckId));
   check('全部页梳理 ok', s.slides.every((x) => x.structureStatus === 'ok'),
     s.slides.map((x) => `${x.pageIndex}:${x.structureStatus}`).join(','));
 
-  const r3 = await action(deckId, { intent: { kind: 'confirmStructure', params: {  } } });
+  const r3 = await action(deckId, { action: 'confirm-structure' });
   check('confirm 200 且 contentLocked', r3.status === 200 && r3.json?.data?.contentLocked === true,
     `实际 ${r3.status}`);
 
   const packs = await api('/api/style-packs');
   const packId = packs.json?.data?.stylePacks?.[0]?.id || '';
   check('风格包列表可取', Boolean(packId));
-  const r4 = await action(deckId, { intent: { kind: 'setStyle', params: { stylePackId: packId } } });
+  const r4 = await action(deckId, { action: 'style', stylePackId: packId });
   check('style 选中', r4.status === 200, `实际 ${r4.status}`);
 }
 
@@ -116,7 +116,7 @@ let pageCount = 0;
     `实际 ${JSON.stringify(est.json?.data)}`);
   before = (await api('/api/credits/balance')).json.data.balance;
 
-  const r5 = await action(deckId, { intent: { kind: 'generateSlides', params: {  } } });
+  const r5 = await action(deckId, { action: 'generate' });
   check('generate 202', r5.status === 202, `实际 ${r5.status} ${JSON.stringify(r5.json)?.slice(0, 160)}`);
 
   const deadline = Date.now() + 10 * 60_000;

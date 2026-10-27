@@ -78,7 +78,7 @@ let deckId = '';
 
 console.log('[2] 大纲 → 大纲编辑（改第 2 页标题）');
 {
-  const r1 = await action(deckId, { intent: { kind: 'generateOutline', params: {  } } });
+  const r1 = await action(deckId, { action: 'outline' });
   check('outline 200', r1.status === 200, `实际 ${r1.status} ${JSON.stringify(r1.json)?.slice(0, 160)}`);
   const s = await deckState(deckId);
   check('状态 outlined', s.deck.status === 'outlined', `实际 ${s.deck.status}`);
@@ -86,7 +86,7 @@ console.log('[2] 大纲 → 大纲编辑（改第 2 页标题）');
 
   const target = s.slides[1] || s.slides[0];
   const newTitle = '三层架构：端、边、云协同';
-  const r2 = await action(deckId, { intent: { kind: 'updateSlide', params: { slideId: target.slideId, title: newTitle } } });
+  const r2 = await action(deckId, { action: 'update-slide', slideId: target.slideId, title: newTitle });
   check('update-slide 200', r2.status === 200, `实际 ${r2.status} ${JSON.stringify(r2.json)?.slice(0, 160)}`);
   check('标题编辑生效', r2.json?.data?.contentChanged === true, `实际 ${JSON.stringify(r2.json?.data)?.slice(0, 80)}`);
   const s2 = await deckState(deckId);
@@ -96,14 +96,14 @@ console.log('[2] 大纲 → 大纲编辑（改第 2 页标题）');
 
 console.log('[3] 梳理 → 冻结 → 选真模板');
 {
-  const r2 = await action(deckId, { intent: { kind: 'structureSlides', params: {  } } });
+  const r2 = await action(deckId, { action: 'structure' });
   check('structure 200', r2.status === 200, `实际 ${r2.status}`);
   const s = r2.json?.data ?? (await deckState(deckId));
   check('全部页梳理 ok', s.slides.every((x) => x.structureStatus === 'ok'),
     s.slides.map((x) => `${x.pageIndex}:${x.structureStatus}`).join(','));
-  const r3 = await action(deckId, { intent: { kind: 'confirmStructure', params: {  } } });
+  const r3 = await action(deckId, { action: 'confirm-structure' });
   check('confirm 且 contentLocked', r3.status === 200 && r3.json?.data?.contentLocked === true, `实际 ${r3.status}`);
-  const r4 = await action(deckId, { intent: { kind: 'setStyle', params: { stylePackId: PACK_ID } } });
+  const r4 = await action(deckId, { action: 'style', stylePackId: PACK_ID });
   check('选中真模板 ' + PACK_ID, r4.status === 200, `实际 ${r4.status} ${JSON.stringify(r4.json)?.slice(0, 160)}`);
 }
 
@@ -115,7 +115,7 @@ console.log('[4] 估价 → 生成（真实扣费）');
   check('估价 = 页数×10', est.json?.data?.credits === pageCount * 10, `实际 ${JSON.stringify(est.json?.data)}`);
   const before = (await api('/api/credits/balance')).json.data.balance;
 
-  const r5 = await action(deckId, { intent: { kind: 'generateSlides', params: {  } } });
+  const r5 = await action(deckId, { action: 'generate' });
   check('generate 202', r5.status === 202, `实际 ${r5.status} ${JSON.stringify(r5.json)?.slice(0, 160)}`);
 
   const deadline = Date.now() + 10 * 60_000;

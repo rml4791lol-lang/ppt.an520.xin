@@ -5,7 +5,7 @@ import { FEATURE_FLAG_DEFS, listFeatureFlags, setFeatureFlag, type FeatureFlagSt
 import { cleanString } from '@/lib/server/generation/types';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { adminIntentParams } from '@/lib/admin-intents';
-import { readIntentParams } from '@/lib/server/intents';
+import { readActionParams } from '@/lib/server/intents';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,7 @@ export const GET = defineApiRoute(async (request) => {
 export const PUT = defineApiRoute(async (request) => {
   const { user } = requireAdmin(request);
   const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const body = readIntentParams(raw, (intent) => adminIntentParams('setFeatureFlag', intent));
+  const body = readActionParams(raw, (intent) => adminIntentParams('setFeatureFlag', intent));
   const key = cleanString(body?.key, 60);
   const state = cleanString(body?.state, 20) as FeatureFlagState;
   if (!key || !FEATURE_FLAG_DEFS.some((def) => def.key === key)) {
