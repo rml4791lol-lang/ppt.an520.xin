@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PlusIcon } from "@/components/icons";
-import { api, ApiClientError, getSession } from "@/lib/client/api";
+import { getSession } from "@/lib/client/api";
 import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
 
 interface Project {
@@ -12,8 +12,8 @@ interface Project {
   name?: string;
   projectType?: string;
   source?: "single" | "replicate";
-  updatedAt?: string | number;
-  createdAt?: string | number;
+  updatedAt?: string;
+  createdAt?: string;
   coverUrl?: string | null;
 }
 
@@ -35,13 +35,19 @@ export function ProjectsClient() {
         setProjects(null);
         return;
       }
-      const { items } = await api.projects.list({ pageSize: 50 });
-      setProjects(Array.isArray(items) ? items : []);
-    } catch (error) {
-      if (error instanceof ApiClientError && error.isUnauthorized) {
+      const res = await fetch("/api/projects?pageSize=50", { cache: "no-store" });
+      if (res.status === 401) {
         setUnauthorized(true);
         setProjects(null);
+        return;
       }
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.ok) {
+        const list = json.data?.projects ?? json.data?.items ?? json.data;
+        if (Array.isArray(list)) setProjects(list);
+        else setProjects([]);
+      }
+    } catch {
       /* 后端未就绪时保持占位 */
     } finally {
       setLoading(false);
@@ -59,15 +65,18 @@ export function ProjectsClient() {
     setRemoving(true);
     setError(null);
     try {
-      await api.projects.remove(id);
-      setConfirmingId(null);
-      await load();
-    } catch (error) {
-      setError(
-        error instanceof ApiClientError && error.status > 0
-          ? "删除失败，请稍后重试"
-          : "网络异常，删除失败",
-      );
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "DELETE",
+        headers: { "x-anppt-action": "1" },
+      });
+      if (res.ok) {
+        setConfirmingId(null);
+        await load();
+      } else {
+        setError("删除失败，请稍后重试");
+      }
+    } catch {
+      setError("网络异常，删除失败");
     } finally {
       setRemoving(false);
     }

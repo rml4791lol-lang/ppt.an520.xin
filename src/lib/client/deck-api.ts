@@ -1,8 +1,9 @@
 // 整套 PPT（deck）工作台 API 客户端。
 // 类型对齐 src/lib/server/generation/decks.ts 的 getDeckState 返回（后端已实现）。
 import { apiFetch } from "./api";
+import type { DeckActionName, DeckIntent, SlideRole } from "../deck-intents";
 
-export type SlideRole = "cover" | "toc" | "section" | "content" | "ending";
+export type { SlideRole } from "../deck-intents";
 
 export type DeckStatus =
   | "parsed"
@@ -100,27 +101,8 @@ export interface DeckActionResult extends DeckState {
   [key: string]: unknown;
 }
 
-export type DeckAction =
-  | "outline"
-  | "add-slide"
-  | "delete-slide"
-  | "reorder-slides"
-  | "split-slide"
-  | "update-slide"
-  | "structure"
-  | "structure-slide"
-  | "confirm-structure"
-  | "unlock-structure"
-  | "style"
-  | "generate"
-  | "generate-slide"
-  | "refine-slide"
-  | "erase-slide"
-  | "text-edit-slide"
-  | "fuse-slide"
-  | "set-reference"
-  | "retry-failed"
-  | "select-slide-version";
+/** 动作名与意图契约同一份声明（src/lib/deck-intents.ts），避免两处清单漂移 */
+export type DeckAction = DeckActionName;
 
 export interface OutlineSlidePatch {
   role?: SlideRole;
@@ -146,6 +128,13 @@ export function deckAction(
 ): Promise<DeckActionResult> {
   return apiFetch<DeckActionResult>(`/api/deck/${encodeURIComponent(deckId)}`, {
     body: { action, ...params },
+  });
+}
+
+/** 意图通道：同一条 RPC，body 换成 { intent }；路由侧适配器还原成动作名与参数 */
+export function deckIntentAction(deckId: string, intent: DeckIntent): Promise<DeckActionResult> {
+  return apiFetch<DeckActionResult>(`/api/deck/${encodeURIComponent(deckId)}`, {
+    body: { intent },
   });
 }
 

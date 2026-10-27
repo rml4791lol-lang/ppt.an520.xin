@@ -4,18 +4,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CheckIcon } from "@/components/icons";
 import type { RechargePlan } from "@/data/recharge";
-import { api, ApiClientError } from "@/lib/client/api";
 
-/**
- * 信封错误带业务 code，直接用服务端文案；HTTP_* 是 apiFetch 对非信封响应的兜底码，
- * 这类响应沿用页面原有文案。
- */
-function actionErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiClientError) {
-    if (error.code === "NETWORK_ERROR") return "网络异常，请稍后再试";
-    if (!error.code.startsWith("HTTP_")) return error.message;
-  }
-  return fallback;
+/** 后端统一错误包裹 {ok:false,error:{code,message}}；兼容旧的字符串形态。 */
+function apiErrorMessage(
+  json: { error?: { message?: string } | string; message?: string } | null,
+  fallback: string,
+): string {
+  if (json && typeof json.error === "object" && json.error !== null)
+    return json.error.message ?? fallback;
+  if (typeof json?.error === "string") return json.error;
+  return json?.message ?? fallback;
 }
 
 type PayChannel = "wechat" | "alipay";
@@ -158,18 +156,22 @@ function PaymentPanel({
     if (status !== "pending") return;
     timerRef.current = setInterval(async () => {
       try {
-        const nextOrder = await api.recharge.getOrder(order.orderNo);
-        const next = nextOrder.status;
-        if (next !== "pending") {
-          setStatus(next);
-          if (next === "paid") {
-            router.refresh();
-            window.dispatchEvent(new Event("anppt:credits-refresh"));
+        const res = await fetch(
+          `/api/recharge/orders?orderNo=${encodeURIComponent(order.orderNo)}`,
+        );
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.ok && json.data?.order) {
+          const next = String(json.data.order.status) as OrderView["status"];
+          if (next !== "pending") {
+            setStatus(next);
+            if (next === "paid") {
+              router.refresh();
+              window.dispatchEvent(new Event("anppt:credits-refresh"));
+            }
           }
         }
-      } catch (error) {
-        // 只有网络层失败才提示；订单查询的响应错误沿用旧行为静默继续轮询
-        if (error instanceof ApiClientError && error.code === "NETWORK_ERROR") setPollError(true);
+      } catch {
+        setPollError(true);
       }
     }, 2500);
     return () => {
@@ -305,14 +307,23 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
     setNotice(null);
     setOrderingId(plan.id);
     try {
-      const result = await api.recharge.createOrder({ planId: plan.id, channel });
-      setPending({ order: result.order, mock: Boolean(result.mock), plan });
-    } catch (error) {
-      if (error instanceof ApiClientError && error.isUnauthorized) {
+      const res = await fetch("/api/recharge/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-anppt-action": "1" },
+        body: JSON.stringify({ planId: plan.id, channel }),
+      });
+      if (res.status === 401) {
         router.push(`/login?next=${encodeURIComponent("/recharge")}`);
         return;
       }
-      setError(actionErrorMessage(error, "下单失败，请稍后再试"));
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.ok && json.data?.order) {
+        setPending({ order: json.data.order, mock: Boolean(json.data.mock), plan });
+      } else {
+        setError(apiErrorMessage(json, "下单失败，请稍后再试"));
+      }
+    } catch {
+      setError("网络异常，请稍后再试");
     } finally {
       setOrderingId(null);
     }
@@ -328,17 +339,26 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
     setNotice(null);
     setRedeeming(true);
     try {
-      await api.recharge.redeem(value);
-      setNotice("兑换成功，星星已到账");
-      setCode("");
-      router.refresh();
-      window.dispatchEvent(new Event("anppt:credits-refresh"));
-    } catch (error) {
-      if (error instanceof ApiClientError && error.isUnauthorized) {
+      const res = await fetch("/api/points/redemption/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-anppt-action": "1" },
+        body: JSON.stringify({ code: value }),
+      });
+      if (res.status === 401) {
         router.push(`/login?next=${encodeURIComponent("/recharge")}`);
         return;
       }
-      setError(actionErrorMessage(error, "兑换失败，请检查兑换码是否正确"));
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.ok) {
+        setNotice("兑换成功，星星已到账");
+        setCode("");
+        router.refresh();
+        window.dispatchEvent(new Event("anppt:credits-refresh"));
+      } else {
+        setError(apiErrorMessage(json, "兑换失败，请检查兑换码是否正确"));
+      }
+    } catch {
+      setError("网络异常，请稍后再试");
     } finally {
       setRedeeming(false);
     }
