@@ -1,8 +1,8 @@
 // 生成链崩溃恢复（懒触发）。
 // 背景：deploy 重启/进程崩溃会打断在途生成——deck 卡 generating（409 死锁）、
 // 页面卡 queued/running（不在默认重生成范围）、已扣费页没有退款（退款逻辑在
-// 内存 catch 里，进程死了不执行）。本模块在状态被读取时把中断状态收敛回可
-// 重试，并按 ledger 实扣金额补退款（refund 幂等键与正常失败退款一致，不双退）。
+// 内存 catch 里，进程死了不执行）。收敛放在带身份的请求入口（requireUser），
+// 读/写路径只表达业务，不必各自记得恢复。
 // 判定依据：job 心跳（每页完成时更新 updated_at）超时或已终态 = 进程已死；
 // 本进程活跃任务有注册表守卫，绝不动活跃任务。
 import { getDb } from '../db';
@@ -10,9 +10,8 @@ import { deriveRefundKey, refundCredits } from '../credits';
 import { logProblem } from '../problem-log';
 import { getGenDb, nowMs } from './db';
 import { getGenerationConfig } from './config';
-import type { DeckRow } from './decks';
 
-// ---- 本进程活跃任务注册表（generate.ts / single-pages.ts 注册） ----
+// ---- 本进程活跃任务注册表（generate.ts / single-pages.ts / ppt-to-base 注册） ----
 
 const activeJobs = new Set<string>();
 
@@ -104,7 +103,7 @@ export interface InterruptedRun {
 
 /**
  * 唯一收敛实现：中断任务 → 收敛动作 → 按实扣金额补退，返回收敛条数。
- * 调用方（各生成类型的读口）只负责列出在途任务；重复调用幂等。
+ * 调用方只负责列出在途任务；重复调用幂等。
  */
 export function reconcileInterrupted(runs: InterruptedRun[]): number {
   const healed = runs.filter((run) => run.interrupted);
@@ -122,36 +121,50 @@ export function reconcileInterrupted(runs: InterruptedRun[]): number {
 }
 
 /**
- * 收敛中断的整套生成（幂等，同步）。deck 状态被读取（getDeckState /
- * startDeckGeneration / listProjects）时触发。返回是否修复了状态（调用方应重读 deck）。
+ * 唯一恢复入口：收敛该用户全部生成类型的在途任务，返回收敛条数。
+ * 由 requireUser 在鉴权门调用——新增读/写路径只要走这道门，就不用再接恢复；
+ * 判活、收敛与补退口径都收在本模块，生成类型不再各写一套。
  */
-export function reconcileDeckGeneration(deck: Pick<DeckRow, 'id' | 'userId' | 'status'>): boolean {
-  const db = getGenDb();
-  const stuck = db
-    .prepare("SELECT id AS slideId, page_index AS pageIndex FROM deck_slides WHERE deck_id = ? AND gen_status IN ('queued','running')")
-    .all(deck.id) as Array<{ slideId: string; pageIndex: number }>;
-  if (stuck.length === 0 && deck.status !== 'generating') return false;
+export function reconcileUser(userId: string): number {
+  return reconcileInterrupted([...deckRuns(userId), ...singlePageRuns(userId), ...pptToBaseRuns(userId)]);
+}
 
-  // 整批在途守卫：job 活跃时 queued/running 页全部归属该 job——其 slide_versions 行要等
-  // 蓝图/生图调度后才逐页落库，此时收敛会把在途页误置 failed，并按旧版本误退原始扣费。
-  if (deck.status === 'generating') {
+function deckRuns(userId: string): InterruptedRun[] {
+  const db = getGenDb();
+  const generating = db
+    .prepare("SELECT id FROM decks WHERE user_id = ? AND status = 'generating'")
+    .all(userId) as Array<{ id: string }>;
+  // 整批在途守卫：job 活跃时该 deck 的 queued/running 页全部归属它——其 slide_versions
+  // 行要等蓝图/生图调度后才逐页落库，此刻收敛会误杀在途页并按旧版本误退原始扣费。
+  const protectedDecks = new Set<string>();
+  for (const row of generating) {
+    const deckId = String(row.id);
     const live = db
       .prepare("SELECT id, updated_at FROM generation_jobs WHERE deck_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1")
-      .get(deck.id) as { id: string; updated_at: number } | undefined;
-    if (live && (activeJobs.has(String(live.id)) || !isStale(Number(live.updated_at)))) {
-      return false;
-    }
+      .get(deckId) as { id: string; updated_at: number } | undefined;
+    if (live && (activeJobs.has(String(live.id)) || !isStale(Number(live.updated_at)))) protectedDecks.add(deckId);
   }
 
-  const runs: InterruptedRun[] = stuck.map((slide) => {
+  const stuck = db
+    .prepare(
+      `SELECT s.id AS slideId, s.page_index AS pageIndex, s.deck_id AS deckId, d.user_id AS userId
+       FROM deck_slides s JOIN decks d ON d.id = s.deck_id
+       WHERE d.user_id = ? AND s.gen_status IN ('queued','running')`,
+    )
+    .all(userId) as Array<{ slideId: string; pageIndex: number; deckId: string; userId: string }>;
+
+  const runs: InterruptedRun[] = [];
+  for (const slide of stuck) {
+    const deckId = String(slide.deckId);
+    if (protectedDecks.has(deckId)) continue;
     const version = db
       .prepare('SELECT id, job_id, status FROM slide_versions WHERE slide_id = ? ORDER BY version_no DESC LIMIT 1')
-      .get(slide.slideId) as { id: string; job_id: string; status: string } | undefined;
+      .get(String(slide.slideId)) as { id: string; job_id: string; status: string } | undefined;
     const jobId = String(version?.job_id || '');
-    return {
-      key: slide.slideId,
+    runs.push({
+      key: String(slide.slideId),
       domain: 'deck',
-      userId: deck.userId,
+      userId: String(slide.userId),
       interrupted: !jobStillLive(jobId),
       settle: () => {
         if (version && ['queued', 'running'].includes(String(version.status))) {
@@ -164,56 +177,61 @@ export function reconcileDeckGeneration(deck: Pick<DeckRow, 'id' | 'userId' | 's
         db.prepare("UPDATE deck_slides SET gen_status = 'failed', gen_error = ?, updated_at = ? WHERE id = ?").run(
           '生成中断（服务重启），请重试本页',
           nowMs(),
-          slide.slideId,
+          String(slide.slideId),
         );
       },
-      chargeKey: jobId ? `deck-generate:${deck.id}:${jobId}:${slide.slideId}` : '',
-      refundReason: `第 ${slide.pageIndex + 1} 页生成中断退回`,
+      chargeKey: jobId ? `deck-generate:${deckId}:${jobId}:${slide.slideId}` : '',
+      refundReason: `第 ${Number(slide.pageIndex) + 1} 页生成中断退回`,
       refType: 'deck',
-      refId: deck.id,
-    };
-  });
-
-  let healed = reconcileInterrupted(runs) > 0;
-
-  if (deck.status === 'generating') {
-    // 活跃 job 已在上方守卫返回；走到这里必是死 job
-    db.prepare(
-      "UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = ? WHERE deck_id = ? AND status IN ('queued','running')",
-    ).run('生成中断（服务重启），已自动恢复为可重试', nowMs(), deck.id);
-    const anySucceeded = db
-      .prepare("SELECT 1 FROM deck_slides WHERE deck_id = ? AND gen_status IN ('succeeded','stale') LIMIT 1")
-      .get(deck.id);
-    db.prepare('UPDATE decks SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
-      anySucceeded ? 'partial' : 'confirmed',
-      '',
-      nowMs(),
-      deck.id,
-    );
-    healed = true;
+      refId: deckId,
+    });
   }
-  return healed;
+  for (const row of generating) {
+    const deckId = String(row.id);
+    if (protectedDecks.has(deckId)) continue;
+    // 活跃 job 已在上方守卫排除；走到这里必是死 job，deck 卡 generating 会永久 409
+    runs.push({
+      key: deckId,
+      domain: 'deck',
+      userId,
+      interrupted: true,
+      settle: () => {
+        db.prepare(
+          "UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = ? WHERE deck_id = ? AND status IN ('queued','running')",
+        ).run('生成中断（服务重启），已自动恢复为可重试', nowMs(), deckId);
+        const anySucceeded = db
+          .prepare("SELECT 1 FROM deck_slides WHERE deck_id = ? AND gen_status IN ('succeeded','stale') LIMIT 1")
+          .get(deckId);
+        db.prepare('UPDATE decks SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
+          anySucceeded ? 'partial' : 'confirmed',
+          '',
+          nowMs(),
+          deckId,
+        );
+      },
+      refType: 'deck',
+      refId: deckId,
+    });
+  }
+  return runs;
 }
 
-/**
- * 收敛中断的单页生成（页 status queued/running 且最新 version 非终态且超时）。
- * 单页无 job 行，用 version.updated_at 近似心跳（单页最坏耗时 = 生图超时）。
- */
-export function reconcileSinglePage(userId: string, pageId: string): boolean {
-  if (activeSinglePages.has(pageId)) return false;
+function singlePageRuns(userId: string): InterruptedRun[] {
   const db = getGenDb();
-  const page = db
-    .prepare('SELECT user_id, status FROM single_pages WHERE id = ? AND user_id = ?')
-    .get(pageId, userId) as { user_id: string; status: string } | undefined;
-  if (!page || !['queued', 'running'].includes(String(page.status))) return false;
-  // 找最新的「在途」version（终态版本不算——页可能 running 而最新版本是历史成功版）
-  const version = db
-    .prepare("SELECT id, status, charge_key, updated_at FROM single_page_versions WHERE page_id = ? AND status IN ('queued','running') ORDER BY created_at DESC, rowid DESC LIMIT 1")
-    .get(pageId) as { id: string; status: string; charge_key: string; updated_at: number } | undefined;
-  if (!version) {
-    // 页卡在途但没有在途 version（老数据）：没有版本就没有扣费键可退，直接置 failed
-    return reconcileInterrupted([
-      {
+  const pages = db
+    .prepare("SELECT id, user_id FROM single_pages WHERE user_id = ? AND status IN ('queued','running')")
+    .all(userId) as Array<{ id: string; user_id: string }>;
+  const runs: InterruptedRun[] = [];
+  for (const page of pages) {
+    const pageId = String(page.id);
+    if (activeSinglePages.has(pageId)) continue;
+    // 找最新的「在途」version（终态版本不算——页可能 running 而最新版本是历史成功版）
+    const version = db
+      .prepare("SELECT id, status, charge_key, updated_at FROM single_page_versions WHERE page_id = ? AND status IN ('queued','running') ORDER BY created_at DESC, rowid DESC LIMIT 1")
+      .get(pageId) as { id: string; status: string; charge_key: string; updated_at: number } | undefined;
+    if (!version) {
+      // 页卡在途但没有在途 version（老数据）：没有版本就没有扣费键可退，直接置 failed
+      runs.push({
         key: pageId,
         domain: 'single-page',
         userId: String(page.user_id),
@@ -227,11 +245,10 @@ export function reconcileSinglePage(userId: string, pageId: string): boolean {
             pageId,
           );
         },
-      },
-    ]) > 0;
-  }
-  return reconcileInterrupted([
-    {
+      });
+      continue;
+    }
+    runs.push({
       key: pageId,
       domain: 'single-page',
       userId: String(page.user_id),
@@ -252,6 +269,32 @@ export function reconcileSinglePage(userId: string, pageId: string): boolean {
       refundReason: '单页生成中断退回',
       refType: 'single-page',
       refId: pageId,
-    },
-  ]) > 0;
+    });
+  }
+  return runs;
+}
+
+function pptToBaseRuns(userId: string): InterruptedRun[] {
+  // 表由平台 db 建，模块只写自己的业务；这里只做与模块失败分支同一条 UPDATE
+  const rows = getGenDb()
+    .prepare("SELECT id, request_id, charge_key, updated_at FROM ppt_to_base_jobs WHERE user_id = ? AND status = 'running'")
+    .all(userId) as Array<{ id: string; request_id: string; charge_key: string; updated_at: number }>;
+  return rows.map((row) => {
+    const jobId = String(row.id);
+    return {
+      key: jobId,
+      domain: 'ppt-to-base',
+      userId,
+      interrupted: !activeJobs.has(jobId) && isStale(Number(row.updated_at)),
+      settle: () => {
+        getGenDb()
+          .prepare("UPDATE ppt_to_base_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?")
+          .run('failed', '生成中断（服务重启），已自动退回', nowMs(), jobId);
+      },
+      chargeKey: String(row.charge_key || ''),
+      refundReason: '底座生成中断退回',
+      refType: 'ppt-to-base',
+      refId: String(row.request_id || jobId),
+    };
+  });
 }
