@@ -43,7 +43,7 @@ src/plugins/<key>/
 - `pricing`：本插件涉及的计费动作 key 清单（只声明动作，**不写数字**；数字只在 pricing 插件的价格表里）。
 - `config`：本插件的运行参数声明（进 profile，不埋进代码）。平台运行参数（env / 生成链）不直读平台模块：平台在 boot 时把只读 `config` 服务注入 ctx（契约 `src/lib/plugin/contracts/config.ts`），插件 `ctx.use('config')` 取用（ADR-0001 G4）。
 - `ui`（2026-09-06 补）：本插件的 UI 贡献声明——`entries: [{slot, label, href?, component?, order?, flag?}]`。entry 必须是**可静态审计的数据**（VS Code contribution points 的教训：回调时代无法静态分析）；`order` 显式定序（不靠注册顺序）；`flag` 粒度可细到单条 entry（对齐 VS Code `when` 子句）；`component` 存懒加载指令（动态 import / `next/dynamic`），插件 JS 不进首屏 bundle。壳按注册表渲染入口，不 import 插件。**落地（2026-10-27，ADR-0001 G2）**：组合根 `src/plugins/ui-registry.ts`，壳侧钩子 `src/components/plugin-ui.tsx`；`ppt-replicate` 的三条入口已迁入 `ui.entries`。
-- 插件之间**禁止直接 import**，只能通过 ctx 服务协作；插件也不得 import 平台内部（`src/lib/server`）。lint 强制。
+- 插件之间**禁止直接 import**，只能通过 ctx 服务协作；插件也不得 import 平台内部（`src/lib/server`）与具体功能模块（`src/modules`）。lint 强制——迁移期例外逐个登记（当前仅 ppt-replicate，见 §5）。
 
 ## 2.5 UI：壳与挂载点（2026-09-06）
 
@@ -75,11 +75,10 @@ src/plugins/<key>/
 
 1. `pricing` 插件：**价格表的存储与解析都归插件**（`prices.ts`，含 `CREDIT_ACTION_PRICES` 与单页单价旋钮），暴露 `ctx.pricing.quote(actionKey)`；平台不存价格。**验收（2026-10-27 达成，ADR-0001 G1）：换一份实现（如从 DB 读价）换进 profile，全站估价与扣费随之变，业务代码零改动。**
 2. `models` 插件：模型清单 + 回退链，暴露 `ctx.models.text()/image()`。**验收：下架一个模型 = 改一个数组元素。**
-3. `ppt-replicate` 插件（UI 贡献点先行）：侧栏入口、首页「PPT美化」页签、模板库「自己的 PPT」页签由 `ui.entries` 声明，壳只按 `flag` 过滤；面板组件懒加载。服务端实现暂留 `src/modules/ppt-replicate`，随 `ppt-replicate` 整体迁移。**验收（2026-10-27 达成，ADR-0001 G2）：关掉 `ppt_replicate` → 三条入口同时消失、API 404、`/beautify` 显示「功能尚未开放」，壳代码零改动。**
+3. `ppt-replicate` 插件（UI 贡献点先行）：侧栏入口、首页「PPT美化」页签、模板库「自己的 PPT」页签由 `ui.entries` 声明，壳只按 `flag` 过滤；面板组件懒加载。服务端实现暂留 `src/modules/ppt-replicate`，随 `ppt-replicate` 整体迁移。**验收（2026-10-27 达成，ADR-0001 G2）：关掉 `ppt_replicate` → 三条入口同时消失、API 404、`/beautify` 显示「功能尚未开放」，壳代码零改动。** 上述三处生效已有自动化断言（`scripts/tests/plugin-runtime.test.mjs`：注册表按 flag 过滤、`/api/tools/replicate/plan` 404、工作台门算作 closed）。
+   > **依赖边界例外（2026-10-27，G4 收尾）**：`ui.ts`（懒加载模块面板）与 `client/beautify-tab.tsx`（文件交接）仍 import `src/modules/ppt-replicate`。这是 strangler 迁移期的登记例外：eslint zone `src/plugins → src/modules` 已启用，这两个文件在 `eslint.config.mjs` overrides 里关闭 `import/no-restricted-paths`；删例外的时机 = 按本条顺序把 ppt-replicate 整块迁入插件。在此之前新增插件不得再依赖模块。图标走壳设计系统（`@/components/icons`，§2.5 允许），不属于模块依赖。
 
 迁移（风险从低到高，每次一块、全量门必绿）：模板库 → 导出中心 → ppt-replicate（复刻流水线五段：接入/内容/提示词/生图/导出，数据契约 Ref/Page/Result 冻结）→ 账户计费（钱最后动）。
-
-已知遗留（2026-10-27 记录，本轮不改）：UI 贡献组合根 `src/plugins/ui-registry.ts` 仍手工 import 具体插件的 `ui.ts`，与 `src/plugins/default-profile.ts` 的插件清单构成两份真相——新增插件要改两处，漏改会出现「服务已装配但入口缺失」或反之。后续做法：让 profile 条目携带（或派生）UI 贡献，壳只读一份组合根；完成前两份清单必须在同一个提交里改。
 
 ## 6. 验收线（插件运行时毕业考）
 

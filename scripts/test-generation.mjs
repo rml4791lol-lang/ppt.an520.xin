@@ -782,7 +782,7 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   const r4 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'setStyle', params: { stylePackId: STYLE_PACKS[0].id } }, fullDeps);
   check('style 选中风格包', r4.state.deck.stylePackId === STYLE_PACKS[0].id);
 
-  // 换实现即换价 + 启动快照：价表第一次读 10、之后读 99；若任务内重读价，净扣会被抬到 99
+  // 换实现即换价 + 启动快照：替代实现先报 10 之后报 99；若逐页重读价，净扣会被抬到 99
   const { getDefaultCtx, setDefaultCtx } = await import('../src/lib/plugin/default.ts');
   const { boot } = await import('../src/lib/plugin/profile.ts');
   const defaultCtx = getDefaultCtx();
@@ -797,10 +797,7 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
     plugins: [{
       key: 'pricing-rising', version: '0.0.0-test', provides: ['pricing'],
       register(c) {
-        c.register('pricing', {
-          quote: (key) => risingPrices[key] ?? 0,
-          table: () => (++priceReads === 1 ? risingPrices : { ...risingPrices, 'generate.page': 99 }),
-        });
+        c.register('pricing', { quote: () => (++priceReads === 1 ? 10 : 99), table: () => risingPrices });
       },
     }],
   }));

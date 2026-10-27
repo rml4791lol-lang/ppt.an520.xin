@@ -18,15 +18,13 @@ export interface SiteConfig {
   legalUpdatedAt: string
   /** 注册赠送星星数 */
   signupBonusPoints: number
-  /** 每页生成消耗（标准模式） */
-  pointsPerPage: number
   beginnerTutorialUrl: string
   serviceEmail: string
   announcement: SiteAnnouncement
 }
 
 const DEFAULT_ANNOUNCEMENT_HTML =
-  '🎉 AnPPT 新版上线，注册即送 100 🌟 星星，生成 10 🌟/页'
+  '🎉 AnPPT 新版上线，注册即送 100 🌟 星星'
 
 /**
  * 站点配置：常量默认值 + 环境变量覆盖（ANPPT_*）。
@@ -41,7 +39,6 @@ export function getSiteConfig(): SiteConfig {
     icpNumber: env.ANPPT_ICP_NUMBER ?? '',
     legalUpdatedAt: '2026-10-19',
     signupBonusPoints: Number(env.ANPPT_SIGNUP_BONUS_POINTS ?? 100),
-    pointsPerPage: Number(env.ANPPT_POINTS_PER_PAGE ?? 10),
     beginnerTutorialUrl: env.ANPPT_TUTORIAL_URL ?? '',
     serviceEmail: env.ANPPT_SERVICE_EMAIL ?? 'support@anppt.app',
     announcement: {

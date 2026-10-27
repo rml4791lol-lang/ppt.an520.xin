@@ -15,3 +15,11 @@ const SORTED = MANIFESTS.flatMap((manifest) => manifest.entries).sort(
 export function entriesForSlot<S extends UiSlot>(slot: S): SlotEntry<S>[] {
   return SORTED.filter((entry) => entry.slot === slot) as SlotEntry<S>[];
 }
+
+/** 某挂载点的可见入口：flag 未加载或不成立时整条不渲染（避免普通用户闪出入口）。 */
+export function visibleEntriesForSlot<S extends UiSlot>(
+  slot: S,
+  flags: Record<string, boolean> | null,
+): SlotEntry<S>[] {
+  return entriesForSlot(slot).filter((entry) => !entry.flag || flags?.[entry.flag] === true);
+}

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MonitorIcon, SparklesIcon } from "@/components/icons";
 import { getFeatureFlags } from "@/lib/client/deck-api";
 import type { UiComponentLoader, UiSlot } from "@/lib/plugin/types";
-import { entriesForSlot, type SlotEntry } from "@/plugins/ui-registry";
+import { entriesForSlot, visibleEntriesForSlot, type SlotEntry } from "@/plugins/ui-registry";
 
 type ShellIcon = React.ComponentType<{ width?: number; height?: number }>;
 
@@ -48,10 +48,7 @@ export function usePluginEntries<S extends UiSlot>(slot: S): SlotEntry<S>[] {
     };
   }, []);
 
-  return useMemo(
-    () => entriesForSlot(slot).filter((entry) => !entry.flag || flags?.[entry.flag] === true),
-    [slot, flags],
-  );
+  return useMemo(() => visibleEntriesForSlot(slot, flags), [slot, flags]);
 }
 
 function panelKey(entry: { slot: UiSlot; id: string }): string {

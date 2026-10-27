@@ -51,14 +51,6 @@ ts level category message detail userId refType refId eventId requestId method r
   "service": "anppt-v2",
   "release": "<commit>",
   "db": true,
-  "plugins": {
-    "profile": "default",
-    "assembledAt": "2026-10-27T13:00:00.000Z",
-    "plugins": [
-      { "key": "pricing", "version": "0.2.0", "provides": ["pricing"] }
-    ],
-    "services": ["config", "pricing", "models"]
-  },
   "logging": {
     "ok": true,
     "writable": true,
@@ -73,10 +65,6 @@ ts level category message detail userId refType refId eventId requestId method r
 ```
 
 `ok` 仍表示核心服务/数据库可用；`logging.ok` 是独立的可观测性契约。发布脚本要求两者同时为真，监控脚本也会单独告警日志异常。
-
-`plugins` 是启动期装配清单：`profile` 名、`assembledAt`、每个插件的 `key`/`version`/`provides`，以及注册的服务键 `services`。它是只读诊断信息，不参与 `ok` 判定；装配异常时整条探针不 500，只把这个字段降级为 `{ "error": "<原因>" }`，其余字段照常返回。
-
-告警口径：`plugins.error` 表示计价/模型服务不可用——`scripts/verify-health.mjs` 见到即判发布失败并触发回滚，`deploy/anppt-health-monitor.py` 见到即计入异常。回滚到没有 `plugins` 字段的旧 release 是人工止血动作，监控不对“缺字段”告警；发布验证只针对本次刚上线的新 release，缺字段照样判失败并回滚。
 
 ## 3. 多人并行修改规则
 
@@ -120,7 +108,7 @@ git diff --check
 
 ```bash
 python3 -m py_compile deploy/anppt-health-monitor.py
-printf '%s' '{"ok":true,"service":"anppt-v2","release":"test","db":true,"plugins":{"profile":"default","plugins":[],"services":[]},"logging":{"ok":true,"writable":true,"fileCount":1}}' | node scripts/verify-health.mjs
+printf '%s' '{"ok":true,"service":"anppt-v2","release":"test","db":true,"logging":{"ok":true,"writable":true,"fileCount":1}}' | node scripts/verify-health.mjs
 ```
 
 测试要求：
@@ -144,7 +132,7 @@ ssh hk-hermes 'sudo -n install -m 0755 /opt/anppt-v2/source/deploy/deploy-produc
 ```
 
 5. 执行唯一入口 `bash deploy/deploy.sh`。脚本会推 production、构建不可变 release、检查三队列、切 symlink、重启。
-6. 脚本内置发布后验证：`/api/me` 必须 401，`/api/health` 必须 `ok=true`、`db=true`、`plugins` 清单存在且无 `error`、`logging.ok=true`、`logging.writable=true`，且 `release` 等于本次 commit。任一失败自动回滚到上一个 release。
+6. 脚本内置发布后验证：`/api/me` 必须 401，`/api/health` 必须 `ok=true`、`db=true`、`logging.ok=true`、`logging.writable=true`，且 `release` 等于本次 commit。任一失败自动回滚到上一个 release。
 7. 应用发布后再安装监控脚本（监控脚本不会随 release 自动安装）：
 
 ```bash
@@ -175,7 +163,6 @@ curl -sS https://ppt.an520.xin/api/health
 
 - `anppt-v2.service`、`caddy.service` 存活；
 - `/api/health` 的 `ok`、`release`、`llm.configured`、`image.configured`、`editable.configured`；
-- `plugins.error`（插件启动期装配失败；缺 `plugins` 字段视为回滚到旧版，不告警）；
 - `logging.ok`、`logging.writable`、近期 `writeFailures`；
 - 问题日志总量超过 80 MiB 时提前告警（应用侧 100 MiB 上限）；
 - 根分区使用率超过 90%；

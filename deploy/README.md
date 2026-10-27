@@ -128,7 +128,7 @@ curl -sf https://ppt.an520.xin/api/me   # 期望 401（未登录）
 - 数据备份：
   - SQLite 每日 03:30 自动热备（`anppt-backup.timer` → `/opt/anppt-v2/shared/backup-db.sh`），`VACUUM INTO` 后用 gzip 存到 `/opt/anppt-v2/shared/backups/`，保留 14 天。手工触发：`sudo systemctl start anppt-backup.service`。
   - 备份只含账户/积分/订单/项目元数据；`uploads/`、`generated/`、`exports/` 原文件仍需另行归档。
-- 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy` + health 契约（含 `plugins.error` 插件装配告警）+ 问题日志落盘/体积 + 磁盘 + 备份新鲜度，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile`，再安装并手动跑一次；恢复时会发一封「服务已恢复」。
+- 健康邮件：`deploy/anppt-health-monitor.py` → 服务器 `/usr/local/sbin/anppt-health-monitor.py`（root cron `*/5`）。盯 `anppt-v2` + `caddy` + health 契约 + 问题日志落盘/体积 + 磁盘 + 备份新鲜度，**不要**把已 disable 的 `slideflow-studio` 加回去消警，也不要为消警去 `systemctl start slideflow-studio`。改脚本后 `python3 -m py_compile`，再安装并手动跑一次；恢复时会发一封「服务已恢复」。
 
 ```bash
 python3 -m py_compile deploy/anppt-health-monitor.py

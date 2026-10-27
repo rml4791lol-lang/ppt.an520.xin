@@ -149,4 +149,35 @@ export async function runPluginRuntimeTests(ctx) {
     missingKeyMsg.includes('no-pricing') && missingKeyMsg.includes('pricing')
       && missingKeyMsg.includes('已注册'));
   check('pricing 插件动作键与契约一致', pricingPlugin.pricing.join(',') === 'generate.page,edit.page,export.editable,export.editable-text,export.image,outline,tool.ppt-to-base,generate.single-page,edit.single-page');
+
+  // ---- G2 收尾：flag off 的三处生效（入口 / API / 页面门）必须有自动化断言 ----
+  const { entriesForSlot, visibleEntriesForSlot } = await import('../../src/plugins/ui-registry.ts');
+  const { resolveBeautifyGate } = await import('../../src/modules/ppt-replicate/client/beautify-pages.ts');
+  const flags = await import('../../src/lib/server/feature-flags.ts');
+  const auth = await import('../../src/lib/server/auth.ts');
+  const slots = ['sidebar', 'upload-card', 'template-library'];
+  check('ui.entries 按 flag 过滤：ppt_replicate=off / 未加载时 beautify 三条入口全部不可见，on 时全部可见',
+    slots.every((slot) => entriesForSlot(slot).length > 0
+      && visibleEntriesForSlot(slot, { ppt_replicate: true }).length === entriesForSlot(slot).length
+      && visibleEntriesForSlot(slot, { ppt_replicate: false }).length === 0
+      && visibleEntriesForSlot(slot, null).length === 0));
+  check('工作台页面门：ppt_replicate=off 时计算为 closed（先于登录判断）',
+    resolveBeautifyGate({ ppt_replicate: false }) === 'closed'
+      && resolveBeautifyGate({ ppt_replicate: true }) === 'open');
+
+  const flagUser = await auth.registerWithPassword(
+    { account: 'pluginflag01', password: 'password123', confirmPassword: 'password123' }, '127.0.9.1');
+  flags.setFeatureFlag('ppt_replicate', 'off', flagUser.user.id);
+  const planRoute = await import('../../src/app/api/tools/replicate/plan/route.ts');
+  const planBlocked = await planRoute.POST(new Request('http://localhost/api/tools/replicate/plan', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-anppt-action': '1',
+      cookie: `anppt_v2_session=${encodeURIComponent(flagUser.sessionToken)}`,
+    },
+    body: JSON.stringify({ topic: '开关关闭', pageCount: 1 }),
+  }), { params: Promise.resolve({}) });
+  flags.setFeatureFlag('ppt_replicate', 'beta', flagUser.user.id);
+  check('/api/tools/replicate/plan 在 ppt_replicate=off 时返回 404（不暴露功能存在性）', planBlocked.status === 404);
 }

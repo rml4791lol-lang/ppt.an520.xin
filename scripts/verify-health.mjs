@@ -38,10 +38,6 @@ if (payload.service !== 'anppt-v2') fail(`unexpected service: ${payload.service 
 if (payload.db !== true) fail('db !== true');
 if (payload.logging?.ok !== true) fail('logging.ok !== true');
 if (!payload.logging?.writable) fail('logging.writable !== true');
-// 插件装配失败时 health 仍返回 200（降级为 plugins.error），发布门必须自己拦，否则坏装配会被
-// 当成发布成功推上线，首个计价请求才炸。
-if (!payload.plugins || typeof payload.plugins !== 'object') fail('plugins manifest missing');
-if (payload.plugins.error) fail(`plugin assembly failed: ${payload.plugins.error}`);
 if (expectedRelease && payload.release !== expectedRelease) {
   fail(`release mismatch: expected ${expectedRelease}, got ${payload.release || 'missing'}`);
 }

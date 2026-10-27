@@ -40,6 +40,7 @@ import {
   parseBeautifyDraft,
   remainingEditableCredits,
   remainingGenerateCredits,
+  resolveBeautifyGate,
   restoreProjectHint,
 } from "./beautify-pages";
 import { estimateCredits, getAuthSession, getFeatureFlags, getMe } from "@/lib/client/deck-api";
@@ -380,7 +381,7 @@ export function BeautifyClient() {
         // 先看开关再看登录：功能不开放时不该先要求登录（入口消失后深链也能得到明确提示）
         const features = await getFeatureFlags();
         if (cancelled) return;
-        if (!features.flags.ppt_replicate) {
+        if (resolveBeautifyGate(features.flags) === "closed") {
           setGate("closed");
           return;
         }

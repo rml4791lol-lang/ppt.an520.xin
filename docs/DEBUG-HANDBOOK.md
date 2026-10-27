@@ -44,7 +44,7 @@ NODE
 - root cron 每 5 分钟：`/usr/local/sbin/anppt-health-monitor.py`（仓库副本 `deploy/anppt-health-monitor.py`；日志 `/var/log/anppt-monitor.log`，状态 `/var/lib/anppt-monitor/state.json`）。SMTP 读 **`/opt/anppt-v2/shared/.env`**，不要读 slideflow 的 `.env`。
 - 检查项：`anppt-v2.service` + `caddy.service` 存活 + `https://ppt.an520.xin/api/health`（含 `release`）+ 问题日志落盘/体积 + 磁盘 + **anppt-v2 备份新鲜度（26h 无新备份即告警）**。
 - **不要**把 `slideflow-studio.service` 列为存活条件：老站已 disable、Caddy 不再代理 3300。禁区仍是不杀、不重新代理；监控盯它会导致每 5 分钟刷邮箱（2026-09-07 修：`fail_count` 曾卡在 33）。img2pptx-v4-node 已于 2026-08-22 退役，见 §17。
-- **health 契约**：顶层 `ok`、`db`、`llm.configured`、`image.configured`、`editable.configured`、`plugins` 装配清单（装配失败降级为 `plugins.error`），以及 `logging.ok` / `writable` / `recentFailure` / `totalBytes`。发布验证额外要求 `plugins` 存在且无 `error`、`release` 等于本次 commit；监控对 `plugins.error` 告警（缺字段视为回滚到旧版，不告警）。连续失败 2 次起发一封到 366150820@qq.com；持续异常最多每小时再提醒一次；恢复后发一封恢复通知。
+- **health 契约**：顶层 `ok`、`db`、`llm.configured`、`image.configured`、`editable.configured`，以及 `logging.ok` / `writable` / `recentFailure` / `totalBytes`。发布验证额外要求 `release` 等于本次 commit。连续失败 2 次起发一封到 366150820@qq.com；持续异常最多每小时再提醒一次；恢复后发一封恢复通知。
 - **QQ From**：告警信 `From` 必须是 SMTP 登录邮箱；中文显示名走 `email.utils.formataddr`（RFC2047）。不要把 `.env` 里带中文、未编码的 `SMTP_FROM` 原文塞进邮件头——QQ 会 550 拒信，监控看起来像“发了”其实没发出去。用户 OTP 走 nodemailer，一般会自动编码，不受这条影响。
 
 ## 4. 业务主链路（整套 PPT）
@@ -108,7 +108,7 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 540 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
+node scripts/test-generation.mjs  # 当前 543 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
 node scripts/test-backend.mjs     # 当前 170 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康
 npm run lint -- --max-warnings=0
 npx tsc --noEmit
@@ -283,12 +283,13 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 定位：插件化路线（`docs/PLUGIN-ARCHITECTURE.md`）第一步。Phase 1 纯增量；**Phase 2（2026-09-06 下午）起生产读价接通**：`credits.estimateCredits` 经 `ctx.pricing` 读价；**G1（2026-10-27）起价格表的存储与解析也归插件**——平台 `src/lib` 内不再有任何价格常量或 env 价格解析（`grep -r DEFAULT_ACTION_PRICES src/lib` = 0，ADR-0001 G1）。
 - **机制**：运行时三件在 `src/lib/plugin/`——`types.ts`（`AnPlugin` 接口 + 冻结数据契约 Ref/Page/Result 的唯一定义处）、`ctx.ts`（服务注册表 `register/use/has/reset`，`createCtx()` 造实例）、`profile.ts`（`boot(profile, host)` 异步 / `bootSync(profile, host)` 同步、宿主服务先于插件注册注入、遇异步 register 即 fail fast；`assembleSync(profile, host, requiredServices)` 启动期验收服务键并产出装配清单）、`default.ts`（启动期组合根：装配 `defaultProfile` 并注入 `config` 宿主服务，清单与 ctx 挂 `globalThis` 全进程单例，生产高频同步读点从这里取服务）。系统 = 一张配置单：默认 profile 在 `src/plugins/default-profile.ts`，按 pricing → models 顺序 boot。
 - **契约层**：`src/lib/plugin/contracts/pricing.ts` 是动作 key 清单、动作 key ↔ 公开动作键映射与 `PricingService` 类型的唯一定义处；`contracts/config.ts` 是插件配置契约（`HostConfigService`：`pricingSource()` / `models()`）与 `HOST_CONFIG_KEY` 的唯一定义处。平台（credits.ts）与插件都只依赖契约，互不 import 实现。
-- **边界（lint 强制）**：`eslint.config.mjs` 的 `import/no-restricted-paths`——`src/plugins/*` 之间禁止直接 import（成对 zone）；插件不得 import 平台内部 `src/lib/server`（ADR-0001 G4）；`src/lib` 不得 import `src/plugins` / `src/modules`。登记例外仅一处：插件组合根 `src/lib/plugin/default.ts`（复刻分支已于 2026-10-27 搬回模块，见 §21）。
+- **边界（lint 强制）**：`eslint.config.mjs` 的 `import/no-restricted-paths`——`src/plugins/*` 之间禁止直接 import（成对 zone）；插件不得 import 平台内部 `src/lib/server` 与具体功能模块 `src/modules`（ADR-0001 G4）；`src/lib` 不得 import `src/plugins` / `src/modules`。登记例外：插件组合根 `src/lib/plugin/default.ts`（复刻分支已于 2026-10-27 搬回模块，见 §21）；插件侧另有一处 strangler 例外——`src/plugins/ppt-replicate/ui.ts` 与 `client/beautify-tab.tsx` 仍 import 模块（懒加载面板 / 文件交接），删例条件见 `PLUGIN-ARCHITECTURE.md` §5。
 - **pricing 插件**（`src/plugins/pricing/`）：暴露 `ctx.pricing` = `{ quote(actionKey), table() }`。**价格表的存储与解析都在插件内**（`prices.ts`：默认表 + `CREDIT_ACTION_PRICES` 整份覆盖 + `ANPPT_V2_SINGLE_PAGE_CREDITS`）；平台层不存价格也不解析价格（2026-10-27 G1：`grep -r DEFAULT_ACTION_PRICES src/lib` 为 0）。部署旋钮原值经宿主 `config` 服务的 `pricingSource()` 交入（G4，插件不 import `@/lib/server`），调用时现读。动作 key 含 `generate.page`/`edit.page`/`export.editable`/`export.editable-text`/`export.image`/`outline`/`tool.ppt-to-base`/`generate.single-page`/`edit.single-page`。**未定价动作 quote 返回 0 且不在表内——免费是合法形态，不许 throw。** 换实现即换价：替代实现换进默认上下文后 `estimateCredits` 与全站扣费随之变（`scripts/tests/plugin-runtime.test.mjs` + `scripts/test-generation.mjs` 真实生成链实证，业务代码零改动）。
 - **models 插件**（`src/plugins/models/`）：暴露 `ctx.models` = `{ text(), image(), fallback(model) }`。经 `config` 服务只读包装 `generation/config.ts`（含管理端覆盖）：文本链 = 主模型→fallbacks→跨站备份；图像按用途成对（文生图/改图各有灾备）。`fallback` 链尾或未知模型返回 null。
-- **启动期装配（2026-10-27，ADR-0001 G3）**：`src/instrumentation.ts` 的 `register()` 在 Next 服务就绪前调用 `default.ts` 的 `startDefaultPlugins()`——同步 boot 默认 profile → 按 `REQUIRED_SERVICE_KEYS`（当前只有 `pricing`，即 credits 的计价依赖）验收服务键 → 打一行 `[anppt-v2][plugin]` 日志（`key@version` + 服务键）→ 装配清单（含 `assembledAt` / `services`）挂 `globalThis.__anpptV2PluginAssembly`。instrumentation 与路由是两套 webpack 入口、模块缓存不跨 bundle，所以必须进程级共享；`/api/health.plugins` 返回该清单。测试可把替身 profile 直接传给 `assembleSync(profile, host, requiredServices)`，无需起 Next。`setDefaultCtx` 换实现时喂同一份清单：原 ctx 归还则恢复其装配清单，外来 ctx 无 profile 元数据可报，标记 `profile=runtime-replaced` 且 `plugins` 为空（`services` 取自新 ctx），绝不沿用旧版本。
+- **启动期装配（2026-10-27，ADR-0001 G3）**：`src/instrumentation.ts` 的 `register()` 在 Next 服务就绪前调用 `default.ts` 的 `startDefaultPlugins()`——同步 boot 默认 profile → 按 `REQUIRED_SERVICE_KEYS`（当前只有 `pricing`，即 credits 的计价依赖）验收服务键 → 打一行 `[anppt-v2][plugin]` 日志（`key@version` + 服务键）→ 装配清单（含 `assembledAt` / `services`）挂 `globalThis.__anpptV2PluginAssembly`。instrumentation 与路由是两套 webpack 入口、模块缓存不跨 bundle，所以必须进程级共享；`/api/health.plugins` 返回该清单。测试可把替身 profile 直接传给 `assembleSync(profile, host, requiredServices)`，无需起 Next。
 - **失败语义**：`use` 未注册键启动期即 throw（信息含已注册键清单）；同键重复注册 / profile 内插件键重复即冲突报错；启动期装配缺必需服务键（例如从 profile 删掉 pricing）在 `instrumentation.register` 里直接失败，报出 profile 名与缺失键——fail fast，不许运行期 undefined 漂移，也不把失败拖到首个计价请求。**与 dsh 的有意偏离**：dsh inject 是持续跟踪（服务缺失则消费方 PENDING 等待），营收系统选启动期 fail fast。dsh 的 effect/disposer、`cordis.patch.yml` 三层格式（`{id, name, disabled, config}`、同 id 后写赢、config 整行替换）列入运行时下一版迭代。
-- **测试约束**：`scripts/tests/plugin-runtime.test.mjs`（套件内段名 [20]，20 断言）含**插拔实证**——同一消费函数 `c.use('pricing').quote('generate.page')` 在默认 profile 与替换 fake pricing 的测试 profile 上分别得 10 与 99，调用方代码零改动；G3 起含启动期装配（清单带 `pricing@0.2.0 + models@0.1.0`、`getDefaultCtx` 复用同一实例）、缺 pricing 的启动期报错、`/api/health.plugins` 可读，以及替身 profile 经 `assembleSync` 注入；G1 起含换实现即换价（`setDefaultCtx` 换替身后 estimateCredits 3 页=297）与单页档同走服务键。全 mock，无真实上游。
+- **启动失败的验证等级（2026-10-27）**：启动期 fail-fast 目前只有单测证据（`boot` / `assembleSync` 的失败路径）+ Next 行为推断（`instrumentation` 同步注册失败会阻止服务就绪）；**没有起真实进程的端到端 e2e**。要升级证据等级需另起 Next 进程核对启动日志与 `/api/health`，不要仅凭源码推断宣称已验证。
+- **测试约束**：`scripts/tests/plugin-runtime.test.mjs`（套件内段名 [20]，23 断言）含**插拔实证**——同一消费函数 `c.use('pricing').quote('generate.page')` 在默认 profile 与替换 fake pricing 的测试 profile 上分别得 10 与 99，调用方代码零改动；G3 起含启动期装配（清单带 `pricing@0.2.0 + models@0.1.0`、`getDefaultCtx` 复用同一实例）、缺 pricing 的启动期报错、`/api/health.plugins` 可读，以及替身 profile 经 `assembleSync` 注入；G1 起含换实现即换价（`setDefaultCtx` 换替身后 estimateCredits 3 页=297）与单页档同走服务键；G2 收尾起含 flag off 三处生效断言（`ui.entries` 过滤后三条入口不可见、`/api/tools/replicate/plan` 404、工作台门=closed）。全 mock，无真实上游。
 
 ## 23. PPT 转模版底座（ppt_to_base，beta，2026-09-15）
 
@@ -311,8 +312,8 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 已接入的失败点（category）：`api` 路由未捕获异常；`generation` 逐页/单页生成退款失败、生成管线异常中断、崩溃恢复补退款失败；`ppt-to-base` 底座退款失败；`payments` 微信/epay 回调入账失败与回调异常；`otp` 验证码交付失败；`sms` 阿里云拒发；`image-upstream` 主站与 atlas 非 2xx；`editable` 可编辑导出失败/402/退款失败/文字档管线失败。
 - 读取端 `readProblems({days, category, level, limit, offset})`：读最近 N 天（默认 3、上限 14；limit 默认 200、上限 500），返回 `{ items, categories, total, hasMore, nextOffset, scanLimited }`；categories 动态发现，新增 category 无需改前端常量。
 - 管理后台 `/admin/problems`：管理员会话守卫；动态类别筛选、级别/天数筛选、每次 200 条“加载更多”、总条数、落盘健康状态、请求号/发布版本列；异常时显示目录不可写或近期写入失败提示。API `GET /api/admin/problems?days=&category=&level=&limit=&offset=` 返回 `{ ok, data: { items, categories, total, hasMore, nextOffset, scanLimited, health } }`，`private, no-store`。
-- 健康契约：`GET /api/health` 提供 `release`、`plugins`（启动期装配清单；装配异常降级为 `plugins.error`，不拖垮整条探针）与 `logging`（`ok/writable/fileCount/totalBytes/writeFailures/lastFailureAt/recentFailure/retentionDays`）。应用侧健康探针 60 秒缓存；`logging.ok` 通过真实临时文件写入验证，目录不存在会自动创建。
-- 监控/发布：`deploy/anppt-health-monitor.py` 检查 `logging.ok`、近期写入失败、总量 80 MiB 预警与 `plugins.error`（插件运行时装配失败）；`scripts/verify-health.mjs` 在发布后强制校验 `ok/db/plugins/logging.ok/logging.writable/release`，失败自动回滚。完整多人协作、上线、回滚和故障流程见 `docs/LOGGING.md`。
+- 健康契约：`GET /api/health` 增加 `release` 与 `logging`（`ok/writable/fileCount/totalBytes/writeFailures/lastFailureAt/recentFailure/retentionDays`）。应用侧健康探针 60 秒缓存；`logging.ok` 通过真实临时文件写入验证，目录不存在会自动创建。
+- 监控/发布：`deploy/anppt-health-monitor.py` 检查 `logging.ok`、近期写入失败、总量 80 MiB 预警；`scripts/verify-health.mjs` 在发布后强制校验 `ok/db/logging.ok/logging.writable/release`，失败自动回滚。完整多人协作、上线、回滚和故障流程见 `docs/LOGGING.md`。
 - 测试：`node scripts/test-backend.mjs` [12d]（落盘回环/动态类别/分页游标/请求上下文/脱敏/健康探针/分段读取/坏行/14 天清理/不可写降级）与 [10]（未登录 401、普通用户 403、管理员 200）。
 
 ## 25. 创新点口径（对外可用，逐条锚定实现与测试，2026-10-13）
