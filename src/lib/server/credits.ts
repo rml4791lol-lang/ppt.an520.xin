@@ -233,7 +233,9 @@ export function estimateCredits(input: EstimateInput) {
   const action = String(input.action || '').trim();
   const actionKey = action ? actionKeyForAction(action) : null;
   const pricing = getDefaultCtx().use<PricingService>('pricing');
-  if (!actionKey || !(actionKey in pricing.table())) throw validationError('未知的计费动作');
+  // 一次任务只读一次价表：先 table() 校验再 quote() 取值会走两次服务方法，换 DB 实现时可能读到两个版本。
+  const priceTable = pricing.table();
+  if (!actionKey || !(actionKey in priceTable)) throw validationError('未知的计费动作');
   let pages = 1;
   if (PER_PAGE_ACTIONS.has(action)) {
     pages = Math.floor(Number(input.pages) || 0);
@@ -241,6 +243,6 @@ export function estimateCredits(input: EstimateInput) {
       throw validationError('页数需为 1-100 的整数');
     }
   }
-  const unitPrice = pricing.quote(actionKey);
+  const unitPrice = priceTable[actionKey] ?? 0;
   return { action, unitPrice, pages, credits: unitPrice * pages };
 }
