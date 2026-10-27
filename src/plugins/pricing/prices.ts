@@ -1,13 +1,13 @@
 // 价格表唯一权威：数字与部署覆盖的解析都只在本插件，平台层（lib/server）不存价格。
 // 换价 = 换本插件的实现（例如改从 DB / 远程配置读），调用方经 ctx.pricing 自动跟随。
-import { actionKeyForAction } from '@/lib/plugin/contracts/pricing';
+import { actionKeyForAction, type PricingActionKey } from '@/lib/plugin/contracts/pricing';
 import type { PricingSource } from '@/lib/plugin/contracts/config';
 
 export type PriceTable = Record<string, number>;
 
 const DEFAULT_SINGLE_PAGE_CREDITS = 10;
 
-const DEFAULT_PRICES: PriceTable = {
+const DEFAULT_PRICES: Record<PricingActionKey, number> = {
   'generate.page': 10,
   // 单页改图/微调（图生图，成本低于整页重生成）
   'edit.page': 5,
@@ -20,7 +20,7 @@ const DEFAULT_PRICES: PriceTable = {
   'edit.single-page': DEFAULT_SINGLE_PAGE_CREDITS,
 };
 
-const SINGLE_PAGE_ACTIONS = ['generate.single-page', 'edit.single-page'];
+const SINGLE_PAGE_ACTIONS: PricingActionKey[] = ['generate.single-page', 'edit.single-page'];
 
 /** 与生成链 intFrom 同口径：非正安全整数视为未配置，回落默认值。 */
 function positiveIntFrom(raw: string, fallback: number): number {

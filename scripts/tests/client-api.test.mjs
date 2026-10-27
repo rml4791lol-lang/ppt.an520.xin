@@ -284,5 +284,20 @@ export async function runClientApiTests({ check }) {
 
     const urlLiterals = MIGRATED_VIEWS.filter((rel) => /\/api\//.test(source(rel)));
     check('迁移后的页面不再出现 /api/ 字面量', urlLiterals.length === 0, urlLiterals.join(', '));
+
+    // PLUGIN-ARCHITECTURE §2.5：插件 UI 复用壳共享组件，拖拽区/30MB 上限只有一份实现
+    const dropzoneConsumers = [
+      'src/components/home/upload-card.tsx',
+      'src/plugins/ppt-replicate/client/beautify-tab.tsx',
+    ];
+    const ownDropzone = dropzoneConsumers.filter((rel) =>
+      !source(rel).includes('@/components/dropzone')
+        || /onDragOver|30 \* 1024 \* 1024/.test(source(rel)));
+    const sharedDropzone = source('src/components/dropzone.tsx');
+    check('上传拖拽区复用壳共享组件：插件不自带拖拽实现与 30MB 上限',
+      ownDropzone.length === 0
+        && /onDragOver/.test(sharedDropzone)
+        && (sharedDropzone.match(/30 \* 1024 \* 1024/g) ?? []).length === 1,
+      ownDropzone.join(', '));
   }
 }

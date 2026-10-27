@@ -52,6 +52,7 @@ src/plugins/<key>/
 - **页面薄壳**：Next 硬约束路由留在 `src/app`，页面文件只做 Suspense + 插件组件（成例：`/beautify/page.tsx` 17 行）。
 - **开关控生死**：`ui.flag` 指向开关板 key——off 时入口不渲染、API 404、页面显示「功能尚未开放」（成例：四件图片编辑工具、ppt_replicate）。
 - **设计约束**：插件 UI 只许用壳的设计 token 与共享组件，不许自带风格（硬编码色值这类违规后续用 lint 拦）。
+- **共享件落地（2026-10-27）**：上传拖拽区抽为 `src/components/dropzone.tsx`，首页文档上传（`upload-card.tsx`）与插件美化页签（`plugins/ppt-replicate/client/beautify-tab.tsx`）复用同一实现（accept / 30MB 上限 / 错误串 / 文件卡 / 键盘与拖拽）；插件不得自带第二份（静态断言在 `scripts/tests/client-api.test.mjs`）。
 - 收拢动作：现存散在壳里的 `if (开关)` 接线，迁移每块时顺手收进该插件的 `ui.entries`，不单独开工程。**已完成（2026-10-27，G2）**：`ppt_replicate` 在侧栏 / upload-card / 模板库三处的硬编码分支清零。
 
 ## 3. 运行时三件（平台层，src/lib/plugin/）

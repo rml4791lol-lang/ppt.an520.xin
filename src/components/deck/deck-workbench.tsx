@@ -518,7 +518,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             <li>重新生成后，当前大纲及你的修改内容将被覆盖。</li>
             <li>重新生成大纲不消耗 🌟 星星；之后的内容梳理同样免费。</li>
           </ul>
-          <p className="mt-3 text-xs text-ink-4">*页面生成阶段才按 10🌟/页 计费</p>
+          <p className="mt-3 text-xs text-ink-4">*页面生成阶段才按页计费</p>
           <div className="mt-5 flex justify-end gap-3">
             <button
               type="button"
@@ -542,7 +542,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
         <Modal title="解锁修改内容" onClose={() => setConfirm(null)}>
           <p className="text-sm leading-6 text-ink-2">
             解锁后可修改大纲与梳理内容；<b className="text-danger">已生成的页面图将作废</b>
-            ，重新确认后需重新生成并重新计费（10🌟/页）。
+            ，重新确认后需重新生成并重新计费。
           </p>
           <div className="mt-5 flex justify-end gap-3">
             <button

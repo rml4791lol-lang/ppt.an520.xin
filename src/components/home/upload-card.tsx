@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -11,15 +11,14 @@ import {
   PlusIcon,
   SparklesIcon,
   TrashIcon,
-  UploadIcon,
 } from "@/components/icons";
+import { Dropzone } from "@/components/dropzone";
 import { ApiClientError } from "@/lib/client/api";
 import { createPagedCopyDeck, parseDeckDocument } from "@/lib/client/deck-api";
 import { useGatedStylePacks } from "@/components/use-gated-style-packs";
 import { PluginSlotPanel, pluginIcon, usePluginEntries } from "@/components/plugin-ui";
 import type { StylePack } from "@/data/style-packs";
 
-const MAX_FILE_SIZE = 30 * 1024 * 1024;
 const DOC_ACCEPT = [".txt", ".md", ".pdf", ".docx"];
 const MAX_PAGE_CHARS = 1500;
 
@@ -36,7 +35,7 @@ const DURATION_OPTIONS = [
 
 const QUALITY_OPTIONS = [
   { value: "light", label: "轻量生图模式", note: "即将上线", disabled: true },
-  { value: "standard", label: "标准生图模式 · 10🌟/页", note: null, disabled: false },
+  { value: "standard", label: "标准生图模式", note: null, disabled: false },
   { value: "fine", label: "精细生图模式", note: "即将上线", disabled: true },
 ];
 
@@ -102,112 +101,6 @@ function Dropdown({
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function Dropzone({
-  accept,
-  file,
-  onFile,
-  title,
-  hint,
-}: {
-  accept: string[];
-  file: File | null;
-  onFile: (file: File | null) => void;
-  title: string;
-  hint: string;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const pick = (f: File | undefined | null) => {
-    if (!f) return;
-    const ext = `.${f.name.split(".").pop()?.toLowerCase() ?? ""}`;
-    if (!accept.includes(ext)) {
-      setError(`仅支持 ${accept.join(" / ")} 格式`);
-      return;
-    }
-    if (f.size > MAX_FILE_SIZE) {
-      setError("单文件最大 30MB");
-      return;
-    }
-    setError(null);
-    onFile(f);
-  };
-
-  if (file) {
-    return (
-      <div className="flex items-center justify-between rounded-2xl border border-brand-line bg-brand-softer px-5 py-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
-            <FileIcon width={18} height={18} />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-ink">{file.name}</p>
-            <p className="text-xs text-ink-3">
-              {(file.size / 1024 / 1024).toFixed(2)} MB
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="移除文件"
-          className="rounded-full p-1.5 text-ink-3 hover:bg-card hover:text-ink"
-          onClick={() => onFile(null)}
-        >
-          <CloseIcon width={16} height={16} />
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={title}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          pick(e.dataTransfer.files?.[0]);
-        }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-14 text-center transition ${
-          dragOver
-            ? "border-brand bg-brand-softer"
-            : "border-line-strong bg-page hover:border-brand-line hover:bg-brand-softer"
-        }`}
-      >
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand">
-          <UploadIcon width={22} height={22} />
-        </span>
-        <p className="mt-4 text-base font-semibold text-ink">{title}</p>
-        <p className="mt-1.5 text-sm text-ink-3">点击此处选择文件</p>
-        <p className="mt-3 text-xs leading-5 text-ink-4">{hint}</p>
-      </div>
-      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept.join(",")}
-        className="hidden"
-        onChange={(e) => {
-          pick(e.target.files?.[0]);
-          e.target.value = "";
-        }}
-      />
     </div>
   );
 }
@@ -515,7 +408,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
               <p className="mt-2 px-1 text-xs text-ink-4">
                 {isCustomDuration && customPageCount === null
                   ? `自定义页数范围 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 页`
-                  : `预计约 ${selectedPageCount} 页 · 生成消耗约 ${selectedPageCount * 10}🌟`}
+                  : `预计约 ${selectedPageCount} 页 · 生成按页计费，确认前显示估价`}
                 {selectedPageCount > 20 && " · 超过 20 页暂不支持转可编辑 PPTX"}
               </p>
             </div>
