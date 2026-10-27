@@ -1,5 +1,5 @@
 // 导出中心动作的 typed intent 契约：deck 图片版/可编辑/文字可编辑导出 + 导出报价。
-// 上传转可编辑是 multipart，没有 JSON body，不在此契约内（见 docs/DEBUG-HANDBOOK.md §29）。
+// 上传转可编辑是 multipart，没有 JSON body，不在此契约内（见 docs/DEBUG-HANDBOOK.md §30）。
 
 export type ExportIntentParams = {
   exportDeckImage: { deckId: string };

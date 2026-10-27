@@ -1,6 +1,6 @@
 // 单页生成/导出动作的 typed intent 契约：客户端与路由共用一份，动作名即既有路由。
 // 旧的无类型 body 完全保留；意图只把「合法动作 + 参数结构」表达进类型，
-// 由 toSinglePageActionCall 决定发往哪条路由（机制与取舍见 docs/DEBUG-HANDBOOK.md §29）。
+// 由 toSinglePageActionCall 决定发往哪条路由（机制与取舍见 docs/DEBUG-HANDBOOK.md §30）。
 
 export type SinglePageIntentParams = {
   /** 逐版本生成（10🌟/版）；requestId 用于幂等重放拒绝 */

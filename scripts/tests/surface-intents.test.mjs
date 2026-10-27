@@ -11,7 +11,7 @@ export async function runSurfaceIntentTests(ctx) {
   const ex = await import('../../src/lib/export-intents.ts');
   const server = await import('../../src/lib/server/intents.ts');
 
-  console.log('\n[4e] 单页 / 导出 typed intent 契约');
+  console.log('\n[4f] 单页 / 导出 typed intent 契约');
 
   const spCalls = [
     { kind: 'generatePage', params: { pageId: 'p', content: 'c' } },
