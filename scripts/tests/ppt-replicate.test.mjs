@@ -1,6 +1,6 @@
 // ppt_replicate 模块测试：复刻 PPT（结构参考 + 真设计）全链路，全 mock。
 // 由 scripts/test-generation.mjs 汇总调用；ctx 由套件注入（fixture 与套件同生命周期）。
-import { existsSync, utimesSync } from 'node:fs';
+import { existsSync, readFileSync, utimesSync } from 'node:fs';
 
 export async function runPptReplicateTests(ctx) {
   const {
@@ -509,6 +509,13 @@ export async function runPptReplicateTests(ctx) {
         && facade.parseIncomingStructure({ family: 'cards' })?.family === 'cards'
         && typeof facade.buildReplicateCopyPrompt === 'function'
         && typeof facade.buildReplicateInstruction === 'function');
+    const singlePagesSrc = readFileSync(
+      new URL('../../src/lib/server/generation/single-pages.ts', import.meta.url),
+      'utf8',
+    );
+    check('平台单页运行时对复刻分支的调用只经 facade',
+      singlePagesSrc.includes("from '@/modules/ppt-replicate/server/facade'")
+        && !singlePagesSrc.includes("from '@/modules/ppt-replicate/server/replicate'"));
 
     const rpShell = await storage.saveFile('uploads', uid, Buffer.from(PNG_1X1_B64, 'base64'), { kind: 'replicate', ext: '.png' }, llmConfig);
     const rpPurge = await singlePages.generateSinglePage(uid, {
