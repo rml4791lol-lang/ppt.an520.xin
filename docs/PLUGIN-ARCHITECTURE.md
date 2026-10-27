@@ -80,6 +80,8 @@ src/plugins/<key>/
 
 迁移（风险从低到高，每次一块、全量门必绿）：模板库 → 导出中心 → ppt-replicate（复刻流水线五段：接入/内容/提示词/生图/导出，数据契约 Ref/Page/Result 冻结）→ 账户计费（钱最后动）。
 
+已知遗留（2026-10-27 记录，本轮不改）：UI 贡献组合根 `src/plugins/ui-registry.ts` 仍手工 import 具体插件的 `ui.ts`，与 `src/plugins/default-profile.ts` 的插件清单构成两份真相——新增插件要改两处，漏改会出现「服务已装配但入口缺失」或反之。后续做法：让 profile 条目携带（或派生）UI 贡献，壳只读一份组合根；完成前两份清单必须在同一个提交里改。
+
 ## 6. 验收线（插件运行时毕业考）
 
 1. 两个先锋插件经 profile 组合启动，`ctx.use('pricing')` / `ctx.use('models')` 可用。

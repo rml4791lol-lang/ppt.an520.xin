@@ -77,7 +77,7 @@ def checks():
         r = subprocess.run(['systemctl', 'is-active', svc], capture_output=True, text=True)
         if r.stdout.strip() != 'active':
             problems.append(svc + ' 未运行')
-    # 2. API 健康契约：ok + llm/image/editable.configured + 可编辑队列
+    # 2. API 健康契约：ok + llm/image/editable.configured + plugins + 可编辑队列
     try:
         ctx = ssl.create_default_context()
         req = urllib.request.Request(HEALTH_URL, headers={'User-Agent': 'anppt-monitor'})
@@ -100,6 +100,10 @@ def checks():
                 problems.append('问题日志写入失败 ' + str(logging.get('writeFailures')) + ' 次（本次进程）')
             if isinstance(logging, dict) and int(logging.get('totalBytes', 0) or 0) > LOG_ALERT_BYTES:
                 problems.append('问题日志体积 ' + str(round(int(logging.get('totalBytes', 0) or 0) / 1024 / 1024, 1)) + 'MiB')
+            plugins = d.get('plugins')
+            # 回滚到无 plugins 字段的旧版是人工动作，不跟着告警；只有显式 error（当前装配坏了）才报。
+            if isinstance(plugins, dict) and plugins.get('error'):
+                problems.append('插件运行时装配失败: ' + str(plugins.get('error'))[:80])
             editable = d.get('editable', {})
             providers = editable.get('providers') or []
             if editable.get('provider') == 'image2ppt' and 'image2ppt' not in providers:
