@@ -377,16 +377,17 @@ export function BeautifyClient() {
     let cancelled = false;
     (async () => {
       try {
-        const session = await getAuthSession();
-        if (cancelled) return;
-        if (!session.authenticated) {
-          setGate("login");
-          return;
-        }
+        // 先看开关再看登录：功能不开放时不该先要求登录（入口消失后深链也能得到明确提示）
         const features = await getFeatureFlags();
         if (cancelled) return;
         if (!features.flags.ppt_replicate) {
           setGate("closed");
+          return;
+        }
+        const session = await getAuthSession();
+        if (cancelled) return;
+        if (!session.authenticated) {
+          setGate("login");
           return;
         }
         const me = await getMe();

@@ -248,9 +248,10 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 
 - 定位：上传参考稿保画面、换文案。不进大纲→风格包工作台。
 - **开关状态（2026-10-13）**：`ppt_replicate` 已由 beta 转 **public**，全员可见可用（侧栏「PPT 美化」、首页「PPT美化」页签、模板库「自己的 PPT」均按 `/api/features` 显隐；服务端硬门仍在）。上线前做了生产真机验收（admin 账号 1 页：结构卡 1/1、`/images/edits` 出图 1536×864、扣 10🌟、`source=replicate`、工作台缺省生成 409 `REPLICATE_PROJECT`），验收项目已删除。
+- **UI 贡献点（2026-10-27，ADR-0001 G2）**：三条入口由 `src/plugins/ppt-replicate/ui.ts` 的 `ui.entries` 声明（静态数据 + 懒加载指令），壳经 `src/plugins/ui-registry.ts` 按 `flag` 过滤、`next/dynamic` 懒加载面板——壳里不再有 `if (ppt_replicate)` 分支；关掉开关三条入口一起消失，改开关无需改壳代码。
 - **回滚**：管理端「功能开关板」把 `ppt_replicate` 转回 `beta`/`off` 即时生效（开关读库不缓存，无需发版重启）。
 - **模块目录（2026-09-06 归拢，首个自包含模块样板）**：`src/modules/ppt-replicate/`——`server/facade.ts` 是模块唯一对外服务端入口（项目/页/版本 + 草稿写入 + 逐页生成 + 提示词契约 + 计费动作声明）；**2026-10-27 实体搬回**：草稿写入与复刻生成在 `server/pages.ts`，平台 `single-pages.ts` 只剩通用单页运行时（`runSinglePageJob` 接受调用方传入的提示词策略，不再认识复刻），扣费/退款/版本表/懒恢复仍只有平台一份。平台不再 import 模块，`import/no-restricted-paths` 对单页运行时恢复生效（§22）。`client/` 全部前端（工作台/ui/规则/请求/交接/拆页/URL/入口卡），边界与四件套见模块 README；薄壳留在 `src/app/(main)/beautify/page.tsx` 与 `src/app/api/tools/replicate/plan/route.ts`。
-- 入口：首页「PPT美化」、模板库「自己的 PPT」、侧栏「PPT 美化」、`/beautify`。旧地址 `/tools/replicate-ppt.html` 跳到 `/beautify`。未登录去 `/login?next=...`；开关不可见显示「功能尚未开放」。`robots` disallow `/beautify` 与 `/tools/`。
+- 入口：首页「PPT美化」、模板库「自己的 PPT」、侧栏「PPT 美化」、`/beautify`。旧地址 `/tools/replicate-ppt.html` 跳到 `/beautify`。开关不可见直接显示「功能尚未开放」（先查开关再要求登录），可见但未登录去 `/login?next=...`。`robots` disallow `/beautify` 与 `/tools/`。
 - 前端拆分（均在模块 `client/` 下）：规则在 `beautify-pages.ts`（扣费名单/失败横幅/草稿/计划回写）；请求在 `beautify-api.ts`；UI 零件在 `beautify-ui.tsx`；`BeautifyClient` 只编排。内部 source 仍是 `replicate`。
 - 链路：参考稿（浏览器拆页）→ 上传壳图 → VLM 读每页画面结构（仅计划阶段）→ LLM 按主题/大纲/材料拆文案 → 逐页 `/images/edits` 换字保画面（10🌟）→ 可选 Codia 转可编辑（20🌟，20 页一批）。
 - 文案：`POST /api/tools/replicate/plan` 只做鉴权/开关/读入，业务在 `runReplicatePlan`。`copyMode` 默认 `improve`。壳图写入 `single_pages.shell_path`，美化页可用 `?projectId=` 恢复。
