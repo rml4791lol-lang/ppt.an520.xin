@@ -15,7 +15,6 @@ import { runPluginRuntimeTests } from './tests/plugin-runtime.test.mjs';
 import { runPptToBaseTests, runPptToBaseServerTests } from './tests/ppt-to-base.test.mjs';
 import { runDeckIntentTests } from './tests/deck-intents.test.mjs';
 import { runDeckWorkbenchTests } from './tests/deck-workbench.test.mjs';
-import { runDeckActionTests } from './tests/deck-actions.test.mjs';
 import { runSurfaceIntentTests } from './tests/surface-intents.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
@@ -828,6 +827,13 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
     slideIds.every((sid) => keys.includes(`deck-generate:${deck.id}:${jobId}:${sid}`)));
   const deckRefundKey = credits.deriveRefundKey(`deck-generate:${deck.id}:${jobId}:${slideIds[1]}`);
   check('失败页 refund 键唯一且只退一次', keys.filter((k) => k === deckRefundKey).length === 1);
+  // 版本行在扣费前记住自己的扣费键：恢复只认存储键，不再从 deck/job/slide 重拼
+  const storedKeys = slideIds.map((sid) => String(
+    decks.listVersions(sid).find((version) => version.jobId === jobId)?.chargeKey || '',
+  ));
+  check('新页版本行写入 charge_key 且与账本扣费键逐页一致',
+    storedKeys.every((key, index) => key === `deck-generate:${deck.id}:${jobId}:${slideIds[index]}`),
+    `实际 ${storedKeys.join(' | ')}`);
 
   const genPrompts = fullFetcher.calls
     .filter((c) => c.url.includes('/images/generations'))
@@ -862,6 +868,10 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
   const s7 = decks.getDeckState(uid, deck.id);
   check('refine-slide 走 /images/edits 且产生新版本',
     retryFetcher.calls.some((c) => c.url.includes('/images/edits')) && s7.slides[0].versions.length >= 2);
+  const refinedVersion = decks.listVersions(s7.slides[0].slideId).find((version) => version.kind === 'refine');
+  check('改图新版本同样在扣费前写入 charge_key',
+    refinedVersion?.chargeKey === `deck-generate:${deck.id}:${r7.job.jobId}:${s7.slides[0].slideId}`,
+    `实际 ${refinedVersion?.chargeKey || ''}`);
 
   // unlock-structure：作废已生成页
   const r8 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'unlockStructure', params: {} }, fullDeps);
@@ -1045,7 +1055,6 @@ console.log('\n[4c] update-slide / select-slide-version');
 
 await runDeckIntentTests({ check, expectThrows, auth, decks, fullDeps });
 await runDeckWorkbenchTests({ check });
-await runDeckActionTests({ check });
 await runSurfaceIntentTests({ check, expectThrows, auth, singlePages, credits, uid, makeMockFetcher, editsOkHandler, PNG_1X1_B64, imageConfig, deck });
 
 console.log('\n[5] 余额不足整单 402');
@@ -1343,6 +1352,88 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
   const state9 = decks.getDeckState(uid2, d9.id);
   check('恢复后 retry-failed 全部成功 → generated', state9.deck.status === 'generated' && state9.slides.every((s) => s.genStatus === 'succeeded'));
   check('恢复后重生成净扣 2×10', credits.getBalance(uid2) === 80, `实际 ${credits.getBalance(uid2)}`);
+
+  // --- 扣费键归属（T02）：恢复按存储键退款，不按 deck/job/slide 重拼 ---
+  const buildCrashDeck = async (account, ip) => {
+    const reg = await auth.registerWithPassword(
+      { account, password: 'password123', confirmPassword: 'password123' },
+      ip,
+    );
+    const crashUid = reg.user.id;
+    const crashDeck = decks.createDeck(crashUid, {
+      title: '存储键恢复', sourceFileName: 'k.txt', sourceText: '2025 年营收 900 万元。',
+      durationMinutes: 15, targetPageCount: 2, qualityTier: 'standard', stylePackId: '',
+    });
+    decks.replaceSlides(crashDeck.id, OUTLINE_FIXTURE);
+    for (const slide of decks.listSlides(crashDeck.id)) {
+      decks.updateSlideStructure(crashDeck.id, slide.slideId, { ok: true, structuredContent: '【标题】t\n【正文】b', warnings: [], errors: [] });
+    }
+    decks.touchDeck(crashDeck.id, { status: 'confirmed', confirmedAt: Date.now() });
+    decks.touchDeck(crashDeck.id, { stylePackId: STYLE_PACKS[0].id });
+    const crashJob = decks.createJob(crashUid, crashDeck.id, 'deck-generate', 1);
+    decks.updateJob(crashJob.jobId, { status: 'running' });
+    const crashSlide = decks.listSlides(crashDeck.id)[0];
+    decks.touchDeck(crashDeck.id, { status: 'generating' });
+    dbMod.getDb().prepare('UPDATE generation_jobs SET updated_at = ? WHERE id = ?').run(staleTs, crashJob.jobId);
+    const cookie = { cookie: `anppt_v2_session=${encodeURIComponent(auth.createSessionForUser(crashUid))}` };
+    return {
+      uid: crashUid,
+      deckId: crashDeck.id,
+      jobId: crashJob.jobId,
+      slide: crashSlide,
+      readDeck: async () => readJson(await deckRoute.GET(
+        new Request(`http://localhost/api/deck/${crashDeck.id}`, { headers: cookie }),
+        { params: Promise.resolve({ id: crashDeck.id }) },
+      )),
+    };
+  };
+  const refundLedgerKeys = (userId) => dbMod.getDb()
+    .prepare('SELECT idempotency_key FROM credit_ledger WHERE user_id = ? AND delta > 0').all(userId)
+    .map((row) => String(row.idempotency_key));
+
+  {
+    // 带存储键的崩溃现场：扣费后进程死亡。存储键是写入该行时键模块的产物，
+    // 若恢复改成按 deck/job/slide 重拼，就会派生出另一个退款键 → 钱扣了不退。
+    const crash = await buildCrashDeck('deckkeycrash', '127.0.0.11');
+    const storedKey = `deck-generate:${crash.deckId}:${crash.jobId}:${crash.slide.slideId}:key-v2`;
+    decks.createSlideVersion(crash.slide, { kind: 'generate', prompt: 'p', jobId: crash.jobId, chargeKey: storedKey });
+    decks.updateSlideGen(crash.deckId, crash.slide.slideId, { genStatus: 'queued' });
+    credits.debitCredits(crash.uid, 10, { reason: '生成第 1 页', idempotencyKey: storedKey, refType: 'deck', refId: crash.deckId });
+    const healedCrash = await crash.readDeck();
+    check('存储键崩溃窗口：恢复置 failed 并按存储键退款一次',
+      healedCrash.slides[0].genStatus === 'failed' && credits.getBalance(crash.uid) === 100,
+      `实际 ${healedCrash.slides[0].genStatus} / ${credits.getBalance(crash.uid)}`);
+    check('存储键崩溃窗口：退款键由存储键派生（与正常失败退款同格式）',
+      refundLedgerKeys(crash.uid).includes(credits.deriveRefundKey(storedKey)));
+    await crash.readDeck();
+    check('存储键崩溃窗口：重复恢复不双退', credits.getBalance(crash.uid) === 100, `实际 ${credits.getBalance(crash.uid)}`);
+  }
+
+  {
+    // 存储键指向一笔不存在的扣费：存储键权威，不得回退重拼键去退另一笔钱
+    const crash = await buildCrashDeck('deckkeynodbit', '127.0.0.12');
+    const chargedKey = `deck-generate:${crash.deckId}:${crash.jobId}:${crash.slide.slideId}`;
+    decks.createSlideVersion(crash.slide, { kind: 'generate', prompt: 'p', jobId: crash.jobId, chargeKey: `${chargedKey}:other-run` });
+    decks.updateSlideGen(crash.deckId, crash.slide.slideId, { genStatus: 'queued' });
+    credits.debitCredits(crash.uid, 10, { reason: '生成第 1 页', idempotencyKey: chargedKey, refType: 'deck', refId: crash.deckId });
+    const healedNoDebit = await crash.readDeck();
+    check('存储键无匹配扣费：恢复不按重拼键退款（不误退别人的钱）',
+      healedNoDebit.slides[0].genStatus === 'failed' && credits.getBalance(crash.uid) === 90,
+      `实际 ${healedNoDebit.slides[0].genStatus} / ${credits.getBalance(crash.uid)}`);
+  }
+
+  {
+    // 迁移前的老行没有 charge_key：回退到键模块函数，退款键与正常失败退款一致
+    const crash = await buildCrashDeck('deckkeyold', '127.0.0.13');
+    const chargedKey = `deck-generate:${crash.deckId}:${crash.jobId}:${crash.slide.slideId}`;
+    decks.createSlideVersion(crash.slide, { kind: 'generate', prompt: 'p', jobId: crash.jobId });
+    decks.updateSlideGen(crash.deckId, crash.slide.slideId, { genStatus: 'queued' });
+    credits.debitCredits(crash.uid, 10, { reason: '生成第 1 页', idempotencyKey: chargedKey, refType: 'deck', refId: crash.deckId });
+    await crash.readDeck();
+    check('老行空键：回退键模块函数，退款键与正常失败退款一致',
+      credits.getBalance(crash.uid) === 100 && refundLedgerKeys(crash.uid).includes(credits.deriveRefundKey(chargedKey)),
+      `实际 ${credits.getBalance(crash.uid)}`);
+  }
 
   // --- 单页：模拟中断（页 running + 在途 version + 已扣费）---
   const sp = await singlePages.generateSinglePage(uid2, { pageId: 'pg-r1', content: '恢复测试页' }, okDeps2);

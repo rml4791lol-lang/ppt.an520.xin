@@ -70,6 +70,8 @@ export interface SlideVersionRow {
   imageUrl: string;
   error: string;
   jobId: string;
+  /** 本页扣费键（扣费前落库；迁移前的老行为空，恢复回退到键模块） */
+  chargeKey: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -158,6 +160,7 @@ function toVersionRow(row: Row): SlideVersionRow {
     imageUrl: String(row.image_url || ''),
     error: String(row.error || ''),
     jobId: String(row.job_id || ''),
+    chargeKey: String(row.charge_key || ''),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   };
@@ -597,18 +600,19 @@ export function nextVersionNo(slideId: string): number {
 
 export function createSlideVersion(
   slide: DeckSlideRow,
-  opts: { kind: string; prompt: string; jobId: string },
+  opts: { kind: string; prompt: string; jobId: string; chargeKey?: string },
 ): SlideVersionRow {
   const ts = nowMs();
   const id = genId('ver');
   const versionNo = nextVersionNo(slide.slideId);
+  const chargeKey = String(opts.chargeKey || '');
   getGenDb()
     .prepare(
       `INSERT INTO slide_versions
-        (id, slide_id, deck_id, version_no, kind, prompt, status, image_path, image_url, error, job_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?)`,
+        (id, slide_id, deck_id, version_no, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?, ?)`,
     )
-    .run(id, slide.slideId, slide.deckId, versionNo, opts.kind, opts.prompt, opts.jobId, ts, ts);
+    .run(id, slide.slideId, slide.deckId, versionNo, opts.kind, opts.prompt, opts.jobId, chargeKey, ts, ts);
   return {
     versionId: id,
     slideId: slide.slideId,
@@ -621,6 +625,7 @@ export function createSlideVersion(
     imageUrl: '',
     error: '',
     jobId: opts.jobId,
+    chargeKey,
     createdAt: ts,
     updatedAt: ts,
   };
