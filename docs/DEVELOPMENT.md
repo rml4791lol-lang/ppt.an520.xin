@@ -52,13 +52,13 @@ src/lib/server/db.ts   持久层 —— node:sqlite（WAL），业务层不手�
 ## 5. 测试与提交
 
 ```bash
-node scripts/test-generation.mjs  # 生成/导出/计费域（全部 mock，零真实付费调用）
-node scripts/test-backend.mjs     # 账户/支付/后台/开关板域
-npm run lint -- --max-warnings=0
-npx tsc --noEmit
-npm run build
-git diff --check
+npm run gate       # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build
+npm run gate:fast  # 迭代快集：跳过 build 与两套测试，其余同一套实现
 ```
+
+- 改业务逻辑必须同步加/改断言；`npm run gate` 全绿才允许提交，断言数变化同步更新 README 与手册 §8。
+- 并行工作时用 `npm run worktree -- <name> [base]` 建工作树（实体 `node_modules`，可跑 tsc；build 只在主仓跑）。
+- 新克隆先启用提交前快集：`git config core.hooksPath .githooks`；紧急绕过 `git commit --no-verify`，完整门由 CI 兜底。
 
 - 改业务逻辑必须同步加/改断言；两套测试全绿才允许提交，断言数变化同步更新 README 与手册 §8。
 - WPS、Image2PPT、Codia、生图、VLM **禁止真实调用进测试**（全部 mock）；真机验证走 dev 环境小额度实测。

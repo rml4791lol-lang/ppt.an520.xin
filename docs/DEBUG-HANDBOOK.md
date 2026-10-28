@@ -108,12 +108,10 @@ NODE
 ## 8. 测试与验证（全部零真实付费调用）
 
 ```bash
-node scripts/test-generation.mjs  # 当前 543 断言，WPS/Image2PPT/Codia/生图/VLM 全部 mock
-node scripts/test-backend.mjs     # 当前 171 断言，含管理员权限/开关板/只读连接检查/ONLYOFFICE/问题日志追踪与健康/共享组件复用
-npm run lint -- --max-warnings=0
-npx tsc --noEmit
-npm run build
-git diff --check
+npm run gate         # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build（全 mock，零真实付费调用）
+npm run gate:fast    # 快集：跳过 build 与两套测试
+npm run test:guardrails  # 护栏自检：用坏夹具证明门/钩子/工作树/发布脚本会红
+# 单跑某一层（排查用）：node scripts/test-generation.mjs（543 断言）/ node scripts/test-backend.mjs（171 断言）
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）
 BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实生图扣费（约 $0.08），慎用
 ```
@@ -154,7 +152,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 密钥只存在于服务器 env，任何情况下不打印、不进仓库、不进前端。
 - 客户端 IP：`getClientIp` 只信 `X-Real-IP`（Caddy 显式 `header_up` 覆写），XFF 仅作无代理兜底——Caddy 对 XFF 是追加链，首值客户端可伪造，限流曾因此可绕（2026-08-24 修）。
 - 大纲与页型契约可继续优化，但必须保持 DSL、历史项目和 `legacySlugs` 兼容，并通过完整生成测试；不得直接照搬第三方模板序列或编造原文没有的页面。
-- commit 用英文祈使句；部署前跑齐 generation/backend/lint/typecheck/build 与 `git diff --check`；部署会重启服务。
+- commit 用英文祈使句；部署前跑 `npm run gate`（完整门，含分支范围空白与冲突标记）；部署会重启服务。
 - 竞品调研资料库：`/Users/an/Archive/2026-08-28-项目清理/anppt-v2-recon/`（旁门/花卷/抖研三站报告 + 可编辑路线调研 RESEARCH-image-to-editable-pptx-2026.md）。
 - 调研资料和已授权前端源码只用于学习机制与交互，不得复制第三方 CDN 图片、PPTX、Logo、品牌文案或远程模板地址进入产品。
 
@@ -338,7 +336,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 站点级状态：根 `not-found.tsx`、`error.tsx`、`global-error.tsx`、`loading.tsx`；`AppShell` 增加跳转主内容链接、移动抽屉 Escape 关闭与滚动锁定、侧栏 `aria-current`、`aria-expanded/controls`。
 - SEO：`robots.ts` 只放行公开内容页，应用页与 API 均禁止抓取；`sitemap.ts` 覆盖首页、模板库、帮助、关于与三份规则页；`public/.well-known/security.txt` 提供安全联系入口。
 - 规则页内容必须与实现保持一致：生成 10🌟/页、可编辑 20🌟/页且单次最多 20 页、失败未完成部分自动退回；改价或改退款规则时同步 `src/data/recharge.ts`、`/help` 与 `/legal/refund`。
-- 校验：`npm run lint -- --max-warnings=0`、`npx tsc --noEmit`、`node scripts/test-backend.mjs`、`node scripts/test-generation.mjs`（538）、`npm run build`；上线后检查 `/sitemap.xml`、`/robots.txt`、`/opengraph-image`、`/.well-known/security.txt` 与 `/help` 的 200 响应。
+- 校验：`npm run gate`；上线后检查 `/sitemap.xml`、`/robots.txt`、`/opengraph-image`、`/.well-known/security.txt` 与 `/help` 的 200 响应。
 
 ## 27. 性能与多用户并发（2026-10-19）
 

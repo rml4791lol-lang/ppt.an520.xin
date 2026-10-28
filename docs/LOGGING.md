@@ -78,6 +78,12 @@ ts level category message detail userId refType refId eventId requestId method r
 
 告警口径：`plugins.error` 表示计价/模型服务不可用——`scripts/verify-health.mjs` 见到即判发布失败并触发回滚，`deploy/anppt-health-monitor.py` 见到即计入异常。回滚到没有 `plugins` 字段的旧 release 是人工止血动作，监控不对“缺字段”告警；发布验证只针对本次刚上线的新 release，缺字段照样判失败并回滚。
 
+健康契约的消费方（改 `/api/health` 字段必须同时核对这三处，缺一处就是发布门与线上告警的认知分叉）：
+
+- `scripts/verify-health.mjs`：发布门。显式 `error` 必失败、缺字段按回滚场景区分（新 release 缺字段照样失败）、`release` 必须与本次部署 commit 一致。
+- `deploy/anppt-health-monitor.py`：root cron 每 5 分钟告警（服务存活、`logging.ok`、`plugins.error`、磁盘、备份新鲜度）。
+- `.agents/skills/anppt-deploy`：部署技能的执行流程（部署 → 健康校验 → 失败回滚），与上面两处共用同一契约。
+
 ## 3. 多人并行修改规则
 
 ### 3.1 开工前
@@ -108,12 +114,7 @@ ts level category message detail userId refType refId eventId requestId method r
 在干净工作区执行：
 
 ```bash
-npm run lint -- --max-warnings=0
-npx tsc --noEmit
-node scripts/test-backend.mjs
-node scripts/test-generation.mjs
-npm run build
-git diff --check
+npm run gate   # 完整门（分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build）
 ```
 
 日志相关额外检查：

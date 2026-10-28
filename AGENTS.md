@@ -14,7 +14,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 架构与开发流程：`docs/DEVELOPMENT.md`（金字塔分层、最小改动、开关板三步、注释纪律、测试与提交）。
 - 动手前先 grep 现有实现：扣费/退星/幂等键/懒恢复/配置快照/功能开关均已成例，照抄模式，不另发明。
 - 代码里克制注释（只留"为什么"），机制与决策原因写进 docs/，不写进代码。
-- 两套测试全绿（`node scripts/test-backend.mjs`、`node scripts/test-generation.mjs`）+ lint + tsc + build 通过，才算一个改动完成。
+- 改动算完成 = `npm run gate` 退出码 0（完整门；迭代用 `npm run gate:fast`）。并行实现用 `npm run worktree -- <name>`，评审按 `docs/REVIEW.md` 两轴判定。
 
 ## Agent skills
 
