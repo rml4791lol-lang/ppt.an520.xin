@@ -6,7 +6,6 @@
 //
 // 扣费键由域键模块产出（整套见 charge-keys.ts，前缀是历史账本契约），本模块只消费键：
 // claim 时把键写进域行，恢复优先读存储键，退款键统一由 credits.deriveRefundKey 定长派生。
-// 同一扣费键重放（客户端 requestId 场景）也在本模块识别：本次不扣也不退，钱归第一笔运行所有。
 // 在飞注册表也在本模块：域代码不再手调 mark 函数，批次作用域用 withInFlightRun，
 // 单次运行在 beginPaidRun 内自动登记/释放。判活（心跳过期）仍归恢复入口。
 import { ApiError, validationError } from '../http';
@@ -52,8 +51,8 @@ export interface ChargedPaidRun<TRow, TResult> {
 }
 
 export type BeginPaidRunResult<TRow, TResult> =
-  | { charged: true; balance: number; run: ChargedPaidRun<TRow, TResult> }
-  | { charged: false; duplicate: boolean; failure: PaidRunFailure };
+  | { charged: true; run: ChargedPaidRun<TRow, TResult> }
+  | { charged: false; failure: PaidRunFailure };
 
 interface InFlightEntry {
   runId: string;
@@ -124,10 +123,7 @@ export async function withInFlightRun<T>(scope: InFlightScope, execute: () => Pr
 }
 
 /**
- * 开始一次计费运行。返回 charged=false 表示本次没有扣费（行已置 failed），无需退款：
- * - 扣费失败（余额不足等）：duplicate=false；
- * - 同一扣费键已有扣费（客户端 requestId 重放）：duplicate=true。钱归第一笔运行所有，
- *   重放既不重复扣也不退款——在这里退会把上一笔的钱退掉。
+ * 开始一次计费运行。返回 charged=false 表示未扣费（行已置 failed，无需退款）。
  * 扣费成功即自动登记在飞；调用方只能用返回的 succeed/fail 收尾。
  */
 export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>): BeginPaidRunResult<TRow, TResult> {
@@ -143,9 +139,8 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     now: input.now,
   });
 
-  let debit;
   try {
-    debit = debitCredits(input.userId, input.unitPrice, {
+    debitCredits(input.userId, input.unitPrice, {
       reason: input.reason,
       idempotencyKey: chargeKey,
       refType: input.refType,
@@ -158,16 +153,7 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     } finally {
       releaseInFlight(chargeKey);
     }
-    return { charged: false, duplicate: false, failure };
-  }
-  if (debit.duplicate) {
-    const failure: PaidRunFailure = { code: 'DUPLICATE_CHARGE', message: '该扣费键已有扣费，本次未重复扣费' };
-    try {
-      input.store.markFailed(row, failure);
-    } finally {
-      releaseInFlight(chargeKey);
-    }
-    return { charged: false, duplicate: true, failure };
+    return { charged: false, failure };
   }
 
   try {
@@ -187,12 +173,11 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     } finally {
       releaseInFlight(chargeKey);
     }
-    return { charged: false, duplicate: false, failure };
+    return { charged: false, failure };
   }
 
   return {
     charged: true,
-    balance: debit.balance,
     run: {
       row,
       succeed(result: TResult): void {

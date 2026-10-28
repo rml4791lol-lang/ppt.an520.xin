@@ -67,8 +67,8 @@ export async function runPaidRunTests(ctx) {
       now: () => startedAt,
     });
     check('先落 claim 行再扣费（claim 时余额尚未扣，扣费后 90）',
-      began.charged === true && began.balance === 90 && events[0] === `claim:${key}` && balanceAtClaim === 100 && credits.getBalance(uid) === 90,
-      `实际 ${began.balance} / ${events[0]} / ${balanceAtClaim} / ${credits.getBalance(uid)}`);
+      began.charged === true && events[0] === `claim:${key}` && balanceAtClaim === 100 && credits.getBalance(uid) === 90,
+      `实际 ${events[0]} / ${balanceAtClaim} / ${credits.getBalance(uid)}`);
     check('扣费金额 = 启动时单价快照',
       Number(ledgerRow(key)?.delta) === -10 && String(ledgerRow(key)?.event_type) === 'debit',
       `实际 ${JSON.stringify(ledgerRow(key))}`);
@@ -123,63 +123,28 @@ export async function runPaidRunTests(ctx) {
   }
 
   {
-    // --- 退款金额取账本实扣，不取单价快照（换价 / 迟到扣费时两者可能不同）---
+    // --- 退款金额取账本实扣，不取单价快照（重放同一扣费键时两者可能不同）---
     const uid = await makeUser('actual');
     const key = 'deck-generate:d-actual:j-actual:s-actual';
     credits.debitCredits(uid, 7, { reason: '旧进程扣费', idempotencyKey: key, refType: 'deck', refId: 'd-actual' });
-    paidRun.failPaidRun({
-      userId: uid, chargeKey: key, refundReason: '第 1 页生成中断退回', refType: 'deck', refId: 'd-actual', settle: () => {},
+    const began = paidRun.beginPaidRun({
+      domain: 'deck',
+      userId: uid,
+      action: 'deck_page_generate',
+      unitPrice: 10,
+      chargeKey: key,
+      refType: 'deck',
+      refId: 'd-actual',
+      reason: '生成第 1 页',
+      refundReason: '第 1 页生成失败退回',
+      store: makeStore([]),
     });
+    check('重放同一扣费键：幂等扣费不多扣（余额仍 93）',
+      began.charged === true && credits.getBalance(uid) === 93, `实际 ${credits.getBalance(uid)}`);
+    began.run.fail({ code: 'IMAGE_FAILED', message: 'x' });
     check('退款按账本实扣金额（7，不是快照 10）',
       credits.getBalance(uid) === 100 && refundRows(uid)[0]?.delta === 7,
       `实际 ${credits.getBalance(uid)} / ${JSON.stringify(refundRows(uid))}`);
-  }
-
-  {
-    // --- 同一扣费键重放（客户端 requestId 场景）：钱归第一笔运行所有，重放不双扣、不退款 ---
-    const uid = await makeUser('duplicate');
-    const key = 'ppt-to-base:dup-user:req-dup';
-    const first = paidRun.beginPaidRun({
-      domain: 'ppt-to-base',
-      userId: uid,
-      action: 'ppt_to_base',
-      unitPrice: 5,
-      chargeKey: key,
-      refType: 'ppt-to-base',
-      refId: 'req-dup',
-      reason: 'PPT 转模版底座',
-      refundReason: '底座生成失败退回',
-      store: makeStore([]),
-    });
-    check('首笔扣费 5 并在飞', first.charged === true && first.balance === 95 && paidRun.isInFlight(key));
-    let duplicateFailure = null;
-    const replay = paidRun.beginPaidRun({
-      domain: 'ppt-to-base',
-      userId: uid,
-      action: 'ppt_to_base',
-      unitPrice: 5,
-      chargeKey: key,
-      refType: 'ppt-to-base',
-      refId: 'req-dup',
-      reason: 'PPT 转模版底座',
-      refundReason: '底座生成失败退回',
-      store: {
-        claim: (chargeKey) => ({ chargeKey }),
-        markSucceeded: () => {},
-        markFailed: (_row, failure) => { duplicateFailure = failure; },
-      },
-    });
-    check('重放：报告 duplicate、不重复扣费、不退款、本次行置 failed',
-      replay.charged === false && replay.duplicate === true
-        && replay.failure.code === 'DUPLICATE_CHARGE'
-        && duplicateFailure?.code === 'DUPLICATE_CHARGE'
-        && credits.getBalance(uid) === 95 && refundRows(uid).length === 0,
-      `实际 ${JSON.stringify(replay)} / ${credits.getBalance(uid)} / ${JSON.stringify(refundRows(uid))}`);
-    check('重放不释放原运行的在飞登记', paidRun.isInFlight(key));
-    first.run.fail({ code: 'IMAGE_FAILED', message: 'x' });
-    check('原运行失败仍按实扣金额退一次',
-      credits.getBalance(uid) === 100 && refundRows(uid).length === 1 && !paidRun.isInFlight(key),
-      `${credits.getBalance(uid)} / ${JSON.stringify(refundRows(uid))}`);
   }
 
   {
