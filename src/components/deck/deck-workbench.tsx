@@ -8,16 +8,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
 import {
-  deckIntentAction,
   estimateCredits,
   exportDeckImage,
   renameProject,
-  type DeckIntentResult,
   type DeckState,
 } from "@/lib/client/deck-api";
 import { ApiClientError } from "@/lib/client/api";
 import { deriveDeckAvailability, type DeckAvailability } from "@/lib/client/deck-availability";
-import type { DeckIntent, DeckIntentKind } from "@/lib/deck-intents";
+import { normalizeDeckActionError, type DeckActionRun } from "@/lib/client/deck-actions";
 import { StepPrepare } from "@/components/deck/step-prepare";
 import { StepOutline } from "@/components/deck/step-outline";
 import { StepStructure } from "@/components/deck/step-structure";
@@ -29,6 +27,7 @@ import {
   useCreditBalance,
   useDeckState,
 } from "@/components/deck/use-deck-state";
+import { useDeckActions, type DeckActionBusy } from "@/components/deck/use-deck-actions";
 
 export const DECK_STEPS = ["上传内容", "编辑大纲", "内容梳理", "选择风格", "生成页面"] as const;
 
@@ -52,11 +51,8 @@ export function deriveStep(state: DeckState): number {
   }
 }
 
-/** 意图执行器：响应附带字段由 kind 决定（见 DeckIntentResult） */
-export type DeckRun = <K extends DeckIntentKind>(
-  intent: Extract<DeckIntent, { kind: K }>,
-  opts?: { silent?: boolean },
-) => Promise<DeckIntentResult<K> | null>;
+/** 意图执行器：402 归一、余额刷新、busy 作用域与提示都由执行器负责（见 src/lib/client/deck-actions.ts） */
+export type DeckRun = DeckActionRun;
 
 /** 各步组件共享的操作上下文 */
 export interface DeckCtx {
@@ -64,6 +60,8 @@ export interface DeckCtx {
   /** 按钮可用性统一从 deck 状态派生，组件不再各写布尔判断 */
   availability: DeckAvailability;
   run: DeckRun;
+  /** 在飞动作：键 = 动作类型 + 实体，一个动作只锁它自己（相关动作才禁用） */
+  busy: DeckActionBusy;
   toast: (text: string, opts?: { actionLabel?: string; onAction?: () => void; duration?: number }) => void;
   goStep: (step: number) => void;
 }
@@ -79,12 +77,17 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   const { state, fatalError, applyState } = useDeckState(deckId);
   const balance = useCreditBalance();
   const { toasts, push: toast, dismiss } = useToasts();
+  const [insufficient, setInsufficient] = useState<string | null>(null);
+  const { run, busy } = useDeckActions({
+    deckId,
+    onState: applyState,
+    onInsufficientCredits: setInsufficient,
+    toast,
+  });
 
   const [viewStep, setViewStep] = useState<number | null>(null);
-  const [busyKind, setBusyKind] = useState<"outline" | "structure" | null>(null);
   const [outlineError, setOutlineError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmKind | null>(null);
-  const [insufficient, setInsufficient] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState<{ url: string; pageCount: number } | null>(null);
   const [estimate, setEstimate] = useState<{ credits: number; unitPrice: number; pages: number } | null>(null);
@@ -97,6 +100,9 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
     [state],
   );
   const generating = availability?.generating ?? false;
+  // 在飞动作按「动作类型 + 实体」派生：大纲与梳理互不阻塞，也不再是一个面板级布尔
+  const outlineBusy = busy("generateOutline");
+  const structureBusy = busy("structureSlides");
 
   const goStep = useCallback(
     (step: number) => {
@@ -105,39 +111,11 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
     [derivedStep],
   );
 
-  // ---------- 统一意图执行：错误归一化（402 → 星星不足弹窗，其余 toast） ----------
-  const run = useCallback(
-    async <K extends DeckIntentKind,>(
-      intent: Extract<DeckIntent, { kind: K }>,
-      opts: { silent?: boolean } = {},
-    ): Promise<DeckIntentResult<K> | null> => {
-      try {
-        const result = await deckIntentAction(deckId, intent);
-        applyState(result);
-        return result;
-      } catch (error) {
-        const err =
-          error instanceof ApiClientError
-            ? error
-            : new ApiClientError("UNKNOWN", "操作失败，请重新尝试", 0, true);
-        if (err.isInsufficientCredits) {
-          setInsufficient(err.message || "🌟 星星不足，请充值后继续");
-        } else if (!opts.silent) {
-          toast(err.message);
-        }
-        return null;
-      }
-    },
-    [deckId, applyState, toast],
-  );
-
   // ---------- 大纲生成：进入页面时若尚未有大纲则自动触发（同步长请求，等待屏承载） ----------
   const triggerOutline = useCallback(
     async (force: boolean) => {
-      setBusyKind("outline");
       setOutlineError(null);
       const result = await run({ kind: "generateOutline", params: force ? { force: true } : {} }, { silent: true });
-      setBusyKind(null);
       if (!result) {
         setOutlineError("大纲生成失败，本次失败不扣除星星，可重新尝试。");
       }
@@ -194,23 +172,22 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
       setExportDone({ url: result.url, pageCount: result.pageCount });
       notifyCreditsRefresh();
     } catch (error) {
-      const err = error instanceof ApiClientError ? error : null;
-      if (err?.isInsufficientCredits) setInsufficient(err.message);
-      else toast(err?.message ?? "导出失败，请重新尝试");
+      // 402 归一只有一处（src/lib/client/deck-actions.ts）；导出与意图动作共用同一路由
+      const failure = normalizeDeckActionError(error);
+      if (failure.insufficient) setInsufficient(failure.message);
+      else toast(failure.message);
     } finally {
       setExporting(false);
     }
   }, [state, exporting, deckId, toast]);
 
   // ---------- 确认弹窗的确认动作 ----------
-  const confirmBusy = busyKind !== null;
+  const confirmBusy = outlineBusy || structureBusy;
   const onConfirm = useCallback(async () => {
     if (!confirm || !state) return;
     if (confirm.kind === "confirm-structure") {
       setConfirm(null);
-      setBusyKind("structure");
       const result = await run({ kind: "structureSlides", params: {} }, { silent: true });
-      setBusyKind(null);
       if (result) {
         const failed = result.failedSlides?.length ?? 0;
         toast(
@@ -266,8 +243,8 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   );
 
   const ctx: DeckCtx | null = useMemo(
-    () => (state && availability ? { state, availability, run, toast, goStep } : null),
-    [state, availability, run, toast, goStep],
+    () => (state && availability ? { state, availability, run, busy, toast, goStep } : null),
+    [state, availability, run, busy, toast, goStep],
   );
 
   // ---------- 终态错误屏（401/404） ----------
@@ -364,7 +341,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             const done = i < derivedStep;
             const current = i === activeStep;
             const clickable =
-              !generating && i > 0 && i <= derivedStep && !confirmBusy && busyKind === null;
+              !generating && i > 0 && i <= derivedStep && !confirmBusy;
             return (
               <li key={label} className="flex min-w-0 flex-1 items-center last:flex-none">
                 <button
@@ -420,7 +397,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             {activeStep === 0 && (
               <StepPrepare
                 state={state}
-                busy={busyKind === "outline"}
+                busy={outlineBusy}
                 error={outlineError ?? (state.deck.error || null)}
                 onRetry={() => void triggerOutline(true)}
               />
@@ -428,7 +405,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             {ctx && activeStep === 1 && (
               <StepOutline
                 ctx={ctx}
-                busy={busyKind === "outline"}
+                busy={outlineBusy}
                 onEnterStructure={() => setConfirm({ kind: "confirm-structure" })}
                 onRegenOutline={() => setConfirm({ kind: "regen-outline" })}
                 onUnlock={() => setConfirm({ kind: "unlock-structure" })}
@@ -437,7 +414,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             {ctx && activeStep === 2 && (
               <StepStructure
                 ctx={ctx}
-                structuring={busyKind === "structure"}
+                structuring={structureBusy}
                 onConfirmFreeze={() => {
                   if (!ctx.availability.structureReady) {
                     toast(`还有 ${ctx.availability.pendingStructure} 页未完成梳理，暂不可确认`);
@@ -474,7 +451,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
       </main>
 
       {/* 梳理/大纲长请求遮罩 */}
-      {busyKind === "structure" && (
+      {structureBusy && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-page/80 backdrop-blur-sm">
           <div className="flex flex-col items-center rounded-2xl border border-line bg-card px-10 py-8 shadow-pop">
             <Spinner className="text-[28px]" />
