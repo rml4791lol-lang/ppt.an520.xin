@@ -1,23 +1,23 @@
 // 复刻 PPT：保底图画面世界（媒介/场景/构图），只换文案与旧身份。
 // 结构卡走 VLM（平台吸收，失败降级为空卡不阻塞生图）；成图走 /images/edits。
-// 最终提示词由视觉计划的 replicate 模式装配（保画面合同与换文案配方只在计划里一份），
-// 本模块只解析结构卡、配色策略与文案计划。
+// 复刻不得走 buildSlideImagePrompt：那条链会按主题推断医院摄影/商务汇报，把壳画风冲掉。
 import { chatCompletion, type EngineDeps } from '@/lib/server/engine'
 import { ApiError, validationError } from '@/lib/server/http'
 import { consumeRateLimit, hitRateLimit } from '@/lib/server/rate-limit'
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config'
 import { parseOwnedUploadRelPath, readSiteFile } from '@/lib/server/generation/storage'
 import { cleanString } from '@/lib/server/generation/types'
-import type { ReplicateColorMode, ReplicateStructureCard } from '@/lib/server/generation/visual-plan'
 
-export type { ReplicateColorMode } from '@/lib/server/generation/visual-plan'
-// 复刻合同与换文案配方归视觉计划；这里重导出以保持模块对外契约不变。
-export {
-  buildReplicateCopyPrompt,
-  buildReplicateInstruction,
-} from '@/lib/server/generation/visual-plan'
+export type ReplicateColorMode = 'new-theme' | 'follow-shell'
 
-export type SlideStructureCard = ReplicateStructureCard
+export interface SlideStructureCard {
+  family: string
+  zones: string
+  slots: string
+  hierarchy: string
+  world: string
+  forbidden: string[]
+}
 
 const STRUCTURE_EXTRACT_PROMPT = `你是幻灯片结构分析器。看这张 PPT 页图，输出一个 JSON 对象（不要解释、不要代码块外的文字），字段：
 - family: 页角色，取值 cover / toc / section / cards / two-column / table / metric / process / image-led / mixed
@@ -132,6 +132,57 @@ export function parseStructureCard(raw: string): SlideStructureCard | null {
     .slice(0, 12)
   if (!family && !zones && !slots && !world) return null
   return { family, zones, slots, hierarchy, world, forbidden }
+}
+
+export function buildReplicateInstruction(opts: {
+  structure: SlideStructureCard | null
+  colorMode: ReplicateColorMode
+}): string {
+  const colorLine =
+    opts.colorMode === 'follow-shell'
+      ? '配色策略：跟随底图的主辅色、对比度、色温与材质；媒介和场景不得改种。'
+      : '配色策略：只换色板，媒介、场景、构图、道具与装饰密度仍跟底图。'
+  const structureLines = opts.structure
+    ? [
+        `结构卡（槽位与分区必须对齐）：`,
+        `- 页角色：${opts.structure.family || 'mixed'}`,
+        `- 分区：${opts.structure.zones || '从底图归纳'}`,
+        `- 槽位：${opts.structure.slots || '从底图归纳'}`,
+        `- 层级：${opts.structure.hierarchy || '标题明显大于正文'}`,
+        opts.structure.world ? `- 画面世界：${opts.structure.world}` : '- 画面世界：从底图归纳媒介与场景',
+        opts.structure.forbidden.length > 0
+          ? `- 禁止带入的旧身份：${opts.structure.forbidden.join('、')}`
+          : '- 禁止带入：底图上的旧文字、Logo、人物姓名、品牌名、旧数据',
+      ]
+    : [
+        '未能解析结构卡时，仍从底图自行归纳分区、槽位数、媒介与场景。',
+        '禁止带入底图上的旧文字、Logo、人物姓名、品牌名、旧数据。',
+      ]
+  return [
+    '复刻合同：换文案、保画面。必须保留底图的媒介（水彩/手绘/摄影/界面嵌在场景里等）、场景、构图、道具、光影和装饰密度。',
+    '禁止改成白底商务信息图、医院实拍或扁平图标页，除非底图本身就是那种。禁止只抽取「几张卡」然后另起炉灶。',
+    '把底图上所有可见旧文字换成上方给定文案；旧产品名、旧界面文案、Logo 与旧数据不得保留。可见文字必须逐字来自给定文案。',
+    ...structureLines,
+    colorLine,
+  ].join('\n')
+}
+
+/** 复刻专用文案段：不注入风格包与主题配图策略。 */
+export function buildReplicateCopyPrompt(input: { title: string; content: string }): string {
+  const copy = input.content
+    .split(/\n+/)
+    .map((line) => cleanString(line, 1000))
+    .filter(Boolean)
+  return [
+    '在已上传的底图上改图，输出一张完整的 16:9 幻灯片终图。',
+    input.title ? `页面标题：${input.title}` : '',
+    copy.length > 0
+      ? `页面文案（必须逐字完整呈现，不得增删、不得改写）：\n${copy.map((line) => `- ${line}`).join('\n')}`
+      : '',
+    '本页只允许出现以上标题与文案中的文字；底图旧字全部替换，不得另写标语。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /** 从壳图抽取结构卡；任何失败返回 null，调用方继续生图。 */

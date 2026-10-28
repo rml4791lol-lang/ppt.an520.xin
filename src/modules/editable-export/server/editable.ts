@@ -85,12 +85,6 @@ export interface EditableExportView {
   reused: boolean;
 }
 
-/** 旧单页/上传 starter 的兼容句柄（T11 迁移后随旧 starter 一起删除）。 */
-export interface StartedEditableExport extends EditableExportView {
-  /** 测试用：等待管线结束。路由默认后台执行（void）。 */
-  done: Promise<void>;
-}
-
 type ExportRow = Record<string, string | number | null>;
 type EditableRefType = 'deck' | 'single-page' | 'upload';
 
@@ -126,6 +120,8 @@ export interface EditableExportSource {
   fingerprint(pages: readonly EditableExportPage[]): string;
   /** 上传来源落库的展示字段（站内来源为空）。 */
   meta?: EditableSourceMeta;
+  /** 来源产物在发起未成行或复用成功结果后不再需要时的清理（上传临时 PDF）；后台管线终态清理不经过这里。 */
+  cleanup?(): Promise<void>;
 }
 
 /** 已配置的可编辑转换通道，按主通道优先级排序（回退顺序唯一来源在 providers/registry）。 */
@@ -224,6 +220,102 @@ export function deckEditableSource(userId: string, deckId: string): EditableExpo
 /** 整套轻量文字可编辑导出（5🌟/页）：产品上限 50，不走上游通道。 */
 export function deckTextEditableSource(userId: string, deckId: string): EditableExportSource {
   return deckSource(userId, deckId, 'editable_text', '还有页面未生成成功，完成整套生成后才能转文字可编辑');
+}
+
+/** 单页项目 → 可编辑 PPTX（20🌟/页，同 Codia 管线）：纳入全部有生效版本的页，按页序。 */
+export function singlePageEditableSource(userId: string, projectId: string): EditableExportSource {
+  const id = cleanString(projectId, 80);
+  return {
+    userId,
+    refType: 'single-page',
+    refId: id,
+    chargeAction: 'export_editable',
+    readPages: () => {
+      // 未生成成功的页在取页时过滤（历史行为）；空项目由 NOTHING_TO_EXPORT 拒绝。
+      const pages = listSingleProjectPages(userId, id).filter((page) => page.activeVersionId);
+      if (pages.length === 0) {
+        throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
+      }
+      return pages.map((page) => ({ versionId: cleanString(page.activeVersionId, 100) }));
+    },
+    // 取页已过滤 → 共享入口的缺版本判定不会被单页来源触发，文案只作兜底。
+    notReadyMessage: '还有页面未生成成功，完成生成后才能转可编辑',
+    pageCap: (config) => ({ capacity: pageCapacity(config), scope: '单套' }),
+    fingerprint: (pages) => fingerprintSource('single-page', pages.map((page) => page.versionId)),
+  };
+}
+
+/**
+ * 上传 PDF 或有序图片 → 可编辑来源：图片先合成为 image-only PDF，再复用同一 Codia 管线。
+ * 建 PDF 与落盘临时源文件在这里完成；页数上限、复用与扣费仍由共享入口判定，
+ * 入口未成行或复用成功结果时由 cleanup 删除临时文件（与旧 starter 的清理时机一致）。
+ */
+export async function uploadedEditableSource(
+  userId: string,
+  files: UploadedEditableFile[],
+  deps: EditableExportDeps = {},
+): Promise<EditableExportSource> {
+  const config = snapshotEditableDeps(deps).config;
+  // 未配置通道优先报不可用（与旧 starter 一致）；之后才校验文件形状。
+  if (!isEditableExportConfigured(config)) {
+    throw notConfiguredError();
+  }
+  if (!Array.isArray(files) || files.length === 0) throw validationError('请选择 PDF 或图片文件');
+  const capacity = pageCapacity(config);
+  if (files.length > capacity) {
+    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${capacity} 个图片文件`, 400, false);
+  }
+  const totalBytes = files.reduce((sum, file) => sum + file.data.length, 0);
+  if (totalBytes <= 0) throw new ApiError('EMPTY_FILE', '文件内容为空', 400, false);
+  if (totalBytes > config.uploadMaxBytes) {
+    throw new ApiError('FILE_TOO_LARGE', `文件合计不能超过 ${Math.floor(config.uploadMaxBytes / 1024 / 1024)}MB`, 413, false);
+  }
+
+  const pdfFiles = files.filter((file) =>
+    file.mime === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'),
+  );
+  if (pdfFiles.length > 0 && (pdfFiles.length !== 1 || files.length !== 1)) {
+    throw validationError('PDF 请单独上传；多张图片可以按顺序一次上传');
+  }
+
+  let pdf: Buffer;
+  let pageCount: number;
+  let sourceName: string;
+  if (pdfFiles.length === 1) {
+    pdf = pdfFiles[0].data;
+    pageCount = await getPdfPageCount(pdf);
+    sourceName = cleanString(pdfFiles[0].name, 180) || '上传的 PDF';
+  } else {
+    pdf = await buildImagePdf(files.map((file) => file.data));
+    pageCount = files.length;
+    sourceName = files.length === 1
+      ? cleanString(files[0].name, 180) || '上传的图片'
+      : `${files.length} 张图片`;
+  }
+  if (pageCount < 1) throw new ApiError('EMPTY_FILE', '文件中没有可转换页面', 400, false);
+
+  const fingerprint = createHash('sha256').update(pdf).digest('hex');
+  const sourceId = `upload_${fingerprint.slice(0, 32)}`;
+  const saved = await saveFile('uploads', userId, pdf, { kind: 'editable-sources', ext: '.pdf', id: sourceId }, config);
+  const sourceRow: ExportRow = { ref_type: 'upload', user_id: userId, source_path: saved.relPath };
+  let discarded = false;
+  return {
+    userId,
+    refType: 'upload',
+    refId: sourceId,
+    chargeAction: 'export_editable',
+    readPages: () => Array.from({ length: pageCount }, () => ({ versionId: sourceId })),
+    notReadyMessage: '上传文件还没有可转换页面，请重新上传',
+    pageCap: (capConfig) => ({ capacity: pageCapacity(capConfig), scope: '单次' }),
+    fingerprint: () => fingerprint,
+    meta: { path: saved.relPath, name: sourceName, mime: 'application/pdf' },
+    cleanup: async () => {
+      // 内容寻址路径会被后续同内容上传重写；同一来源只清理一次，避免误删新请求的临时文件。
+      if (discarded) return;
+      discarded = true;
+      await cleanupUploadedEditableSource(sourceRow, config);
+    },
+  };
 }
 
 function ensureEditablePipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
@@ -343,16 +435,11 @@ async function buildImagePdf(images: Buffer[]): Promise<Buffer> {
     addPage(size: [number, number]): {
       drawImage(image: EmbeddedImage, opts: { x: number; y: number; width: number; height: number }): void;
     };
-    setCreationDate(date: Date): void;
-    setModificationDate(date: Date): void;
     save(): Promise<Uint8Array>;
   }
   const require = createRequire(import.meta.url);
   const { PDFDocument } = require('pdf-lib') as { PDFDocument: { create(): Promise<PdfDoc> } };
   const pdf = await PDFDocument.create();
-  // 相同图片必须生成逐字节相同的 PDF：pdf-lib 默认写入当前时间，会让指纹去重跨秒失效
-  pdf.setCreationDate(new Date(0));
-  pdf.setModificationDate(new Date(0));
   const compressPages = images.length > LARGE_SOURCE_PAGES;
   for (const image of images) {
     const isJpeg = image.length >= 3 && image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff;
@@ -752,8 +839,19 @@ export async function startEditableExport(
   kind: EditableExportKind,
   options: { force?: boolean; deps?: EditableExportDeps } = {},
 ): Promise<EditableExportView> {
-  const { view } = await startEditableExportRun(source, kind, options);
-  return view;
+  const runDeps = snapshotEditableDeps(options.deps ?? {});
+  let launched: { view: EditableExportView; done: Promise<void> };
+  try {
+    launched = await startEditableExportRun(source, kind, { force: options.force, deps: runDeps });
+  } catch (error) {
+    // 未成行时来源产物不会被后台管线消费，就地清理（上传临时 PDF）；已建行的清理归管线终态。
+    await source.cleanup?.();
+    throw error;
+  }
+  runDeps.onPipelineDone?.(launched.done);
+  // 复用既有成功结果时本次上传的临时文件不再被任何管线消费，立即删除（与旧 starter 行为一致）。
+  if (launched.view.reused && launched.view.status === 'succeeded') await source.cleanup?.();
+  return launched.view;
 }
 
 async function startEditableExportRun(
@@ -777,7 +875,7 @@ async function startEditableExportRun(
   if (pages.some((page) => !page.versionId)) {
     throw new ApiError('EXPORT_NOT_READY', source.notReadyMessage, 409, false);
   }
-  const launched = await launchEditableExport(
+  return launchEditableExport(
     source.userId,
     source.refType,
     source.refId,
@@ -789,8 +887,6 @@ async function startEditableExportRun(
     kind,
     source.chargeAction,
   );
-  runDeps.onPipelineDone?.(launched.done);
-  return launched;
 }
 
 type LaunchDecision = { row: ExportRow; created: boolean };
@@ -909,109 +1005,6 @@ async function launchEditableExport(
     },
     done,
   };
-}
-
-/** 单页项目 → 可编辑 PPTX（20🌟/页，同 Codia 管线）。纳入全部成功页，按页序。 */
-export async function startSinglePageEditableExport(
-  userId: string,
-  projectId: string,
-  deps: EditableExportDeps = {},
-  options: { force?: boolean } = {},
-): Promise<StartedEditableExport> {
-  const runDeps = snapshotEditableDeps(deps);
-  const config = runDeps.config;
-  if (!isEditableExportConfigured(config)) {
-    throw notConfiguredError();
-  }
-  const cleanId = cleanString(projectId, 80);
-  const pages = listSingleProjectPages(userId, cleanId).filter((page) => page.activeVersionId);
-  if (pages.length === 0) {
-    throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
-  }
-  assertEditablePageCount(pages.length, pageCapacity(config), '单套');
-  const versionIds = pages.map((page) => cleanString(page.activeVersionId, 100));
-  const { view, done } = await launchEditableExport(
-    userId,
-    'single-page',
-    cleanId,
-    pages.length,
-    fingerprintSource('single-page', versionIds),
-    runDeps,
-    options,
-  );
-  return { ...view, done };
-}
-
-/** 上传 PDF 或有序图片 → 可编辑 PPTX。图片会先合成为 image-only PDF，再复用同一 Codia 管线。 */
-export async function startUploadedEditableExport(
-  userId: string,
-  files: UploadedEditableFile[],
-  deps: EditableExportDeps = {},
-  options: { force?: boolean } = {},
-): Promise<StartedEditableExport> {
-  const runDeps = snapshotEditableDeps(deps);
-  const config = runDeps.config;
-  if (!isEditableExportConfigured(config)) {
-    throw notConfiguredError();
-  }
-  if (!Array.isArray(files) || files.length === 0) throw validationError('请选择 PDF 或图片文件');
-  const capacity = pageCapacity(config);
-  if (files.length > capacity) {
-    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${capacity} 个图片文件`, 400, false);
-  }
-  const totalBytes = files.reduce((sum, file) => sum + file.data.length, 0);
-  if (totalBytes <= 0) throw new ApiError('EMPTY_FILE', '文件内容为空', 400, false);
-  if (totalBytes > config.uploadMaxBytes) {
-    throw new ApiError('FILE_TOO_LARGE', `文件合计不能超过 ${Math.floor(config.uploadMaxBytes / 1024 / 1024)}MB`, 413, false);
-  }
-
-  const pdfFiles = files.filter((file) =>
-    file.mime === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'),
-  );
-  if (pdfFiles.length > 0 && (pdfFiles.length !== 1 || files.length !== 1)) {
-    throw validationError('PDF 请单独上传；多张图片可以按顺序一次上传');
-  }
-
-  let pdf: Buffer;
-  let pageCount: number;
-  let sourceName: string;
-  if (pdfFiles.length === 1) {
-    pdf = pdfFiles[0].data;
-    pageCount = await getPdfPageCount(pdf);
-    sourceName = cleanString(pdfFiles[0].name, 180) || '上传的 PDF';
-  } else {
-    pdf = await buildImagePdf(files.map((file) => file.data));
-    pageCount = files.length;
-    sourceName = files.length === 1
-      ? cleanString(files[0].name, 180) || '上传的图片'
-      : `${files.length} 张图片`;
-  }
-  if (pageCount < 1) throw new ApiError('EMPTY_FILE', '文件中没有可转换页面', 400, false);
-  assertEditablePageCount(pageCount, capacity, '单次');
-
-  const fingerprint = createHash('sha256').update(pdf).digest('hex');
-  const sourceId = `upload_${fingerprint.slice(0, 32)}`;
-  const saved = await saveFile('uploads', userId, pdf, { kind: 'editable-sources', ext: '.pdf', id: sourceId }, config);
-  const sourceRow: ExportRow = { ref_type: 'upload', user_id: userId, source_path: saved.relPath };
-  try {
-    const { view, done } = await launchEditableExport(
-      userId,
-      'upload',
-      sourceId,
-      pageCount,
-      fingerprint,
-      runDeps,
-      options,
-      { path: saved.relPath, name: sourceName, mime: 'application/pdf' },
-    );
-    if (view.reused && view.status === 'succeeded') {
-      await cleanupUploadedEditableSource(sourceRow, config);
-    }
-    return { ...view, done };
-  } catch (error) {
-    await cleanupUploadedEditableSource(sourceRow, config);
-    throw error;
-  }
 }
 
 /** 行上的通道：注入的 registry 优先（测试），缺失时回落到历史默认 Codia。 */

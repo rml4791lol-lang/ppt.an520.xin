@@ -2,7 +2,6 @@
 // 由 scripts/test-generation.mjs 注入 ctx 调用；exportsLib 指向模块服务端出口。
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { startEditableWithDone } from './editable-start-helpers.mjs';
 
 export async function runEditableExportTests(ctx) {
   const {
@@ -10,11 +9,23 @@ export async function runEditableExportTests(ctx) {
     decks, singlePages, makeMockFetcher, editsOkHandler, PNG_1X1_B64, deck, actions, STYLE_PACKS, engineConfig, engineHandlers, imageConfig, jsonResponse,
   } = ctx;
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
-  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
+  // 生产 view 无 done：测试经 deps.onPipelineDone 收集后台管线，再按需 drain 等终态。
+  const pipelineWaits = [];
+  const collectPipeline = (done) => { pipelineWaits.push(done); };
+  const drainPipelines = () => Promise.all(pipelineWaits.splice(0));
+  const startWithPipelines = (source, kind, deps = {}, options = {}) =>
+    exportsLib.startEditableExport(source, kind, {
+      ...options,
+      deps: { ...deps, onPipelineDone: collectPipeline },
+    });
   const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
+    startWithPipelines(exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
   const startDeckTextEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    startEditableWithDone(exportsLib, exportsLib.deckTextEditableSource(userId, deckId), 'editable_text', deps, options);
+    startWithPipelines(exportsLib.deckTextEditableSource(userId, deckId), 'editable_text', deps, options);
+  const startSinglePageEditableFor = (userId, projectId, deps = {}, options = {}) =>
+    startWithPipelines(exportsLib.singlePageEditableSource(userId, projectId), 'editable', deps, options);
+  const startUploadedEditableFor = async (userId, files, deps = {}, options = {}) =>
+    startWithPipelines(await exportsLib.uploadedEditableSource(userId, files, deps), 'editable', deps, options);
   console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
   {
     const codiaDeps = (fetchImpl) => ({ fetchImpl, config: baseConfig, pollIntervalMs: 1 });
@@ -72,9 +83,9 @@ export async function runEditableExportTests(ctx) {
         throw new Error(`snapshot fetch 未命中: ${href}`);
       };
       try {
-        const started = await startDeckEditableFor(uid, deck.id, { fetchImpl: fetcher, pollIntervalMs: 1, retryDelayMs: 0 }, { force: true },
+        await startDeckEditableFor(uid, deck.id, { fetchImpl: fetcher, pollIntervalMs: 1, retryDelayMs: 0 }, { force: true },
         );
-        await started.done;
+        await drainPipelines();
         const codiaCalls = upstreamCalls.filter((call) => call.href.includes('/v2/open/'));
         check('管理员中途改配置不影响已启动可编辑管线',
           codiaCalls.length >= 4
@@ -111,7 +122,7 @@ export async function runEditableExportTests(ctx) {
       const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
       check('可编辑导出发起：processing + 40🌟（20×2页）',
         started.status === 'processing' && started.credits === 40 && started.pageCount === 2);
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('转换成功落盘，url 以 /api/files/exports/ 开头',
         exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/'), `实际 ${exp.status} ${exp.url}`);
@@ -152,7 +163,7 @@ export async function runEditableExportTests(ctx) {
       ]);
       const before = credits.getBalance(uid);
       const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('首次失败自动重试后成功', exp.status === 'succeeded', `实际 ${exp.status} ${exp.error}`);
       check('两次建任务，幂等键 base → -retry1', createN === 2
@@ -174,7 +185,7 @@ export async function runEditableExportTests(ctx) {
       ]);
       const before = credits.getBalance(uid);
       const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('两次失败 → status=failed 且 error 非空', exp.status === 'failed' && exp.error.length > 0, `实际 ${exp.status}`);
       check('失败全额退星（余额不变）', credits.getBalance(uid) === before);
@@ -195,7 +206,7 @@ export async function runEditableExportTests(ctx) {
       ]);
       const before = credits.getBalance(uid);
       const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('上游 402 → failed + error 含「暂时不可用」', exp.status === 'failed' && exp.error.includes('暂时不可用'), `实际 ${exp.error}`);
       check('上游 402 退星', credits.getBalance(uid) === before);
@@ -258,7 +269,7 @@ export async function runEditableExportTests(ctx) {
       const reused = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher));
       check('processing 中再次 start → 复用同一任务且不扣星', reused.exportId === started.exportId && reused.reused && reused.credits === 0);
       release = true;
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('收尾：并发用例任务终态 failed + 已退星', exp.status === 'failed' && exp.error.length > 0);
     }
@@ -381,10 +392,10 @@ export async function runEditableExportTests(ctx) {
         { match: 'sp1.pptx', payload: new Response(Buffer.from('mock-sp-pptx-binary')) },
       ]);
       const before = credits.getBalance(uid);
-      const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
+      const started = await startSinglePageEditableFor(uid, spProject, codiaDeps(fetcher));
       check('单页可编辑发起：processing + 40🌟（20×2页）',
         started.status === 'processing' && started.credits === 40 && started.pageCount === 2);
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('单页转换成功落盘', exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/'), `实际 ${exp.status} ${exp.error || ''}`);
       check('净扣 40🌟', before - credits.getBalance(uid) === 40, `before=${before} after=${credits.getBalance(uid)}`);
@@ -403,8 +414,8 @@ export async function runEditableExportTests(ctx) {
         { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_spf' } } },
       ]);
       const before = credits.getBalance(uid);
-      const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher), { force: true });
-      await started.done;
+      const started = await startSinglePageEditableFor(uid, spProject, codiaDeps(fetcher), { force: true });
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('单页两次失败 → failed + 全额退星', exp.status === 'failed' && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
       check('refund 键唯一', Number(genDb.prepare('SELECT COUNT(*) AS c FROM credit_ledger WHERE idempotency_key = ?')
@@ -422,7 +433,7 @@ export async function runEditableExportTests(ctx) {
       credits.debitCredits(poorE.user.id, 75, { reason: '测试花掉', idempotencyKey: 'test-drain-6c' });
       // 100（注册） - 10（生成 1 页） - 75 = 15 < 20（可编辑需 20×1）
       await expectThrows('余额 15 < 20 → 402 INSUFFICIENT_CREDITS', () =>
-        exportsLib.startSinglePageEditableExport(poorE.user.id, g.page.projectId, codiaDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
+        startSinglePageEditableFor(poorE.user.id, g.page.projectId, codiaDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
       const rows = Number(genDb.prepare("SELECT COUNT(*) AS c FROM export_jobs WHERE ref_id = ? AND kind = 'editable'").get(g.page.projectId)?.c || 0);
       check('402 后不产生 export 行', rows === 0, `实际 ${rows}`);
     }
@@ -439,7 +450,7 @@ export async function runEditableExportTests(ctx) {
       }
       let rejected = null;
       try {
-        await exportsLib.startSinglePageEditableExport(uid, projectId, codiaDeps(makeMockFetcher([])));
+        await startSinglePageEditableFor(uid, projectId, codiaDeps(makeMockFetcher([])));
       } catch (error) {
         rejected = error;
       }
@@ -459,11 +470,11 @@ export async function runEditableExportTests(ctx) {
         { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_spc', status: 'pending' } } },
         { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_spc' } } },
       ]);
-      const started = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher), { force: true });
-      const reused = await exportsLib.startSinglePageEditableExport(uid, spProject, codiaDeps(fetcher));
+      const started = await startSinglePageEditableFor(uid, spProject, codiaDeps(fetcher), { force: true });
+      const reused = await startSinglePageEditableFor(uid, spProject, codiaDeps(fetcher));
       check('processing 中再次 start → 复用同一任务且不扣星', reused.exportId === started.exportId && reused.reused && reused.credits === 0);
       release = true;
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('收尾：并发用例终态 failed + 已退星', exp.status === 'failed');
     }
@@ -471,9 +482,9 @@ export async function runEditableExportTests(ctx) {
     // ---- 越权/不存在 ----
     {
       await expectThrows('他人单页项目 404', () =>
-        exportsLib.startSinglePageEditableExport('other-user', spProject, codiaDeps(makeMockFetcher([]))), 'PROJECT_NOT_FOUND');
+        startSinglePageEditableFor('other-user', spProject, codiaDeps(makeMockFetcher([]))), 'PROJECT_NOT_FOUND');
       await expectThrows('不存在项目 404', () =>
-        exportsLib.startSinglePageEditableExport(uid, 'proj_nope', codiaDeps(makeMockFetcher([]))), 'PROJECT_NOT_FOUND');
+        startSinglePageEditableFor(uid, 'proj_nope', codiaDeps(makeMockFetcher([]))), 'PROJECT_NOT_FOUND');
     }
   }
 
@@ -498,11 +509,11 @@ export async function runEditableExportTests(ctx) {
       { match: 'upload.pptx', payload: new Response(binary) },
     ]);
     const before = credits.getBalance(uid);
-    const started = await exportsLib.startUploadedEditableExport(uid, [
+    const started = await startUploadedEditableFor(uid, [
       { name: '01.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
       { name: '02.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
     ], { fetchImpl: fetcher, config: baseConfig, pollIntervalMs: 1 });
-    await started.done;
+    await drainPipelines();
     const exp = await exportsLib.getExport(uid, started.exportId);
     const uploadSourceRow = uploadDb.prepare('SELECT source_path FROM export_jobs WHERE id = ?').get(started.exportId);
     const uploadSourceAbs = path.join(baseConfig.uploadsDir, String(uploadSourceRow?.source_path || '').split('/').slice(1).join('/'));
@@ -511,7 +522,7 @@ export async function runEditableExportTests(ctx) {
     check('图片顺序映射为 page_no [0,1]', JSON.stringify(taskBody?.input?.page_no) === '[0,1]');
     check('下载中心保留外部来源名', exp.sourceName === '2 张图片');
     check('外部转换终态后清理临时 PDF 源文件', !existsSync(uploadSourceAbs));
-    const reused = await exportsLib.startUploadedEditableExport(uid, [
+    const reused = await startUploadedEditableFor(uid, [
       { name: '01.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
       { name: '02.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') },
     ], { fetchImpl: fetcher, config: baseConfig, pollIntervalMs: 1 });
@@ -529,7 +540,7 @@ export async function runEditableExportTests(ctx) {
       };
       const rejectedCodia = await (async () => {
         try {
-          await exportsLib.startUploadedEditableExport(uid, [
+          await startUploadedEditableFor(uid, [
             { name: 'many.pdf', mime: 'application/pdf', data: await makePdf(21) },
           ], { fetchImpl: makeMockFetcher([]), config: baseConfig, pollIntervalMs: 1 });
           return null;
@@ -544,7 +555,7 @@ export async function runEditableExportTests(ctx) {
       const i2pConfig = { ...baseConfig, image2pptApiKey: 'i2p-page-cap-key', editableProvider: 'image2ppt' };
       const rejectedI2p = await (async () => {
         try {
-          await exportsLib.startUploadedEditableExport(uid, [
+          await startUploadedEditableFor(uid, [
             { name: 'many.pdf', mime: 'application/pdf', data: await makePdf(51) },
           ], { fetchImpl: makeMockFetcher([]), config: i2pConfig, pollIntervalMs: 1 });
           return null;
@@ -563,7 +574,7 @@ export async function runEditableExportTests(ctx) {
       '127.0.0.1',
     );
     await expectThrows('外部转换余额不足时不建任务', () =>
-      exportsLib.startUploadedEditableExport(
+      startUploadedEditableFor(
         poorUpload.user.id,
         Array.from({ length: 6 }, (_, index) => ({
           name: `${index + 1}.png`, mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64'),
@@ -691,7 +702,7 @@ export async function runEditableExportTests(ctx) {
       const started = await startDeckTextEditableFor(uid, deck.id, textDeps(fetcher), { force: true });
       check('文字可编辑发起：processing + 10🌟（5×2页）',
         started.status === 'processing' && started.credits === 10 && started.pageCount === 2);
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('文字可编辑转换成功落盘', exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/'), `实际 ${exp.status} ${exp.error || ''}`);
       check('净扣 10🌟', before - credits.getBalance(uid) === 10, `before=${before} after=${credits.getBalance(uid)}`);
@@ -728,7 +739,7 @@ export async function runEditableExportTests(ctx) {
         return vlmOkPayload;
       } }]);
       const started = await startDeckTextEditableFor(uid, deck.id, textDeps(fetcher), { force: true });
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('单页 VLM 失败降级为纯图片页，整体仍成功', exp.status === 'succeeded', `实际 ${exp.status} ${exp.error || ''}`);
     }
@@ -738,7 +749,7 @@ export async function runEditableExportTests(ctx) {
       const fetcher = makeMockFetcher([]);
       const before = credits.getBalance(uid);
       const started = await startDeckTextEditableFor(uid, deck.id, textDeps(fetcher), { force: true });
-      await started.done;
+      await drainPipelines();
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('全部页 VLM 失败 → failed + 全额退星',
         exp.status === 'failed' && exp.error.includes('已退回') && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
@@ -794,7 +805,7 @@ export async function runEditableExportTests(ctx) {
       check('文字可编辑档 50 页可发起（Codia-only 配置也不因 20 被拒）',
         started50.pageCount === 50 && started50.credits === 250 && started50.status === 'processing',
         `${started50.pageCount} ${started50.status} ${started50.credits}`);
-      await started50.done;
+      await drainPipelines();
 
       const d51 = makeTextDeck(51);
       let rejected = null;
@@ -1005,6 +1016,183 @@ export async function runEditableExportTests(ctx) {
       check('单入口：旧 deck/text starter 已从模块出口删除',
         !/export async function startDeck(Text)?EditableExport/.test(moduleSource));
     }
+  }
+
+  console.log('\n[6j] 可编辑导出其余路由与来源适配器（单页 / 上传，T11）');
+  {
+    const genDb = (await import('../../src/lib/server/generation/db.ts')).getGenDb();
+    const START_VIEW_KEYS = 'completedPages,credits,exportId,pageCount,progress,reused,stage,status,totalPages,url';
+    const codiaDeps = (fetchImpl) => ({ fetchImpl, config: baseConfig, pollIntervalMs: 1, retryDelayMs: 0 });
+    const codiaOkFetcher = (marker) => makeMockFetcher([
+      { match: '/v2/open/tasks/', payload: { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: `http://mock-codia/files/${marker}.pptx`, page_count: 2 } } } },
+      { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: `task_${marker}`, status: 'pending' } } },
+      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: `upl_${marker}` } } },
+      { match: `${marker}.pptx`, payload: new Response(Buffer.from(`${marker}-pptx`)) },
+    ]);
+    const hasSinglePageSource = typeof exportsLib.singlePageEditableSource === 'function';
+    const hasUploadSource = typeof exportsLib.uploadedEditableSource === 'function';
+    check('T11：模块出口导出 singlePageEditableSource / uploadedEditableSource',
+      hasSinglePageSource && hasUploadSource);
+
+    // ---- 单页来源：声明形状 + 走同一单入口（复用 / force / 失败退星已在 [6c] 覆盖）----
+    if (hasSinglePageSource) {
+      credits.refundCredits(uid, 200, { reason: 'T11 单页补贴', idempotencyKey: 'test-topup-t11-sp' });
+      const imgFetcher = makeMockFetcher([{ match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
+      const imgDeps = { fetchImpl: imgFetcher, config: imageConfig };
+      const p1 = await singlePages.generateSinglePage(uid, { pageId: 'sp-t11-1', title: 'T11 一', content: 'T11 单页来源第一页' }, imgDeps);
+      const p2 = await singlePages.generateSinglePage(uid, { pageId: 'sp-t11-2', title: 'T11 二', content: 'T11 单页来源第二页', projectId: p1.page.projectId }, imgDeps);
+      const projectId = p1.page.projectId;
+      const source = exportsLib.singlePageEditableSource(uid, projectId);
+      check('T11：单页来源声明引用 / 计费动作 / 取页',
+        p1.status === 'succeeded' && p2.status === 'succeeded'
+          && source.refType === 'single-page' && source.refId === projectId
+          && source.chargeAction === 'export_editable'
+          && source.readPages().length === 2 && source.readPages().every((page) => Boolean(page.versionId)));
+      check('T11：单页来源页数上限与整套同口径（Codia-only 20 / 单套）',
+        source.pageCap(baseConfig).capacity === 20 && source.pageCap(baseConfig).scope === '单套');
+      check('T11：单页来源指纹稳定且同源同指纹',
+        source.fingerprint(source.readPages()) === source.fingerprint(source.readPages())
+          && source.fingerprint(source.readPages()).length === 64);
+
+      const pipelines = [];
+      const before = credits.getBalance(uid);
+      const view = await exportsLib.startEditableExport(source, 'editable', {
+        force: true,
+        deps: { ...codiaDeps(codiaOkFetcher('t11sp')), onPipelineDone: (done) => pipelines.push(done) },
+      });
+      check('T11：单页入口返回 10 字段共享 view（无 done / JSON 往返不变）',
+        Object.keys(view).sort().join(',') === START_VIEW_KEYS && !('done' in view)
+          && JSON.stringify(JSON.parse(JSON.stringify(view))) === JSON.stringify(view),
+        Object.keys(view).join(','));
+      check('T11：单页生产路径无 done，测试经 deps.onPipelineDone 等管线', pipelines.length === 1);
+      check('T11：单页 20🌟/页 净扣 40', before - credits.getBalance(uid) === 40,
+        `${before} → ${credits.getBalance(uid)}`);
+      await Promise.all(pipelines);
+      const exp = await exportsLib.getExport(uid, view.exportId);
+      check('T11：单页管线落盘 + ref_type=single-page',
+        exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/')
+          && genDb.prepare('SELECT ref_type FROM export_jobs WHERE id = ?').get(view.exportId)?.ref_type === 'single-page',
+        `${exp.status} ${exp.url}`);
+      const reused = await exportsLib.startEditableExport(source, 'editable', { deps: codiaDeps(codiaOkFetcher('t11sp')) });
+      check('T11：单页同源成功默认复用（同 exportId / 0 扣星）',
+        reused.exportId === view.exportId && reused.reused && reused.credits === 0);
+      const forceBefore = credits.getBalance(uid);
+      const forcePipelines = [];
+      const forced = await exportsLib.startEditableExport(source, 'editable', {
+        force: true,
+        deps: { ...codiaDeps(codiaOkFetcher('t11spf')), onPipelineDone: (done) => forcePipelines.push(done) },
+      });
+      check('T11：单页 force 重新建行并按页扣星',
+        forced.exportId !== view.exportId && !forced.reused && forced.credits === 40
+          && forceBefore - credits.getBalance(uid) === 40);
+      await Promise.all(forcePipelines);
+    }
+
+    // ---- 上传来源：声明形状 + 走同一单入口（页数门 / 清理 / 复用已在 [6d] 覆盖）----
+    if (hasUploadSource) {
+      credits.refundCredits(uid, 200, { reason: 'T11 上传补贴', idempotencyKey: 'test-topup-t11-up' });
+      const png = () => Buffer.from(PNG_1X1_B64, 'base64');
+      const files = [
+        { name: '01.png', mime: 'image/png', data: png() },
+        { name: '02.png', mime: 'image/png', data: png() },
+      ];
+      const absOf = (source) => path.join(baseConfig.uploadsDir, String(source.meta?.path || '').split('/').slice(1).join('/'));
+
+      const shapeSource = await exportsLib.uploadedEditableSource(uid, files, { config: baseConfig });
+      check('T11：上传来源声明引用 / 展示字段 / 取页',
+        shapeSource.refType === 'upload' && /^upload_[0-9a-f]{32}$/.test(shapeSource.refId)
+          && shapeSource.chargeAction === 'export_editable'
+          && shapeSource.meta?.mime === 'application/pdf' && shapeSource.meta?.name === '2 张图片'
+          && shapeSource.readPages().length === 2
+          && shapeSource.fingerprint(shapeSource.readPages()).length === 64);
+      check('T11：上传来源页数上限与文件数同口径（单次 / Codia-only 20）',
+        shapeSource.pageCap(baseConfig).capacity === 20 && shapeSource.pageCap(baseConfig).scope === '单次');
+      const shapeAbs = absOf(shapeSource);
+      await shapeSource.cleanup();
+      check('T11：上传来源 cleanup 清理未发起行的临时 PDF', !existsSync(shapeAbs), shapeAbs);
+
+      const pipelines = [];
+      const before = credits.getBalance(uid);
+      const startSource = await exportsLib.uploadedEditableSource(uid, files, { config: baseConfig });
+      const startAbs = absOf(startSource);
+      const view = await exportsLib.startEditableExport(startSource, 'editable', {
+        force: true,
+        deps: { ...codiaDeps(codiaOkFetcher('t11up')), onPipelineDone: (done) => pipelines.push(done) },
+      });
+      check('T11：上传入口返回 10 字段共享 view（无 done）',
+        Object.keys(view).sort().join(',') === START_VIEW_KEYS && !('done' in view), Object.keys(view).join(','));
+      check('T11：上传 20🌟/页 净扣 40', before - credits.getBalance(uid) === 40);
+      await Promise.all(pipelines);
+      const exp = await exportsLib.getExport(uid, view.exportId);
+      check('T11：上传管线落盘 + ref_type=upload + 来源名',
+        exp.status === 'succeeded' && exp.refType === 'upload' && exp.sourceName === '2 张图片',
+        `${exp.status} ${exp.refType} ${exp.sourceName}`);
+      check('T11：上传终态后清理临时 PDF', !existsSync(startAbs), startAbs);
+
+      const reuseSource = await exportsLib.uploadedEditableSource(uid, files, { config: baseConfig });
+      const reuseAbs = absOf(reuseSource);
+      const reused = await exportsLib.startEditableExport(reuseSource, 'editable', { deps: codiaDeps(codiaOkFetcher('t11up')) });
+      check('T11：上传同内容复用成功结果且不扣星 / 复用不留临时 PDF',
+        reused.exportId === view.exportId && reused.reused && reused.credits === 0 && !existsSync(reuseAbs),
+        `${reused.exportId} ${reused.reused} ${reused.credits} ${existsSync(reuseAbs)}`);
+
+      // ---- 上传失败：与整套/单页同一失败语义（终态退星 + 清理临时 PDF）----
+      const failFiles = [
+        { name: 'f1.png', mime: 'image/png', data: png() },
+        { name: 'f2.png', mime: 'image/png', data: png() },
+        { name: 'f3.png', mime: 'image/png', data: png() },
+      ];
+      const failSource = await exportsLib.uploadedEditableSource(uid, failFiles, { config: baseConfig });
+      const failAbs = absOf(failSource);
+      const failPipelines = [];
+      const failBefore = credits.getBalance(uid);
+      const failView = await exportsLib.startEditableExport(failSource, 'editable', {
+        force: true,
+        deps: {
+          ...codiaDeps(makeMockFetcher([
+            { match: '/v2/open/tasks/', payload: { code: 0, message: 'ok', data: { status: 'failed', error: 'T11 上传持续失败' } } },
+            { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_t11upfail', status: 'pending' } } },
+            { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_t11upfail' } } },
+          ])),
+          onPipelineDone: (done) => failPipelines.push(done),
+        },
+      });
+      check('T11：上传 3 页按 20🌟/页扣 60', failView.credits === 60, String(failView.credits));
+      await Promise.all(failPipelines);
+      const failExp = await exportsLib.getExport(uid, failView.exportId);
+      check('T11：上传失败 → failed + 全额退星（与整套/单页同一失败语义）',
+        failExp.status === 'failed' && credits.getBalance(uid) === failBefore,
+        `${failExp.status} ${failBefore} → ${credits.getBalance(uid)}`);
+      check('T11：上传失败终态清理临时 PDF', !existsSync(failAbs), failAbs);
+    }
+
+    // ---- 路由与删除：四个导出路由同一单入口；旧 starter / 类型 / 测试垫片已删除 ----
+    const readSrc = (rel) => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8');
+    const spRoute = readSrc('src/app/api/single-page/export-editable-pptx/route.ts');
+    const upRoute = readSrc('src/app/api/editable-conversions/route.ts');
+    check('T11：单页路由调用单入口并直接序列化共享 view（不再手抄 10 字段）',
+      spRoute.includes('singlePageEditableSource') && spRoute.includes('startEditableExport')
+        && /jsonOk\(\s*started\b/.test(spRoute) && !spRoute.includes('started.exportId')
+        && !spRoute.includes('startSinglePageEditableExport'));
+    check('T11：上传路由调用单入口并直接序列化共享 view（不再手抄 10 字段）',
+      upRoute.includes('uploadedEditableSource') && upRoute.includes('startEditableExport')
+        && /jsonOk\(\s*started\b/.test(upRoute) && !upRoute.includes('started.exportId')
+        && !upRoute.includes('startUploadedEditableExport'));
+    const allRoutes = [
+      'src/app/api/deck/[id]/export-editable/route.ts',
+      'src/app/api/deck/[id]/export-editable-text/route.ts',
+      'src/app/api/single-page/export-editable-pptx/route.ts',
+      'src/app/api/editable-conversions/route.ts',
+    ].map(readSrc);
+    check('T11：四个可编辑导出路由全部走同一单入口',
+      allRoutes.every((src) => src.includes('startEditableExport')
+        && !src.includes('startSinglePageEditableExport')
+        && !src.includes('startUploadedEditableExport')));
+    const moduleSource = readSrc('src/modules/editable-export/server/editable.ts');
+    check('T11：旧 starter / 兼容句柄 / StartedEditableExport 已从模块删除',
+      !/startSinglePageEditableExport|startUploadedEditableExport|StartedEditableExport/.test(moduleSource));
+    check('T11：测试专用 done 垫片已删除',
+      !existsSync(new URL('./editable-start-helpers.mjs', import.meta.url)));
   }
 
 
