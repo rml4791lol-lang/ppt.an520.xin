@@ -4,35 +4,30 @@
 // 内存 catch 里，进程死了不执行）。收敛放在带身份的请求入口（requireUser），
 // 读/写路径只表达业务，不必各自记得恢复。
 // 判定依据：job 心跳（每页完成时更新 updated_at）超时或已终态 = 进程已死；
-// 本进程活跃任务有注册表守卫，绝不动活跃任务。
-import { getDb } from '../db';
-import { deriveRefundKey, refundCredits } from '../credits';
-import { logProblem } from '../problem-log';
+// 在飞注册表归 paid-run.ts，本进程活跃任务绝不被收敛。
 import { interruptedPptToBaseRuns } from '@/modules/ppt-to-base/server/recovery';
+import { failPaidRun, holdInFlight, isInFlight, releaseInFlight } from './paid-run';
 import { getGenDb, nowMs } from './db';
 import { deckChargeKey } from './charge-keys';
 import { getGenerationConfig } from './config';
 
-// ---- 本进程活跃任务注册表（generate.ts / single-pages.ts / ppt-to-base 注册） ----
-
-const activeJobs = new Set<string>();
+// ---- 遗留登记口：单页 / 转底座尚未迁入 paid-run，先共用同一张在飞注册表 ----
+// 两域迁入计费运行模块后删除这四个函数（域代码不再手调 mark）。
 
 export function markJobActive(jobId: string): void {
-  activeJobs.add(jobId);
+  holdInFlight({ runId: jobId });
 }
 
 export function markJobDone(jobId: string): void {
-  activeJobs.delete(jobId);
+  releaseInFlight(jobId);
 }
 
-const activeSinglePages = new Set<string>();
-
 export function markSinglePageActive(pageId: string): void {
-  activeSinglePages.add(pageId);
+  holdInFlight({ runId: pageId, domain: 'single-page' });
 }
 
 export function markSinglePageDone(pageId: string): void {
-  activeSinglePages.delete(pageId);
+  releaseInFlight(pageId);
 }
 
 /** 心跳过期判定：超过 jobStaleMs 视为原进程已死（懒恢复唯一的时间口径） */
@@ -42,44 +37,12 @@ export function isStale(heartbeatMs: number): boolean {
 
 function jobStillLive(jobId: string): boolean {
   if (!jobId) return false;
-  if (activeJobs.has(jobId)) return true;
+  if (isInFlight(jobId)) return true;
   const job = getGenDb()
     .prepare('SELECT status, updated_at FROM generation_jobs WHERE id = ?')
     .get(jobId) as { status: string; updated_at: number } | undefined;
   if (!job || !['queued', 'running'].includes(String(job.status))) return false;
   return !isStale(Number(job.updated_at));
-}
-
-/** 按 ledger 实扣金额补退款（幂等键 = 正常退款键，重复执行/已退过都不双退） */
-export function refundCharge(
-  chargeKey: string,
-  userId: string,
-  reason: string,
-  refType: string,
-  refId: string,
-): void {
-  const refundKey = deriveRefundKey(chargeKey);
-  const ledger = getDb();
-  if (ledger.prepare('SELECT 1 FROM credit_ledger WHERE idempotency_key = ?').get(refundKey)) return;
-  const debit = ledger.prepare('SELECT delta FROM credit_ledger WHERE idempotency_key = ?').get(chargeKey) as
-    | { delta: number }
-    | undefined;
-  if (!debit) return;
-  const amount = Math.abs(Number(debit.delta));
-  if (amount <= 0) return;
-  try {
-    refundCredits(userId, amount, { reason, idempotencyKey: refundKey, refType, refId });
-  } catch (error) {
-    logProblem({
-      category: 'generation',
-      level: 'error',
-      message: '崩溃恢复补退款失败',
-      detail: `chargeKey=${chargeKey} reason=${reason} error=${error instanceof Error ? error.message : String(error)}`,
-      userId,
-      refType,
-      refId,
-    });
-  }
 }
 
 /**
@@ -104,16 +67,21 @@ export interface InterruptedRun {
 }
 
 /**
- * 唯一收敛实现：中断任务 → 收敛动作 → 按实扣金额补退，返回收敛条数。
+ * 唯一收敛实现：中断任务 → 先按实扣金额补退 → 再置 failed，返回收敛条数。
+ * 顺序归 paid-run.failPaidRun：先退款再置终态，崩在中间仍是在途态、恢复能重试退款。
  * 调用方只负责列出在途任务；重复调用幂等。
  */
 export function reconcileInterrupted(runs: InterruptedRun[]): number {
   const healed = runs.filter((run) => run.interrupted);
   for (const run of healed) {
-    run.settle();
-    if (run.chargeKey) {
-      refundCharge(run.chargeKey, run.userId, run.refundReason ?? '生成中断退回', run.refType, run.refId);
-    }
+    failPaidRun({
+      userId: run.userId,
+      chargeKey: run.chargeKey,
+      refundReason: run.refundReason ?? '生成中断退回',
+      refType: run.refType,
+      refId: run.refId,
+      settle: run.settle,
+    });
   }
   if (healed.length > 0) {
     const refs = [...new Set(healed.map((run) => `${run.refType}:${run.refId}`))];
@@ -152,7 +120,7 @@ function deckRuns(userId: string): InterruptedRun[] {
     const live = db
       .prepare("SELECT id, updated_at FROM generation_jobs WHERE deck_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1")
       .get(deckId) as { id: string; updated_at: number } | undefined;
-    if (live && (activeJobs.has(String(live.id)) || !isStale(Number(live.updated_at)))) protectedDecks.add(deckId);
+    if (live && (isInFlight(String(live.id)) || !isStale(Number(live.updated_at)))) protectedDecks.add(deckId);
   }
 
   const stuck = db
@@ -236,7 +204,7 @@ function singlePageRuns(userId: string): InterruptedRun[] {
   const runs: InterruptedRun[] = [];
   for (const page of pages) {
     const pageId = String(page.id);
-    if (activeSinglePages.has(pageId)) continue;
+    if (isInFlight(pageId)) continue;
     // 找最新的「在途」version（终态版本不算——页可能 running 而最新版本是历史成功版）
     const version = db
       .prepare("SELECT id, status, charge_key, updated_at FROM single_page_versions WHERE page_id = ? AND status IN ('queued','running') ORDER BY created_at DESC, rowid DESC LIMIT 1")
@@ -288,5 +256,5 @@ function singlePageRuns(userId: string): InterruptedRun[] {
 
 function pptToBaseRuns(userId: string): InterruptedRun[] {
   // 底座表归模块：这里只注入判活口径，调度模块导出的结算入口
-  return interruptedPptToBaseRuns(userId, (jobId, heartbeatMs) => activeJobs.has(jobId) || !isStale(heartbeatMs));
+  return interruptedPptToBaseRuns(userId, (jobId, heartbeatMs) => isInFlight(jobId) || !isStale(heartbeatMs));
 }
