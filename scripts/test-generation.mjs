@@ -18,8 +18,10 @@ import { runDeckIntentTests } from './tests/deck-intents.test.mjs';
 import { runDeckIntentParserTests } from './tests/deck-intent-parsers.test.mjs';
 import { runDeckWorkbenchTests } from './tests/deck-workbench.test.mjs';
 import { runDeckActionTests } from './tests/deck-actions.test.mjs';
+import { runSinglePageActionTests } from './tests/single-page-actions.test.mjs';
 import { runSurfaceIntentTests } from './tests/surface-intents.test.mjs';
 import { runPaidRunTests } from './tests/paid-run.test.mjs';
+import { runSurfaceIntentParserTests } from './tests/surface-intent-parsers.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
@@ -1093,9 +1095,11 @@ console.log('\n[4c] update-slide / select-slide-version');
 
 await runDeckIntentTests({ check, expectThrows, auth, decks, fullDeps });
 await runDeckIntentParserTests({ check });
+await runSurfaceIntentParserTests({ check });
 await runDeckWorkbenchTests({ check });
 await runDeckActionTests({ check });
 await runPaidRunTests({ check, auth, credits });
+await runSinglePageActionTests({ check });
 await runSurfaceIntentTests({ check, expectThrows, auth, singlePages, credits, uid, makeMockFetcher, editsOkHandler, PNG_1X1_B64, imageConfig, deck });
 
 console.log('\n[5] 余额不足整单 402');
@@ -1148,12 +1152,6 @@ console.log('\n[6] 导出：图片版 pptx 真产出 + editable 501 + 导出中�
   const one = await editableExportLib.getExport(uid, result.exportId);
   check('导出详情可取', one.url === result.url);
 
-  const quote = editableExportLib.quoteExport(uid, { deckId: deck.id });
-  check('quote：image 免费可用、editable 可用且 20🌟×页数', quote.pageCount === 2
-    && quote.quotes.find((q) => q.kind === 'image')?.credits === 0
-    && quote.quotes.find((q) => q.kind === 'editable')?.available === true
-    && quote.quotes.find((q) => q.kind === 'editable')?.credits === 40
-    && !quote.quotes.find((q) => q.kind === 'editable')?.code);
 }
 
 await runEditableExportTests({ check, expectThrows, auth, credits, uid, llmConfig, baseConfig, decks, singlePages, makeMockFetcher, editsOkHandler, PNG_1X1_B64, deck, actions, STYLE_PACKS, engineConfig, engineHandlers, imageConfig, jsonResponse });

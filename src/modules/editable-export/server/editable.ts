@@ -1,6 +1,6 @@
 // 可编辑导出模块服务端：WPS / Image2PPT / Codia 多通道重转换链（20🌟/页，任务制+懒恢复）
 // + 轻量文字可编辑档（VLM 覆盖层，5🌟/页）
-// + 导出中心查询（listExports/getExport/quoteExport，含可编辑行的懒恢复触发）。
+// + 导出中心查询（listExports/getExport，含可编辑行的懒恢复触发）。
 // 图片版 PPTX 导出在平台件 src/lib/server/exports.ts。
 import { createRequire } from 'node:module';
 import { createWriteStream } from 'node:fs';
@@ -1436,50 +1436,4 @@ export async function getExport(userId: string, exportId: string, deps: Editable
     activeFingerprint = '';
   }
   return toExportView(row, activeFingerprint);
-}
-
-/** 导出报价（对齐旁门 /api/pptx-exports/quote 的三种 body 形态） */
-export function quoteExport(userId: string, body: Record<string, unknown>) {
-  const deckId = cleanString(body.deckId, 80);
-  const projectId = cleanString(body.projectId, 80);
-  const pageIds = Array.isArray(body.pageIds) ? body.pageIds.map((id) => cleanString(id, 80)) : [];
-  const pageId = cleanString(body.pageId, 80);
-  let pageCount = 0;
-  let refType = 'deck';
-  if (deckId) {
-    pageCount = listSlides(getOwnedDeck(userId, deckId).id).filter((slide) => slide.activeVersionId).length;
-  } else if (projectId) {
-    refType = 'single-page';
-    pageCount = listSingleProjectPages(userId, projectId).filter((page) => page.activeVersionId).length;
-  } else if (pageIds.length > 0) {
-    refType = 'single-page';
-    pageCount = pageIds.length;
-  } else if (pageId || body.versionId) {
-    refType = 'single-page';
-    pageCount = 1;
-  } else {
-    throw validationError('缺少 deckId / projectId / pageIds');
-  }
-  const editableUnitPrice = estimateCredits({ action: 'export_editable', pages: 1 }).unitPrice;
-  const config = getGenerationConfig();
-  const providers = resolveEditableProviders(config, pageCount).map((provider) => provider.id);
-  const editableAvailable = pageCount > 0 && providers.length > 0;
-  return {
-    pageCount,
-    refType,
-    provider: providers[0] || '',
-    providers,
-    quotes: [
-      { kind: 'image', credits: 0, available: pageCount > 0 },
-      {
-        kind: 'editable',
-        credits: editableUnitPrice * pageCount,
-        unitPrice: editableUnitPrice,
-        available: editableAvailable,
-        ...(editableAvailable
-          ? {}
-          : { code: 'EDITABLE_EXPORT_UNAVAILABLE', message: '可编辑导出暂不可用' }),
-      },
-    ],
-  };
 }
