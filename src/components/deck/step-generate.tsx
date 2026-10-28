@@ -65,7 +65,7 @@ export function StepGenerate({
   exporting: boolean;
   onReselectStyle: () => void;
 }) {
-  const { state, availability, run, toast } = ctx;
+  const { state, availability, run, busy, toast } = ctx;
   const slides = useMemo(
     () => [...state.slides].sort((a, b) => a.pageIndex - b.pageIndex),
     [state.slides],
@@ -74,7 +74,6 @@ export function StepGenerate({
   const { generating } = availability;
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
-  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   // ---------- 转可编辑 PPTX（WPS 免费优先 / Image2PPT / Codia 备用，20🌟/页） ----------
   const [editableOpen, setEditableOpen] = useState(false);
@@ -153,11 +152,8 @@ export function StepGenerate({
   };
 
   const retrySlide = async (slide: DeckSlide) => {
-    if (retryingId) return;
-    setRetryingId(slide.slideId);
-    const result = await run({ kind: "generateSlide", params: { slideId: slide.slideId } });
-    setRetryingId(null);
-    if (result) notifyCreditsRefresh();
+    // 卡片重试没有「已开始」提示（页状态会自己翻成生成中）；余额刷新由执行器负责
+    await run({ kind: "generateSlide", params: { slideId: slide.slideId } }, { success: false });
   };
 
   const retryFailed = async () => {
@@ -239,7 +235,9 @@ export function StepGenerate({
             {slides.map((slide) => {
               const imageUrl = slideImageUrl(slide);
               const running =
-                slide.genStatus === "running" || slide.genStatus === "queued" || retryingId === slide.slideId;
+                slide.genStatus === "running"
+                || slide.genStatus === "queued"
+                || busy("generateSlide", slide.slideId);
               return (
                 <article
                   key={slide.slideId}
@@ -580,7 +578,7 @@ function SlideEditor({
   onClose: () => void;
   onNav: (index: number) => void;
 }) {
-  const { run, toast } = ctx;
+  const { run, busy } = ctx;
   // 轮询会刷新 ctx.state，编辑器内始终读实时页数据
   const live = ctx.state.slides.find((s) => s.slideId === slides[index]?.slideId);
   const slide = live ?? slides[index];
@@ -590,7 +588,6 @@ function SlideEditor({
   const [instruction, setInstruction] = useState("");
   const [refineCredits, setRefineCredits] = useState<number | null>(null);
   const [regenCredits, setRegenCredits] = useState<number | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
   const [selectingVersion, setSelectingVersion] = useState<string | null>(null);
 
@@ -715,120 +712,64 @@ function SlideEditor({
     lastPointRef.current = null;
   };
 
+  // 六个手写手势统一走 deck 执行器：成功文案/清理与失败退款承诺都在动作目录，
+  // busy 按「动作类型 + 本页」派生——一个动作在跑只禁用这个动作自己的按钮。
   const submitErase = async () => {
     const canvas = eraseCanvasRef.current;
-    if (!canvas || !hasMarks || submitting || running) return;
+    if (!canvas || !hasMarks || busy("eraseSlide", slide.slideId) || running) return;
     const markImageDataUrl = canvas.toDataURL("image/png");
-    setSubmitting(true);
-    const result = await run({
-      kind: "eraseSlide",
-      params: { slideId: slide.slideId, markImageDataUrl },
-    });
-    setSubmitting(false);
-    if (result) {
-      notifyCreditsRefresh();
-      exitEraseMode();
-      toast("已开始高精清除，完成后自动更新");
-    } else {
-      toast("高精清除提交失败，本次未扣除星星，可重新尝试。");
-    }
+    await run(
+      { kind: "eraseSlide", params: { slideId: slide.slideId, markImageDataUrl } },
+      { onSuccess: exitEraseMode },
+    );
   };
 
   const submitTextEdit = async () => {
     const text = textEdit.trim();
-    if (!text || submitting || running) return;
-    setSubmitting(true);
-    const result = await run({
-      kind: "editSlideText",
-      params: { slideId: slide.slideId, editInstruction: text },
-    });
-    setSubmitting(false);
-    if (result) {
-      notifyCreditsRefresh();
-      setTextEdit("");
-      toast("已开始图上改字，完成后自动更新");
-    } else {
-      toast("图上改字提交失败，本次未扣除星星，可重新尝试。");
-    }
+    if (!text || busy("editSlideText", slide.slideId) || running) return;
+    await run(
+      { kind: "editSlideText", params: { slideId: slide.slideId, editInstruction: text } },
+      { onSuccess: () => setTextEdit("") },
+    );
   };
 
   const submitFusion = async () => {
-    if (!fusionPackId || submitting || running) return;
-    setSubmitting(true);
-    const result = await run({
-      kind: "fuseSlide",
-      params: { slideId: slide.slideId, fusionPackId },
-    });
-    setSubmitting(false);
-    if (result) {
-      notifyCreditsRefresh();
-      setFusionPackId("");
-      toast("已开始模板融合，完成后自动更新");
-    } else {
-      toast("模板融合提交失败，本次未扣除星星，可重新尝试。");
-    }
+    if (!fusionPackId || busy("fuseSlide", slide.slideId) || running) return;
+    await run(
+      { kind: "fuseSlide", params: { slideId: slide.slideId, fusionPackId } },
+      { onSuccess: () => setFusionPackId("") },
+    );
   };
 
   const toggleReference = async () => {
-    if (submitting || running) return;
-    setSubmitting(true);
-    const result = await run({
-      kind: "setReferenceImage",
-      params: { slideId: isAnchor ? null : slide.slideId },
-    });
-    setSubmitting(false);
-    if (result) {
-      toast(isAnchor ? "已取消全套参考图" : "已设为全套参考图，后续生成与改图将优先对齐本页风格");
-    } else {
-      toast("参考图设置失败，请重试。");
-    }
+    if (busy("setReferenceImage", slide.slideId) || running) return;
+    await run({ kind: "setReferenceImage", params: { slideId: isAnchor ? null : slide.slideId } });
   };
 
   const submitRefine = async () => {
     const text = instruction.trim();
-    if (!text || submitting || running) return;
-    setSubmitting(true);
-    const result = await run({
-      kind: "refineSlide",
-      params: { slideId: slide.slideId, editInstruction: text },
-    });
-    setSubmitting(false);
-    if (result) {
-      notifyCreditsRefresh();
-      setInstruction("");
-      toast("已开始微调本页，完成后自动更新");
-    } else {
-      toast("微调提交失败，本次未扣除星星，可重新尝试。");
-    }
+    if (!text || busy("refineSlide", slide.slideId) || running) return;
+    await run(
+      { kind: "refineSlide", params: { slideId: slide.slideId, editInstruction: text } },
+      { onSuccess: () => setInstruction("") },
+    );
   };
 
   const submitRegen = async () => {
-    if (submitting || running) return;
+    if (busy("generateSlide", slide.slideId) || running) return;
     if (!confirmRegen) {
       setConfirmRegen(true);
       return;
     }
     setConfirmRegen(false);
-    setSubmitting(true);
-    const result = await run({ kind: "generateSlide", params: { slideId: slide.slideId } });
-    setSubmitting(false);
-    if (result) {
-      notifyCreditsRefresh();
-      toast("已开始重新生成本页，完成后自动更新");
-    } else {
-      toast("重新生成提交失败，请重试。");
-    }
+    await run({ kind: "generateSlide", params: { slideId: slide.slideId } });
   };
 
   const selectVersion = async (versionId: string) => {
-    if (selectingVersion || running) return;
+    if (busy("commitVersion", slide.slideId) || running) return;
     setSelectingVersion(versionId);
-    const result = await run({
-      kind: "commitVersion",
-      params: { slideId: slide.slideId, versionId },
-    });
+    await run({ kind: "commitVersion", params: { slideId: slide.slideId, versionId } });
     setSelectingVersion(null);
-    if (!result) toast("切换版本失败，请重试。");
   };
 
   const versions = [...slide.versions].sort((a, b) => b.versionNo - a.versionNo);
@@ -937,19 +878,19 @@ function SlideEditor({
           />
           <button
             type="button"
-            disabled={!instruction.trim() || submitting || running || refineCredits === null}
+            disabled={!instruction.trim() || busy("refineSlide", slide.slideId) || running || refineCredits === null}
             onClick={() => void submitRefine()}
             className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-full bg-brand px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
           >
             <WandIcon width={13} height={13} />
-            {submitting ? "提交中…" : `微调本页 · ${refineCredits ?? "…"}🌟`}
+            {busy("refineSlide", slide.slideId) ? "提交中…" : `微调本页 · ${refineCredits ?? "…"}🌟`}
           </button>
 
           {/* 重生成 + 下载原图 */}
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              disabled={submitting || running || regenCredits === null}
+              disabled={busy("generateSlide", slide.slideId) || running || regenCredits === null}
               onClick={() => void submitRegen()}
               title="丢弃当前图，按本页内容重新生成一张"
               className={`flex flex-1 items-center justify-center gap-1 rounded-full px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
@@ -959,7 +900,11 @@ function SlideEditor({
               }`}
             >
               <RefreshIcon />
-              {confirmRegen ? `确认消耗 ${regenCredits}🌟 重生成` : `重新生成 · ${regenCredits ?? "…"}🌟`}
+              {busy("generateSlide", slide.slideId)
+                ? "提交中…"
+                : confirmRegen
+                  ? `确认消耗 ${regenCredits}🌟 重生成`
+                  : `重新生成 · ${regenCredits ?? "…"}🌟`}
             </button>
             {imageUrl && (
               <a
@@ -985,11 +930,11 @@ function SlideEditor({
                       <div className="mt-2 flex gap-2">
                         <button
                           type="button"
-                          disabled={!hasMarks || submitting || running || refineCredits === null}
+                          disabled={!hasMarks || busy("eraseSlide", slide.slideId) || running || refineCredits === null}
                           onClick={() => void submitErase()}
                           className="flex flex-1 items-center justify-center gap-1 rounded-full bg-brand px-3 py-2 text-xs font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          {submitting ? "提交中…" : `确认擦除 · ${refineCredits ?? "…"}🌟`}
+                          {busy("eraseSlide", slide.slideId) ? "提交中…" : `确认擦除 · ${refineCredits ?? "…"}🌟`}
                         </button>
                         <button
                           type="button"
@@ -1003,7 +948,7 @@ function SlideEditor({
                   ) : (
                     <button
                       type="button"
-                      disabled={submitting || running || !imageUrl}
+                      disabled={busy("eraseSlide", slide.slideId) || running || !imageUrl}
                       onClick={() => setEraseMode(true)}
                       title="涂抹标记要擦除的元素，AI 移除后用周围底色自然填充"
                       className="flex w-full items-center justify-center gap-1 rounded-full border border-line-strong px-3 py-2 text-xs text-ink-2 transition hover:border-brand-line disabled:cursor-not-allowed disabled:opacity-40"
@@ -1024,7 +969,7 @@ function SlideEditor({
                   />
                   <button
                     type="button"
-                    disabled={!textEdit.trim() || submitting || running || refineCredits === null}
+                    disabled={!textEdit.trim() || busy("editSlideText", slide.slideId) || running || refineCredits === null}
                     onClick={() => void submitTextEdit()}
                     className="mt-2 flex w-full items-center justify-center gap-1 rounded-full border border-line-strong px-3 py-2 text-xs text-ink-2 transition hover:border-brand-line disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -1047,7 +992,7 @@ function SlideEditor({
                   </select>
                   <button
                     type="button"
-                    disabled={!fusionPackId || submitting || running || refineCredits === null}
+                    disabled={!fusionPackId || busy("fuseSlide", slide.slideId) || running || refineCredits === null}
                     onClick={() => void submitFusion()}
                     title="保留本页版式骨架与文字，视觉风格向所选模板靠拢"
                     className="mt-2 flex w-full items-center justify-center gap-1 rounded-full border border-line-strong px-3 py-2 text-xs text-ink-2 transition hover:border-brand-line disabled:cursor-not-allowed disabled:opacity-40"
@@ -1061,7 +1006,7 @@ function SlideEditor({
                 <div className="mt-3">
                   <button
                     type="button"
-                    disabled={submitting || running || (!isAnchor && !imageUrl)}
+                    disabled={busy("setReferenceImage", slide.slideId) || running || (!isAnchor && !imageUrl)}
                     onClick={() => void toggleReference()}
                     title="把本页设为全套风格锚点：后续生成/改图优先对齐本页（免费）"
                     className={`flex w-full items-center justify-center gap-1 rounded-full px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
@@ -1095,7 +1040,12 @@ function SlideEditor({
                     <button
                       key={v.versionId}
                       type="button"
-                      disabled={v.status !== "succeeded" || active || selectingVersion !== null || running}
+                      disabled={
+                        v.status !== "succeeded"
+                        || active
+                        || busy("commitVersion", slide.slideId)
+                        || running
+                      }
                       onClick={() => void selectVersion(v.versionId)}
                       title={active ? "当前使用" : `切换到版本 ${v.versionNo}`}
                       className={`shrink-0 overflow-hidden rounded-lg border text-left transition disabled:cursor-default ${

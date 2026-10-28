@@ -103,6 +103,9 @@ NODE
 - 外部文件转可编辑：侧栏 `/tools/editable-converter` 已上线，支持 PDF 与图片排序；未登录先引导登录，不会误发受保护请求。
 - **会话只取一次（2026-10-27）**：`src/lib/client/api.ts` 的 `getSession()` 做进程内 in-flight 去重，壳/导出中心/项目/单页工作台/onlyoffice/可编辑转换共用它；此前 6 个组件各打一次 `/api/auth/session`。登录或登出后必须调 `resetSessionCache()`，否则读到旧会话。
 - **前端唯一请求入口（2026-10-27）**：一律走 `apiFetch()`（信封解包 + 写操作 `x-anppt-action` CSRF 头 + `ApiClientError` 的 401/402 语义）。`admin-client` 曾自带一套 `adminFetch`/`mutationInit` 把错误降级成普通 `Error`，已删除；新增页面不要再自建 adapter。**组件目录裸 `fetch(` 已归零**（2026-10-27，含管理员问题日志面板）；刻意保留的豁免：无。新增读接口按能力命名加进 `src/lib/client/api.ts`，不要再把 URL 字面量或信封解包写进组件。
+- **deck 动作执行器（2026-10-28）**：`src/lib/client/deck-actions.ts` 是 deck 动作目录 + 执行器（纯函数：注入 dispatch/余额刷新/toast，可脱离 DOM 测试）；`src/components/deck/use-deck-actions.ts` 只把在飞集合镜像成渲染态。执行器统一负责 402 → 星星不足弹窗（不 toast）、401 保留服务端原话、其余失败一条 toast；成功应用响应状态、收费动作刷新余额、写目录成功文案、执行调用点清理。组件不再手写这四件事。
+- **busy 作用域（2026-10-28）**：键 = `动作类型:实体`（带 `slideId` 的页级意图锁该页，其余锁整套）。同一动作对同一实体不重复提交，不同动作/不同页互不阻塞——单页编辑器原来六处共用一个 `submitting` 布尔，免费动作与收费动作互相锁死；`busyKind` / `retryingId` 一类面板级布尔随之删除，界面的「忙」一律从执行器派生。
+- **退款承诺唯一生成处（2026-10-28）**：动作目录声明 `billing: charged|free`，失败文案据此拼「本次未扣除星星，可重新尝试。」或「请重试。」；单页编辑器的微调/重绘/擦除/改字/融合/参考图与版本切换都已迁移，组件零手写承诺。未登记的动作失败仍回退服务端文案；导出不是意图通道，只共用 402 归一。测试：`scripts/tests/deck-actions.test.mjs`（[4h]）钉 402 归一、并行与判重、退款文案、成功清理与「组件零手写承诺 / 零 402 判断」。
 - **扣费键唯一来源（2026-10-27）**：可编辑导出的 `credit_ledger.idempotency_key` 由 `modules/editable-export/server/charge-keys.ts` 的 `editableChargeKey({kind, refId, exportId})` 生成，扣费与退款共用。此前两处各拼一份模板（`editable.ts:307` / `:807`），漂移会让退款派生到别的键上——表现是钱扣了不退且不报错。
 - 本地编辑器：侧栏 `/tools/onlyoffice`（`src/components/tools/onlyoffice-client.tsx`）已上线；未充值不显示下载链接，三个 Windows 下载路由再次做服务端权益校验。页面口径固定为「第三方开源免费的 ONLYOFFICE Desktop Editors + AnPPT 的下载整理/校验/兼容服务」，2026-10-13 起首屏先讲清「装的是什么、拿来做什么、为什么用它」，再往下才是下载区与权益对比，避免读者误以为软件是自研产品或需付费购买。
 
@@ -112,7 +115,7 @@ NODE
 npm run gate         # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build（全 mock，零真实付费调用）
 npm run gate:fast    # 快集：跳过 build 与两套测试
 npm run test:guardrails  # 护栏自检：用坏夹具证明门/钩子/工作树/发布脚本会红
-# 单跑某一层（排查用）：node scripts/test-generation.mjs（550 断言）/ node scripts/test-backend.mjs（171 断言）
+# 单跑某一层（排查用）：node scripts/test-generation.mjs（594 断言）/ node scripts/test-backend.mjs（171 断言）
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）
 BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实生图扣费（约 $0.08），慎用
 ```
@@ -374,6 +377,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 可用性：`getDeckState()` 返回 `availableIntents`（同一份规则按当前 deck 事实算出；事实只在 `buildDeckFacts(deck, job)` 一处构造，dispatch 前置与展示面同源，activeJob 在跑时两边一致隐藏/拒绝）；客户端 `deriveDeckAvailability(state)` 直接读它（`canRetryFailed` 等），各步组件不再各写顺序条件；`canGenerate` 仍是「内容已冻结」这个事实，风格由 UI 另行校验。saving/editor/弹窗这类局部 UI 态仍归组件。
 - 拒绝语义：拒绝码/文案/HTTP 状态都从 gate 规则生成（含 `STRUCTURE_INCOMPLETE` 的页号文案），错误提示不再与规则各写一份；参数深校验（缺 slideId、DSL 非法等）仍留在动作自身。
 - 计费/幂等未改：扣费键、退款键、job 创建顺序与 `unlockStructure` 的作废语义全部沿用原实现。
+- 客户端提交手势：与单页工作台共用的动作目录/执行器（402 归一、busy 按「动作类型 + 实体」、退款承诺文案）见 §7；意图契约本身不描述忙碌态。
 - 测试：`scripts/tests/deck-intents.test.mjs`（[4d]）钉意图唯一入口、dispatch 覆盖、拒绝理由逐字来自不变量、`availableIntents` 随状态翻转、路由拒旧 `{action}` 信封；`scripts/tests/deck-workbench.test.mjs`（[4e]）钉意图请求体、按意图收窄的响应、可用性推导与静态约束（链路无 `Record<string, unknown>` 请求体、无 `run("action")`、无 `deckAction`）。
 
 ## 30. 单页 / 导出 / 后台的 typed intent（2026-10-27）
