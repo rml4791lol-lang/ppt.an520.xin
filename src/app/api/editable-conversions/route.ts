@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/server/auth';
-import { editablePageCapacity, startUploadedEditableExport } from '@/modules/editable-export/server/editable';
+import { editablePageCapacity, startEditableExport, uploadedEditableSource } from '@/modules/editable-export/server/editable';
 import { ApiError, jsonOk } from '@/lib/server/http';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { defineApiRoute } from '@/lib/server/generation/route';
@@ -51,20 +51,8 @@ export const POST = defineApiRoute(async (request) => {
     })),
   );
   const force = String(form.get('force') || '') === 'true';
-  const result = await startUploadedEditableExport(user.id, files, { config }, { force });
-  return jsonOk(
-    {
-      exportId: result.exportId,
-      status: result.status,
-      credits: result.credits,
-      pageCount: result.pageCount,
-      progress: result.progress,
-      completedPages: result.completedPages,
-      totalPages: result.totalPages,
-      stage: result.stage,
-      url: result.url,
-      reused: result.reused,
-    },
-    { status: result.status === 'succeeded' ? 200 : 202 },
-  );
+  const deps = { config };
+  const source = await uploadedEditableSource(user.id, files, deps);
+  const started = await startEditableExport(source, 'editable', { force, deps });
+  return jsonOk(started, { status: started.status === 'succeeded' ? 200 : 202 });
 }, { mutation: true });

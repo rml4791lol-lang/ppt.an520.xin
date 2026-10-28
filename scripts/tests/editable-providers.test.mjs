@@ -1,6 +1,5 @@
 // 上游通道接口（Provider）测试：能力声明 / registry 回退顺序与页数过滤 / 假通道驱动管线与恢复。
 // 全部 mock，禁止真实调用 WPS / Image2PPT / Codia。
-import { startEditableWithDone } from './editable-start-helpers.mjs';
 
 export async function runEditableProviderTests(ctx) {
   const {
@@ -8,9 +7,19 @@ export async function runEditableProviderTests(ctx) {
   } = ctx;
   const providersLib = await import('../../src/modules/editable-export/server/providers/index.ts');
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
-  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
+  // 生产 view 无 done：测试经 deps.onPipelineDone 收集后台管线，再按需 drain 等终态。
+  const pipelineWaits = [];
+  const collectPipeline = (done) => { pipelineWaits.push(done); };
+  const drainPipelines = () => Promise.all(pipelineWaits.splice(0));
+  const startWithPipelines = (source, kind, deps = {}, options = {}) =>
+    exportsLib.startEditableExport(source, kind, {
+      ...options,
+      deps: { ...deps, onPipelineDone: collectPipeline },
+    });
   const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
+    startWithPipelines(exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
+  const startUploadedEditableFor = async (userId, files, deps = {}, options = {}) =>
+    startWithPipelines(await exportsLib.uploadedEditableSource(userId, files, deps), 'editable', deps, options);
   const { getGenDb } = await import('../../src/lib/server/generation/db.ts');
   const { ApiError } = await import('../../src/lib/server/http.ts');
 
@@ -159,7 +168,7 @@ export async function runEditableProviderTests(ctx) {
     check('只配置 Codia：20 页整套可发起',
       accepted20.pageCount === 20 && accepted20.status === 'processing' && accepted20.credits === 400,
       `${accepted20.pageCount} ${accepted20.status} ${accepted20.credits}`);
-    await accepted20.done;
+    await drainPipelines();
 
     const d21 = makePagedDeck(21, sharedImage);
     const rejected21 = await startError(() => startDeckEditableFor(uid, d21.id, { config: codiaOnly, providers: [capturingProvider().provider] },
@@ -179,7 +188,7 @@ export async function runEditableProviderTests(ctx) {
     check('配置 Image2PPT：50 页整套可发起（不被 Codia 的 20 拒绝）',
       accepted50.pageCount === 50 && accepted50.status === 'processing' && accepted50.credits === 1000,
       `${accepted50.pageCount} ${accepted50.status} ${accepted50.credits}`);
-    await accepted50.done;
+    await drainPipelines();
 
     const wpsConfigured = {
       ...baseConfig,
@@ -194,7 +203,7 @@ export async function runEditableProviderTests(ctx) {
     check('配置 WPS：50 页整套也可发起（能力同样 50）',
       accepted50Wps.pageCount === 50 && accepted50Wps.status === 'processing' && accepted50Wps.credits === 1000,
       `${accepted50Wps.pageCount} ${accepted50Wps.status} ${accepted50Wps.credits}`);
-    await accepted50Wps.done;
+    await drainPipelines();
 
     const d51 = makePagedDeck(51, sharedImage);
     const rejected51 = await startError(() => startDeckEditableFor(uid, d51.id, { config: i2pConfigured, providers: [capturingProvider().provider] },
@@ -243,10 +252,10 @@ export async function runEditableProviderTests(ctx) {
     {
       const { provider, captured } = capturingProvider();
       const control = makePagedDeck(2, fixture.relPath);
-      const started = await startDeckEditableFor(uid, control.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
+      await startDeckEditableFor(uid, control.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
         { force: true },
       );
-      await started.done;
+      await drainPipelines();
       const document = await PDFDocument.load(captured[0]);
       check('2 页来源不压缩：页尺寸保持原图像素',
         pageSizes(document).join(',') === '2560x1440,2560x1440', pageSizes(document).join(','));
@@ -255,10 +264,10 @@ export async function runEditableProviderTests(ctx) {
     {
       const { provider, captured } = capturingProvider();
       const boundary = makePagedDeck(20, fixture.relPath);
-      const started = await startDeckEditableFor(uid, boundary.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
+      await startDeckEditableFor(uid, boundary.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
         { force: true },
       );
-      await started.done;
+      await drainPipelines();
       const document = await PDFDocument.load(captured[0]);
       check('20 页边界不压缩：仍按原图尺寸嵌入（阈值是 >20）',
         pageSizes(document).length === 20 && pageSizes(document).every((size) => size === '2560x1440'),
@@ -268,10 +277,10 @@ export async function runEditableProviderTests(ctx) {
     {
       const { provider, captured } = capturingProvider();
       const many = makePagedDeck(21, fixture.relPath);
-      const started = await startDeckEditableFor(uid, many.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
+      await startDeckEditableFor(uid, many.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
         { force: true },
       );
-      await started.done;
+      await drainPipelines();
       const pdf = captured[0];
       const document = await PDFDocument.load(pdf);
       const sizes = pageSizes(document);
@@ -307,13 +316,13 @@ export async function runEditableProviderTests(ctx) {
       const { provider, captured } = capturingProvider();
       credits.refundCredits(uid, 400, { reason: '上传压缩测试补贴', idempotencyKey: 'test-topup-upload-compress' });
       const files = Array.from({ length: 21 }, (_, index) => ({ name: `p${index}.png`, mime: 'image/png', data: largePng }));
-      const started = await exportsLib.startUploadedEditableExport(
+      await startUploadedEditableFor(
         uid,
         files,
         { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
         { force: true },
       );
-      await started.done;
+      await drainPipelines();
       const document = await PDFDocument.load(captured[0]);
       const sizes = pageSizes(document);
       check('上传 21 张图片同样先转 JPEG：每页 1920×1080',
@@ -387,7 +396,7 @@ export async function runEditableProviderTests(ctx) {
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
     const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
-    await started.done;
+    await drainPipelines();
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     const row = getGenDb()
       .prepare('SELECT upstream_provider, upstream_task_id FROM export_jobs WHERE id = ?')
@@ -423,7 +432,7 @@ export async function runEditableProviderTests(ctx) {
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
     const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
-    await started.done;
+    await drainPipelines();
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     check('能力声明的 attempts=2：首次提交失败后用第 2 次提交成功',
       exp.status === 'succeeded' && calls.includes('start:0') && calls.includes('start:1'), calls.join(','));
@@ -444,7 +453,7 @@ export async function runEditableProviderTests(ctx) {
       pollIntervalMs: 1,
     };
     const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
-    await started.done;
+    await drainPipelines();
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     const row = getGenDb().prepare('SELECT upstream_provider FROM export_jobs WHERE id = ?').get(started.exportId);
     check('回退：前一个通道失败后按序切下一个并成功',
@@ -466,7 +475,7 @@ export async function runEditableProviderTests(ctx) {
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
     const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
-    await started.done;
+    await drainPipelines();
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     check('同步通道：start 带回产物即落盘，advance 一次都不调用',
       exp.status === 'succeeded' && !calls.some((item) => item.startsWith('advance')), calls.join(','));
@@ -597,8 +606,10 @@ export async function runEditableProviderTests(ctx) {
     const gateErrors = {};
     for (const [name, run] of Object.entries({
       deck: () => startDeckEditableFor(uid, deck.id, { config: unconfigured }),
-      singlePage: () => exportsLib.startSinglePageEditableExport(uid, 'proj_any', { config: unconfigured }),
-      upload: () => exportsLib.startUploadedEditableExport(uid, [], { config: unconfigured }),
+      singlePage: () => exportsLib.startEditableExport(
+        exportsLib.singlePageEditableSource(uid, 'proj_any'), 'editable', { deps: { config: unconfigured } },
+      ),
+      upload: () => exportsLib.uploadedEditableSource(uid, [], { config: unconfigured }),
     })) {
       try {
         await run();
@@ -635,7 +646,7 @@ export async function runEditableProviderTests(ctx) {
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
     const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
-    await started.done;
+    await drainPipelines();
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     check('上游轮询抖动：继续等同一任务而不重建（start 只提交 1 次）',
       exp.status === 'succeeded' && calls.filter((item) => item.startsWith('start')).length === 1 && advances === 2,
