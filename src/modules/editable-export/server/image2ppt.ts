@@ -7,6 +7,13 @@ import { getEnv } from '@/lib/server/env';
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
 import { cleanString } from '@/lib/server/generation/types';
 import { recordUpstreamUsage } from '@/lib/server/usage-meter';
+import {
+  finiteNumber,
+  notConfiguredError,
+  UPSTREAM_AUTH_MESSAGE,
+  UPSTREAM_BUSY_MESSAGE,
+  UPSTREAM_NO_CREDITS_MESSAGE,
+} from './providers/types';
 
 export interface Image2PptDeps {
   fetchImpl?: typeof fetch;
@@ -29,18 +36,9 @@ export interface Image2PptJobView {
 
 const REQUEST_TIMEOUT_MS = 90_000;
 const UPLOAD_TIMEOUT_MS = 480_000;
-const UPSTREAM_BUSY_MESSAGE = '可编辑转换服务暂时开小差了，系统会继续检查；完成后可在下载中心查看。';
-
 function requireImage2PptConfig(config: GenerationConfig): { baseUrl: string; apiKey: string } {
-  if (!config.image2pptApiKey) {
-    throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑转换服务尚未配置，请联系管理员', 503, false);
-  }
+  if (!config.image2pptApiKey) throw notConfiguredError();
   return { baseUrl: config.image2pptBaseUrl, apiKey: config.image2pptApiKey };
-}
-
-function finiteNumber(value: unknown): number {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 
 function statusOf(value: unknown): Image2PptJobView['status'] {
@@ -82,10 +80,10 @@ function mapHttpError(status: number, payload: Record<string, unknown>): ApiErro
   const message = cleanString(errorObject.message ?? payload.message, 300) || `HTTP ${status}`;
   console.error(`[anppt-v2][image2ppt] HTTP ${status}: ${message}`);
   if (status === 401 || status === 403) {
-    return new ApiError('UPSTREAM_AUTH', '可编辑转换服务配置异常，请联系管理员。', 502, false);
+    return new ApiError('UPSTREAM_AUTH', UPSTREAM_AUTH_MESSAGE, 502, false);
   }
   if (status === 402) {
-    return new ApiError('UPSTREAM_NO_CREDITS', '可编辑转换服务额度暂时不足，请联系管理员。', 502, false);
+    return new ApiError('UPSTREAM_NO_CREDITS', UPSTREAM_NO_CREDITS_MESSAGE, 502, false);
   }
   if (status === 429) {
     return new ApiError('IMAGE2PPT_RATE_LIMITED', UPSTREAM_BUSY_MESSAGE, 429, true);

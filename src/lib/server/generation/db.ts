@@ -62,7 +62,6 @@ CREATE TABLE IF NOT EXISTS slide_versions (
   image_url TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
   job_id TEXT NOT NULL DEFAULT '',
-  charge_key TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -233,11 +232,6 @@ export function getGenDb(): DatabaseSync {
     const singleVerCols = db.prepare("SELECT name FROM pragma_table_info('single_page_versions')").all() as Array<{ name: string }>;
     if (!singleVerCols.some((c) => c.name === 'charge_key')) {
       db.exec("ALTER TABLE single_page_versions ADD COLUMN charge_key TEXT NOT NULL DEFAULT ''");
-    }
-    // 整套版本表同样补 charge_key（扣费前随版本行落库，恢复按存储键退款；老行留空走键模块回退）
-    const deckVerCols = db.prepare("SELECT name FROM pragma_table_info('slide_versions')").all() as Array<{ name: string }>;
-    if (!deckVerCols.some((c) => c.name === 'charge_key')) {
-      db.exec("ALTER TABLE slide_versions ADD COLUMN charge_key TEXT NOT NULL DEFAULT ''");
     }
     const projectCols = db.prepare("SELECT name FROM pragma_table_info('single_page_projects')").all() as Array<{ name: string }>;
     if (!projectCols.some((c) => c.name === 'source')) {

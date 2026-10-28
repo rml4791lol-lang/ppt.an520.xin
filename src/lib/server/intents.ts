@@ -5,9 +5,8 @@ import { validationError } from './http';
 
 /**
  * intent 必须是本路由声明的 kind：缺信封 / 未知 kind / kind 错配一律 400，不静默降级。
- * 第二参是 (kind → 参数解析器) 表：单 kind 路由传 expected 收紧，deck 一次收整张表。
- * 参数失败时文案来自解析器，HTTP 形状统一为 400 VALIDATION_ERROR。
- * 计费/幂等/开关等业务硬门仍在原路由。
+ * 第二参是 (kind → 参数校验器) 表：单 kind 路由传 expected 收紧，deck 一次收整张表。
+ * 参数深校验（扣费/幂等/开关硬门）仍留在原路由。
  */
 export function readIntentParams<M extends Record<string, object>>(
   body: unknown,
@@ -27,6 +26,6 @@ export function readIntentParams<M extends Record<string, object>>(
     throw validationError('缺少意图');
   }
   const intent = parseIntent((body as { intent: unknown }).intent, table, expected);
-  if (!intent.ok) throw validationError(intent.message);
-  return intent as ParsedIntent<M>;
+  if (!intent) throw validationError('未知意图');
+  return intent;
 }

@@ -1,10 +1,9 @@
 // 逐页生图管线：估价 → 整单余额校验（不足 402）→ 建持久化 job → 按配置逐页并发
-// → 版本行落扣费键 → debit → 成功落盘 / 失败 refund。键形归 charge-keys.ts。
+// debit（幂等键 deck-generate:{deckId}:{jobId}:{slideId}）→ 成功落盘 / 失败 refund。
 import { ApiError } from '../http';
 import { logProblem } from '../problem-log';
 import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '../credits';
 import { getGenerationConfig } from './config';
-import { deckChargeKey } from './charge-keys';
 import { getGenDb } from './db';
 import {
   createJob,
@@ -117,8 +116,8 @@ async function runSlideGeneration(
 ): Promise<'succeeded' | 'failed'> {
   const config = deps.config ?? getGenerationConfig();
   const { unitPrice } = opts;
-  // 扣费键形状归 charge-keys（前缀是历史账本契约）；退款键由它定长派生
-  const { chargeKey, refundKey } = chargeRefundKeys(deckChargeKey({ deckId: deck.id, jobId, slideId: slide.slideId }));
+  // 幂等键含 jobId（契约口径 deck-generate:{deckId}:{jobId}，逐页追加 slideId 保证唯一）
+  const { chargeKey, refundKey } = chargeRefundKeys(`deck-generate:${deck.id}:${jobId}:${slide.slideId}`);
   const { prompt, referencePath, anchorReference } = promptForSlide(
     slide,
     deck.stylePackId,
@@ -127,12 +126,10 @@ async function runSlideGeneration(
     opts.template,
     deck.anchorImagePath || undefined,
   );
-  // 先落版本行再扣费：扣费一旦发生，行上必有键可供恢复退款
   const version = createSlideVersion(slide, {
     kind: kind === 'deck-refine' ? 'refine' : 'generate',
     prompt,
     jobId,
-    chargeKey,
   });
 
   try {

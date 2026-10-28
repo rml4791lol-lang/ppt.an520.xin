@@ -9,6 +9,13 @@ import { ApiError } from '@/lib/server/http';
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
 import { cleanString } from '@/lib/server/generation/types';
 import { recordUpstreamUsage } from '@/lib/server/usage-meter';
+import {
+  finiteNumber,
+  notConfiguredError,
+  UPSTREAM_AUTH_MESSAGE,
+  UPSTREAM_BUSY_MESSAGE,
+  UPSTREAM_NO_CREDITS_MESSAGE,
+} from './providers/types';
 
 export interface CodiaDeps {
   fetchImpl?: typeof fetch;
@@ -36,9 +43,7 @@ const UPLOAD_TIMEOUT_MS = 480_000;
 const REQUEST_TIMEOUT_MS = 90_000;
 
 function requireCodiaConfig(config: GenerationConfig): { baseUrl: string; apiKey: string } {
-  if (!config.codiaApiKey) {
-    throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑转换服务尚未配置，请联系管理员', 503, false);
-  }
+  if (!config.codiaApiKey) throw notConfiguredError();
   return { baseUrl: config.codiaBaseUrl, apiKey: config.codiaApiKey };
 }
 
@@ -46,11 +51,6 @@ interface CodiaEnvelope {
   code?: number;
   message?: string;
   data?: Record<string, unknown>;
-}
-
-function finiteNumber(value: unknown): number {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 
 function percentOf(value: unknown): number {
@@ -65,8 +65,6 @@ function taskStatusOf(value: unknown): CodiaTaskView['status'] {
     ? status
     : 'pending';
 }
-
-const UPSTREAM_BUSY_MESSAGE = '可编辑转换服务暂时开小差了，系统会继续检查；完成后可在下载中心查看。';
 
 function retryDelay(attempt: number, deps: CodiaDeps): Promise<void> {
   const baseMs = Math.max(0, deps.retryDelayMs ?? 600);
@@ -86,10 +84,10 @@ function mapHttpError(status: number, payload: CodiaEnvelope, raw: string): ApiE
   // 运营可见性：上游原始错误进服务器日志，对外统一走错误码口径
   console.error(`[anppt-v2][codia] HTTP ${status}: ${message}`);
   if (status === 401 || status === 403) {
-    return new ApiError('UPSTREAM_AUTH', '可编辑转换服务配置异常，请联系管理员。', 502, false);
+    return new ApiError('UPSTREAM_AUTH', UPSTREAM_AUTH_MESSAGE, 502, false);
   }
   if (status === 402) {
-    return new ApiError('UPSTREAM_NO_CREDITS', '可编辑转换服务额度暂时不足，请联系管理员。', 502, false);
+    return new ApiError('UPSTREAM_NO_CREDITS', UPSTREAM_NO_CREDITS_MESSAGE, 502, false);
   }
   if (status === 429) {
     return new ApiError('CODIA_RATE_LIMITED', UPSTREAM_BUSY_MESSAGE, 429, true);

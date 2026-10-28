@@ -51,16 +51,16 @@ export async function runSurfaceIntentTests(ctx) {
   check('单页解析：合法意图 / 缺省 params / 未知 kind / 非对象参数',
     envelope.parseIntent({ kind: 'selectVersion', params: { pageId: 'p', versionId: 'v' } }, sp.SINGLE_PAGE_INTENT_PARAMS)?.kind === 'selectVersion'
       && JSON.stringify(envelope.parseIntent({ kind: 'selectVersion' }, sp.SINGLE_PAGE_INTENT_PARAMS)?.params) === '{}'
-      && envelope.parseIntent({ kind: 'drop-database', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === false
-      && envelope.parseIntent({ kind: 'selectVersion', params: [] }, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === false
-      && envelope.parseIntent(null, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === false);
+      && envelope.parseIntent({ kind: 'drop-database', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS) === null
+      && envelope.parseIntent({ kind: 'selectVersion', params: [] }, sp.SINGLE_PAGE_INTENT_PARAMS) === null
+      && envelope.parseIntent(null, sp.SINGLE_PAGE_INTENT_PARAMS) === null);
   check('导出解析：合法意图 / 未知 kind / 数组参数拒绝',
     envelope.parseIntent({ kind: 'quoteExport', params: { projectId: 'p' } }, ex.EXPORT_INTENT_PARAMS)?.kind === 'quoteExport'
-      && envelope.parseIntent({ kind: 'exportDeckImage', params: [] }, ex.EXPORT_INTENT_PARAMS)?.ok === false
-      && envelope.parseIntent({ kind: 'nope' }, ex.EXPORT_INTENT_PARAMS)?.ok === false);
+      && envelope.parseIntent({ kind: 'exportDeckImage', params: [] }, ex.EXPORT_INTENT_PARAMS) === null
+      && envelope.parseIntent({ kind: 'nope' }, ex.EXPORT_INTENT_PARAMS) === null);
   check('路由侧 expected kind 拒绝错配（不把别的动作参数当自己的）',
-    envelope.parseIntent({ kind: 'selectVersion', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS, 'generatePage')?.ok === false
-      && envelope.parseIntent({ kind: 'exportDeckImage', params: { deckId: 'd' } }, ex.EXPORT_INTENT_PARAMS, 'quoteExport')?.ok === false);
+    envelope.parseIntent({ kind: 'selectVersion', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS, 'generatePage') === null
+      && envelope.parseIntent({ kind: 'exportDeckImage', params: { deckId: 'd' } }, ex.EXPORT_INTENT_PARAMS, 'quoteExport') === null);
 
   await expectThrows('服务器适配器：无 intent 信封一律 400（旧 body 直通已删除）', () =>
     server.readIntentParams({ pageId: 'legacy-page' }, sp.SINGLE_PAGE_INTENT_PARAMS, 'selectVersion'), 'VALIDATION_ERROR');
@@ -185,10 +185,10 @@ export async function runAdminIntentTests(ctx) {
   check('后台解析：合法 / 缺省 params / 未知 kind / 数组参数',
     envelope.parseIntent({ kind: 'setFeatureFlag', params: { key: 'k', state: 'beta' } }, intents.ADMIN_INTENT_PARAMS)?.kind === 'setFeatureFlag'
       && JSON.stringify(envelope.parseIntent({ kind: 'setFeatureFlag' }, intents.ADMIN_INTENT_PARAMS)?.params) === '{}'
-      && envelope.parseIntent({ kind: 'drop-database' }, intents.ADMIN_INTENT_PARAMS)?.ok === false
-      && envelope.parseIntent({ kind: 'setFeatureFlag', params: [1] }, intents.ADMIN_INTENT_PARAMS)?.ok === false);
+      && envelope.parseIntent({ kind: 'drop-database' }, intents.ADMIN_INTENT_PARAMS) === null
+      && envelope.parseIntent({ kind: 'setFeatureFlag', params: [1] }, intents.ADMIN_INTENT_PARAMS) === null);
   check('后台路由侧 expected kind 拒绝错配',
-    envelope.parseIntent({ kind: 'setFeatureFlag', params: {} }, intents.ADMIN_INTENT_PARAMS, 'updateRuntimeConfig')?.ok === false);
+    envelope.parseIntent({ kind: 'setFeatureFlag', params: {} }, intents.ADMIN_INTENT_PARAMS, 'updateRuntimeConfig') === null);
   await expectThrows('后台适配器：未知意图 → VALIDATION_ERROR', () =>
     server.readIntentParams(
       { intent: { kind: 'nope', params: {} } },

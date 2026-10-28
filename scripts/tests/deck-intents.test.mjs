@@ -35,11 +35,11 @@ export async function runDeckIntentTests(ctx) {
     parseDeckIntent({ kind: 'commitVersion', params: { slideId: 's1', versionId: 'v1' } })?.kind === 'commitVersion');
   check('解析：缺省 params 按空对象（无参意图可裸发）',
     JSON.stringify(parseDeckIntent({ kind: 'unlockStructure' })?.params) === '{}');
-  check('解析：未知 kind 拒绝', parseDeckIntent({ kind: 'drop-database', params: {} })?.ok === false);
+  check('解析：未知 kind 拒绝', parseDeckIntent({ kind: 'drop-database', params: {} }) === null);
   check('解析：非对象 / 数组参数拒绝',
-    parseDeckIntent(null)?.ok === false
-      && parseDeckIntent('confirmStructure')?.ok === false
-      && parseDeckIntent({ kind: 'confirmStructure', params: [] })?.ok === false);
+    parseDeckIntent(null) === null
+      && parseDeckIntent('confirmStructure') === null
+      && parseDeckIntent({ kind: 'confirmStructure', params: [] }) === null);
 
   // ---------- 不变量：同一份规则给出拒绝理由与可用集合 ----------
   const factsOf = (state) => gates.deckGateFacts({
@@ -143,9 +143,6 @@ export async function runDeckIntentTests(ctx) {
   check('响应类型无索引签名兜底：dispatch 的 extra 按 kind 收窄',
     !actionsSrc.includes('Record<string, unknown>')
       && actionsSrc.includes('extra: DeckIntentExtra[K]'));
-  check('调度器不再清洗请求字段：解析器是唯一清洗点（无 cleanIdList / cleanString(params.*)）',
-    !actionsSrc.includes('cleanIdList')
-      && !/cleanString\(\s*(?:intent\.)?params\./.test(actionsSrc));
 
   // ---------- 路由边界：同一条 POST 只服务意图 ----------
   const routeDeck = decks.createDeck(uid, {
@@ -196,51 +193,4 @@ export async function runDeckIntentTests(ctx) {
   const badIntentBody = await badIntentRes.json();
   check('路由：未知意图 400 且错误码不变',
     badIntentRes.status === 400 && badIntentBody?.error?.code === 'VALIDATION_ERROR');
-
-  // ---------- 解析失败经路由返回统一 400，且不落任何动作 ----------
-  const slidesBeforeReject = decks.getDeckState(uid, routeDeck.id).slides.length;
-  const missingFieldRes = await callRoute({ intent: { kind: 'removeSlide', params: {} } });
-  const missingFieldBody = await missingFieldRes.json();
-  check('路由：字段解析失败 → 400 VALIDATION_ERROR + 解析器文案，deck 不变',
-    missingFieldRes.status === 400
-      && missingFieldBody?.ok === false
-      && missingFieldBody?.error?.code === 'VALIDATION_ERROR'
-      && missingFieldBody?.error?.retryable === false
-      && missingFieldBody?.error?.message === '缺少 slideId'
-      && decks.getDeckState(uid, routeDeck.id).slides.length === slidesBeforeReject,
-    `实际 ${missingFieldRes.status} ${missingFieldBody?.error?.code} ${missingFieldBody?.error?.message}`);
-
-  // ---------- 路由只解析一次：kind 解析器单次调用，动作直接用类型化参数 ----------
-  const originalUpdateParser = intents.DECK_INTENT_PARAMS.updateSlide;
-  let parseCalls = 0;
-  intents.DECK_INTENT_PARAMS.updateSlide = (params) => {
-    parseCalls += 1;
-    return originalUpdateParser(params);
-  };
-  let onceRes = null;
-  try {
-    onceRes = await callRoute({
-      intent: { kind: 'updateSlide', params: { slideId: routeSlideId, chapter: '第一章' } },
-    });
-    await onceRes.json();
-  } finally {
-    intents.DECK_INTENT_PARAMS.updateSlide = originalUpdateParser;
-  }
-  check('路由只解析一次（解析器恰调用 1 次）',
-    onceRes?.status === 200 && parseCalls === 1, `status=${onceRes?.status} calls=${parseCalls}`);
-
-  // ---------- 业务硬门仍在动作里：解析器不替动作做业务判断 ----------
-  const unknownPackRes = await callRoute({ intent: { kind: 'setStyle', params: { stylePackId: 'no-such-pack' } } });
-  const unknownPackBody = await unknownPackRes.json();
-  check('业务硬门仍在动作里：未知风格包解析通过、动作回 400「风格包不存在」',
-    unknownPackRes.status === 400 && unknownPackBody?.error?.message === '风格包不存在',
-    `实际 ${unknownPackRes.status} ${unknownPackBody?.error?.message}`);
-
-  const refineNoImageRes = await callRoute({
-    intent: { kind: 'refineSlide', params: { slideId: routeSlideId, editInstruction: '放大标题' } },
-  });
-  const refineNoImageBody = await refineNoImageRes.json();
-  check('业务硬门仍在动作里：形状合法的改图意图因无生成图 → 409 REFINE_NEEDS_IMAGE',
-    refineNoImageRes.status === 409 && refineNoImageBody?.error?.code === 'REFINE_NEEDS_IMAGE',
-    `实际 ${refineNoImageRes.status} ${refineNoImageBody?.error?.code}`);
 }

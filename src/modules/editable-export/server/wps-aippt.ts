@@ -6,6 +6,12 @@ import { ApiError } from '@/lib/server/http';
 import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generation/config';
 import { cleanString } from '@/lib/server/generation/types';
 import { recordUpstreamUsage } from '@/lib/server/usage-meter';
+import {
+  finiteNumber,
+  notConfiguredError,
+  UPSTREAM_AUTH_MESSAGE,
+  UPSTREAM_BUSY_MESSAGE,
+} from './providers/types';
 
 const TOKEN_TIMEOUT_MS = 30_000;
 const CONVERT_TIMEOUT_MS = 300_000;
@@ -48,30 +54,18 @@ interface UploadRequest {
 
 function requireWpsConfig(config: GenerationConfig): { baseUrl: string; cookie: string } {
   const cookie = String(config.wpsAipptCookie || '').trim();
-  if (!cookie) {
-    throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑转换服务尚未配置，请联系管理员', 503, false);
-  }
+  if (!cookie) throw notConfiguredError();
   if (/[\r\n]/.test(cookie)) {
-    throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', '可编辑转换服务配置异常，请联系管理员', 503, false);
+    throw new ApiError('EDITABLE_EXPORT_UNAVAILABLE', UPSTREAM_AUTH_MESSAGE, 503, false);
   }
   return { baseUrl: config.wpsAipptBaseUrl.replace(/\/+$/, ''), cookie };
-}
-
-function finitePositive(value: unknown, fallback: number): number {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
 function mapNetworkError(error: unknown): ApiError {
   const timedOut = error instanceof Error && error.name === 'AbortError';
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   console.error(`[anppt-v2][wps-aippt] ${timedOut ? 'request timeout' : 'network error'}: ${cleanString(detail, 400)}`);
-  return new ApiError(
-    'WPS_AIPPT_UNAVAILABLE',
-    '可编辑转换服务暂时开小差了，系统会继续尝试备用通道。',
-    502,
-    true,
-  );
+  return new ApiError('WPS_AIPPT_UNAVAILABLE', UPSTREAM_BUSY_MESSAGE, 502, true);
 }
 
 function mapBusinessError(payload: WpsEnvelope, status = 200): ApiError {
@@ -80,16 +74,16 @@ function mapBusinessError(payload: WpsEnvelope, status = 200): ApiError {
   console.error(`[anppt-v2][wps-aippt] business error ${code || status}: ${message}`);
   if (code === 10712 || cleanString(payload.msg, 80) === 'convert2pptxRateLimited') {
     wpsRateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
-    return new ApiError('WPS_AIPPT_RATE_LIMITED', '可编辑转换服务繁忙，请稍后重试。', 429, true);
+    return new ApiError('WPS_AIPPT_RATE_LIMITED', UPSTREAM_BUSY_MESSAGE, 429, true);
   }
   if (code === 1011 || code === 1012 || code === 1013 || status === 401 || status === 403) {
     return new ApiError('WPS_AIPPT_AUTH_EXPIRED', '可编辑转换服务登录态已失效，请联系管理员更新。', 503, false);
   }
   if (status === 429) {
-    return new ApiError('WPS_AIPPT_RATE_LIMITED', '可编辑转换服务繁忙，请稍后重试。', 429, true);
+    return new ApiError('WPS_AIPPT_RATE_LIMITED', UPSTREAM_BUSY_MESSAGE, 429, true);
   }
   if (status >= 500) {
-    return new ApiError('WPS_AIPPT_UNAVAILABLE', '可编辑转换服务暂时不可用，请稍后重试。', 502, true);
+    return new ApiError('WPS_AIPPT_UNAVAILABLE', UPSTREAM_BUSY_MESSAGE, 502, true);
   }
   return new ApiError('WPS_AIPPT_UPSTREAM_ERROR', '可编辑转换服务返回异常，请稍后重试。', 502, false);
 }
@@ -195,7 +189,7 @@ export async function convertPdfWithWpsAippt(
   deps: WpsAipptDeps = {},
 ): Promise<WpsAipptResult> {
   if (Date.now() < wpsRateLimitedUntil) {
-    throw new ApiError('WPS_AIPPT_RATE_LIMITED', '可编辑转换服务繁忙，请稍后重试。', 429, true);
+    throw new ApiError('WPS_AIPPT_RATE_LIMITED', UPSTREAM_BUSY_MESSAGE, 429, true);
   }
   const config = deps.config ?? getGenerationConfig();
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -324,7 +318,7 @@ export async function convertPdfWithWpsAippt(
     });
     return {
       bytes,
-      pageCount: Math.max(1, Math.round(finitePositive(finish.page_count, 1))),
+      pageCount: Math.max(1, Math.round(finiteNumber(finish.page_count) || 1)),
       durationMs,
       docId: cleanString(finish.doc_id, 120),
       fileName: safeName,
