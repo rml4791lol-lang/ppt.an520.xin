@@ -82,6 +82,9 @@ const eslintConfig = defineConfig([
     "public/pdf.worker.min.mjs",
     // HTMLPPT 转换工具链（2026-10-26 迁入 tools/，Python + 独立脚本，不参与 Next 应用构建与类型检查）。
     "tools/**",
+    // 并行 agent 的工作树是同一批源码的嵌套 checkout（scripts/worktree.mjs 产出）：
+    // 不忽略会把同一份源码 lint 两遍，且树内状态独立、误报会污染主仓的门。
+    ".worktrees/**",
   ]),
 ]);
 

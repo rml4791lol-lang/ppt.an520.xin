@@ -56,3 +56,4 @@ output/
 # local migration artifacts (not for GitHub)
 _backups/
 _cleanup-*/
+.worktrees/
