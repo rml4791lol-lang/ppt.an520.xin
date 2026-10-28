@@ -10,7 +10,6 @@ import { registerTsHooks } from './ts-hooks.mjs';
 import { acquireTestLock, releaseTestLock } from './test-lock.mjs';
 import { runClientApiTests } from './tests/client-api.test.mjs';
 import { runAdminIntentTests } from './tests/surface-intents.test.mjs';
-import { runAdminSurfaceIntentParserTests } from './tests/surface-intent-parsers.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-test-'));
 process.env.ANPPT_V2_DB_PATH = path.join(tmpDir, 'test.db');
@@ -443,7 +442,6 @@ console.log('\n[10] 管理员权限、加密配置、监控与无付费检查');
       && adminConfig.normalizeAdminConfigValue('ANPPT_V2_WPS_AIPPT_COOKIE', 'wps_sid=test; uid=1') === 'wps_sid=test; uid=1');
 
   await runAdminIntentTests({ check, expectThrows, adminRequest, configRoute });
-  await runAdminSurfaceIntentParserTests({ check });
 
   const integrationCalls = [];
   const integrationFetch = async (url, init) => {

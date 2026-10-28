@@ -1,6 +1,6 @@
 import { listAdminConfigFields, updateAdminRuntimeConfig } from '@/lib/server/admin-config';
 import { recordAdminAudit, requireAdmin } from '@/lib/server/admin';
-import { defineRoute, jsonOk, readJsonBody } from '@/lib/server/http';
+import { defineRoute, jsonOk, readJsonBody, validationError } from '@/lib/server/http';
 import { ADMIN_INTENT_PARAMS } from '@/lib/admin-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
@@ -17,11 +17,17 @@ export const GET = defineRoute(async (request) => {
 export const PUT = defineRoute(async (request) => {
   const { user } = requireAdmin(request);
   const { params: body } = readIntentParams(await readJsonBody(request), ADMIN_INTENT_PARAMS, 'updateRuntimeConfig');
-  const result = updateAdminRuntimeConfig({
-    adminUserId: user.id,
-    values: body.values,
-    clearKeys: body.clearKeys,
-  });
+  const values = body.values == null
+    ? undefined
+    : body.values && typeof body.values === 'object' && !Array.isArray(body.values)
+      ? body.values as Record<string, unknown>
+      : (() => { throw validationError('values 格式不正确'); })();
+  const clearKeys = body.clearKeys == null
+    ? undefined
+    : Array.isArray(body.clearKeys)
+      ? body.clearKeys
+      : (() => { throw validationError('clearKeys 格式不正确'); })();
+  const result = updateAdminRuntimeConfig({ adminUserId: user.id, values, clearKeys });
   recordAdminAudit({
     adminUserId: user.id,
     action: 'config.update',

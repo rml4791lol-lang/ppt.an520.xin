@@ -1,7 +1,8 @@
-import { jsonOk } from '@/lib/server/http';
+import { jsonOk, validationError } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
 import { startSinglePageEditableExport } from '@/modules/editable-export/server/editable';
+import { cleanString } from '@/lib/server/generation/types';
 import { SINGLE_PAGE_INTENT_PARAMS } from '@/lib/single-page-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
@@ -13,7 +14,9 @@ export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const { params: body } = readIntentParams(raw, SINGLE_PAGE_INTENT_PARAMS, 'exportEditablePptx');
-  const started = await startSinglePageEditableExport(user.id, body.projectId, {}, { force: body.force });
+  const projectId = cleanString(body?.projectId, 80);
+  if (!projectId) throw validationError('缺少 projectId');
+  const started = await startSinglePageEditableExport(user.id, projectId, {}, { force: body.force === true });
   return jsonOk(
     {
       exportId: started.exportId,

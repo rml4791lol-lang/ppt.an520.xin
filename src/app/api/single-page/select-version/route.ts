@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   const { params: body } = readIntentParams(await readJsonBody(request), SINGLE_PAGE_INTENT_PARAMS, 'selectVersion');
-  const page = selectSinglePageVersion(user.id, body.pageId, body.versionId);
+  const page = selectSinglePageVersion(user.id, String(body.pageId ?? ''), String(body.versionId ?? ''));
   return jsonOk({
     pageId: page.pageId,
     projectId: page.projectId,

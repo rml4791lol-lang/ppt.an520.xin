@@ -337,6 +337,40 @@ export async function runEditableProviderTests(ctx) {
         && providersLib.finiteNumber(undefined) === 0 && providersLib.finiteNumber('12.5') === 12.5);
   }
 
+  // ---- 报价同样按请求页数过滤通道（>20 页剔除 Codia）----
+  {
+    const previous = {
+      codia: process.env.ANPPT_V2_CODIA_API_KEY,
+      image2ppt: process.env.ANPPT_V2_IMAGE2PPT_API_KEY,
+      wps: process.env.ANPPT_V2_WPS_AIPPT_COOKIE,
+      provider: process.env.ANPPT_V2_EDITABLE_PROVIDER,
+    };
+    process.env.ANPPT_V2_CODIA_API_KEY = 'sk-quote-codia';
+    process.env.ANPPT_V2_IMAGE2PPT_API_KEY = 'i2p-quote-key';
+    process.env.ANPPT_V2_WPS_AIPPT_COOKIE = 'wps_sid=quote';
+    delete process.env.ANPPT_V2_EDITABLE_PROVIDER;
+    try {
+      const pageIds = Array.from({ length: 21 }, (_, index) => `pg_${index}`);
+      const many = exportsLib.quoteExport(uid, { pageIds });
+      check('报价：21 页按 registry 剔除 Codia，只留 50 页通道',
+        many.pageCount === 21 && many.providers.join('/') === 'image2ppt/wps' && many.provider === 'image2ppt',
+        `${many.pageCount} ${many.providers.join('/')}`);
+      const few = exportsLib.quoteExport(uid, { pageIds: pageIds.slice(0, 20) });
+      check('报价：20 页边界仍可选 Codia',
+        few.providers.join('/') === 'codia/image2ppt/wps', few.providers.join('/'));
+    } finally {
+      for (const [key, envKey] of [
+        ['codia', 'ANPPT_V2_CODIA_API_KEY'],
+        ['image2ppt', 'ANPPT_V2_IMAGE2PPT_API_KEY'],
+        ['wps', 'ANPPT_V2_WPS_AIPPT_COOKIE'],
+        ['provider', 'ANPPT_V2_EDITABLE_PROVIDER'],
+      ]) {
+        if (previous[key] === undefined) delete process.env[envKey];
+        else process.env[envKey] = previous[key];
+      }
+    }
+  }
+
   // ---- 上游轮询抖动：可重试错误继续等同一任务，不重建任务（不重复打上游付费接口）----
   {
     let advances = 0;

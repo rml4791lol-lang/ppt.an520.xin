@@ -191,4 +191,19 @@ export async function runImage2PptTests(ctx) {
     check('Image2PPT 提交在 502 后按幂等键重试一次', i2pSubmit === 2, `实际 ${i2pSubmit}`);
   }
 
+  {
+    const previousCodia = process.env.ANPPT_V2_CODIA_API_KEY;
+    const previousI2p = process.env.ANPPT_V2_IMAGE2PPT_API_KEY;
+    process.env.ANPPT_V2_CODIA_API_KEY = '';
+    process.env.ANPPT_V2_IMAGE2PPT_API_KEY = 'i2p-test-key';
+    try {
+      const quote = exportsLib.quoteExport(uid, { deckId: deck.id });
+      check('仅配置 Image2PPT 时 editable 报价可用', quote.quotes.find((item) => item.kind === 'editable')?.available === true);
+    } finally {
+      if (previousCodia === undefined) delete process.env.ANPPT_V2_CODIA_API_KEY;
+      else process.env.ANPPT_V2_CODIA_API_KEY = previousCodia;
+      if (previousI2p === undefined) delete process.env.ANPPT_V2_IMAGE2PPT_API_KEY;
+      else process.env.ANPPT_V2_IMAGE2PPT_API_KEY = previousI2p;
+    }
+  }
 }
