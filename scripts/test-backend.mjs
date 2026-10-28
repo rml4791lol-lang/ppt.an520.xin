@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { registerTsHooks } from './ts-hooks.mjs';
+import { acquireTestLock, releaseTestLock } from './test-lock.mjs';
 import { runClientApiTests } from './tests/client-api.test.mjs';
 import { runAdminIntentTests } from './tests/surface-intents.test.mjs';
 
@@ -22,6 +23,7 @@ process.env.WECHAT_PAY_MOCK = 'true';
 process.env.EPAY_MOCK = 'true';
 process.env.NODE_ENV = 'test';
 
+acquireTestLock('backend 套件');
 registerTsHooks();
 
 let passed = 0;
@@ -972,4 +974,5 @@ await runClientApiTests({ check });
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败${failed ? ` — 失败项: ${failures.join('、')}` : ''}`);
 rmSync(tmpDir, { recursive: true, force: true });
+releaseTestLock();
 process.exit(failed > 0 ? 1 : 0);

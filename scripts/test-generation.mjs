@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { registerTsHooks } from './ts-hooks.mjs';
+import { acquireTestLock, releaseTestLock } from './test-lock.mjs';
 import { runPptReplicateTests } from './tests/ppt-replicate.test.mjs';
 import { runEditableExportTests } from './tests/editable-export.test.mjs';
 import { runImage2PptTests } from './tests/image2ppt.test.mjs';
@@ -23,6 +24,7 @@ process.env.ANPPT_V2_CODIA_API_KEY = 'sk-test';
 process.env.OTP_DEV_ECHO = 'true';
 process.env.NODE_ENV = 'test';
 
+acquireTestLock('generation 套件');
 registerTsHooks();
 
 let passed = 0;
@@ -1745,6 +1747,7 @@ await runPptToBaseTests({ check });
 await runPptToBaseServerTests({ check, expectThrows, auth, credits, llmConfig, makeMockFetcher, editsOkHandler, PNG_1X1_B64 });
 
 console.log(`\n结果：${passed} 通过 / ${failed} 失败`);
+releaseTestLock();
 if (failed > 0) {
   console.log('失败项：\n - ' + failures.join('\n - '));
   process.exit(1);
