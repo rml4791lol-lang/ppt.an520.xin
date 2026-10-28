@@ -8,7 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "predev": "node scripts/sync-pdf-worker.mjs",
-    "prebuild": "node scripts/sync-pdf-worker.mjs"
+    "prebuild": "node scripts/sync-pdf-worker.mjs",
+    "gate": "node scripts/gate.mjs",
+    "gate:fast": "node scripts/gate.mjs --fast",
+    "test:backend": "node scripts/test-backend.mjs",
+    "test:generation": "node scripts/test-generation.mjs",
+    "test:guardrails": "node scripts/test-guardrails.mjs",
+    "worktree": "node scripts/worktree.mjs",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "jszip": "^3.10.1",
