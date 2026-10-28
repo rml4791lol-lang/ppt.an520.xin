@@ -78,9 +78,9 @@ bash deploy/deploy.sh
 
 - **schema 只增不改**：`slide_versions.charge_key` 是 `TEXT NOT NULL DEFAULT ''` 的懒迁移列（启动时 `ALTER TABLE` 补列，老行留空、恢复按键模块回退），没有手工迁移脚本；部署不需要停机跑 SQL。
 - **在途检查照旧且必须为 0**：三队列（整套生成 / 单页批量 / 导出）任一非 0 时只暂存 release，不切换、不重启——在途任务跨版本会同时存在新旧扣费/恢复语义。
-- **账本键前缀未变**：`deck-generate:`、`single-page:`、`export-editable:`、`export-editable-text:`、`ppt-to-base:`；退款键仍是 `refund:<sha256(chargeKey)[0:32]>` 的定长派生，历史 ledger 可直接对账。
-- **重启后自检**：`src/instrumentation.ts` 会在启动期登记四个恢复运行源（deck / single-page / ppt-to-base / editable）；`/api/health` 应返回 `plugins` 无 `error`，并抽一个已登录用户的任意读接口确认鉴权门恢复循环可运行。
-- 本次收口断言：`test-generation 946 / test-backend 184`（全量门 8/8）。
+- **账本键前缀未变**：`deck-generate:`、`single-page:`、`export-editable:`、`export-editable-text:`、`ppt-to-base:`；退款键仍是 `refund:<sha256(chargeKey)[0:32]>` 的定长派生，历史 ledger 可直接对账。四个域键模块产出前都经 `normalizeChargeKey`（trim + 128 上限），版本行/任务表存下的键与账本键逐字相同。
+- **重启后自检**：`src/instrumentation.ts` 会在启动期登记四个恢复运行源（deck / single-page / ppt-to-base / editable）；恢复保留两个入口（鉴权门整批 `reconcileUser` + 读路径单条 `reconcileInterruptedRun`，共享同一结算）。`/api/health` 应返回 `plugins` 无 `error`，并抽一个已登录用户的任意读接口确认鉴权门恢复循环可运行。
+- 本次收口断言：`test-generation 982 / test-backend 184`（全量门 8/8；2026-10-29 两轴评审修复后重测）。
 
 若本次修改了 `deploy/deploy-production.sh`，首次部署前先把 source 里的新脚本安装到
 `/opt/anppt-v2/bin/deploy-production`；之后脚本会自更新安装副本。命令见 `docs/LOGGING.md` §5。

@@ -81,12 +81,6 @@ const EDIT_INTENT_FLAGS: Partial<Record<DeckIntentKind, string>> = {
   setReferenceImage: 'set_as_reference',
 };
 
-// 高精清除：标记图 + 固定提示词（自写）。灾备渠道多图支持未验证，丢图时把意图降级为文字。
-const ERASE_INSTRUCTION =
-  '第二张图是第一张的标记版，红色涂抹区是要擦除的内容；移除该区内容并用与周围一致的底色/留白自然填充，其余元素、文字、版式、配色全部保持不变，图上不得出现红色标记。';
-const ERASE_DEGRADE_NOTE =
-  '（附加的红色涂抹标记图未能传递到生图服务：请依据常识判断图上最可能被用户要求移除的多余元素并移除，用与周围一致的底色/留白自然填充，其余元素、文字、版式、配色全部保持不变。）';
-
 /** base64 dataURL → Buffer；标记图 ≤2MB（前端导出 1536x864 涂抹层），融合样张 ≤8MB（对齐样张读取上限）。
  *  请求里的 dataURL 形状已由意图解析器回答，这里只解码字节（并防住直调与服务端自读样张）。 */
 function dataUrlToBuffer(value: string, label: string, maxBytes: number): Buffer {
@@ -448,7 +442,7 @@ export const DECK_INTENT_HANDLERS: DeckIntentHandlerTable = {
     return startGeneration({ userId, deckId: deck.id, deps }, {
       slideIds: [intent.params.slideId],
       kind: 'deck-refine',
-      refineInstruction: intent.params.editInstruction,
+      refine: { kind: 'instruction', instruction: intent.params.editInstruction },
     });
   },
 
@@ -456,12 +450,12 @@ export const DECK_INTENT_HANDLERS: DeckIntentHandlerTable = {
     const deck = getOwnedDeck(userId, deckId);
     requireRefineSlide({ userId, deckId: deck.id, deps }, intent.params.slideId);
     const markImage = dataUrlToBuffer(intent.params.markImageDataUrl, '涂抹标记图', 2 * 1024 * 1024);
+    // 涂抹话术（指令 + 灾备丢图降级）归视觉计划，动作只传意图与标记图
     return startGeneration({ userId, deckId: deck.id, deps }, {
       slideIds: [intent.params.slideId],
       kind: 'deck-refine',
-      refineInstruction: ERASE_INSTRUCTION,
+      refine: { kind: 'erase' },
       refineExtraImages: [markImage],
-      refineExtraNote: ERASE_DEGRADE_NOTE,
     });
   },
 
@@ -471,7 +465,7 @@ export const DECK_INTENT_HANDLERS: DeckIntentHandlerTable = {
     return startGeneration({ userId, deckId: deck.id, deps }, {
       slideIds: [intent.params.slideId],
       kind: 'deck-refine',
-      refineInstruction: `图上改字：${intent.params.editInstruction}。只改指定文字，其余元素、版式、配色全部保持不变。`,
+      refine: { kind: 'edit-text', instruction: intent.params.editInstruction },
     });
   },
 
@@ -492,15 +486,16 @@ export const DECK_INTENT_HANDLERS: DeckIntentHandlerTable = {
       || '';
     const sampleDataUrl = loadStyleReferenceDataUrl(resolveStylePack(fusionPack.id), samplePath);
     if (!sampleDataUrl) throw validationError('融合模板没有可用样张');
-    const extra = intent.params.editInstruction ?? '';
     return startGeneration({ userId, deckId: deck.id, deps }, {
       slideIds: [slide.slideId],
       kind: 'deck-refine',
-      refineInstruction: `把第一张图的版式骨架保留，视觉风格向第二张参考图靠拢融合，文字内容保持不变。${extra ? `补充要求：${extra}` : ''}`,
+      refine: {
+        kind: 'fuse',
+        templateName: fusionPack.name,
+        visualKeywords: fusionPack.visualKeywords,
+        instruction: intent.params.editInstruction,
+      },
       refineExtraImages: [dataUrlToBuffer(sampleDataUrl, '融合样张', 8 * 1024 * 1024)],
-      refineExtraNote: `（本次未附带融合参考图：请把本页视觉风格向「${fusionPack.name.slice(0, 40)}」靠拢——${
-        fusionPack.visualKeywords.slice(0, 8).join('、') || '同色系商务模板'
-      }——版式骨架与文字内容保持不变。）`,
     });
   },
 };

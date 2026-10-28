@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/server/auth';
-import { editablePageCapacity, startEditableExport, uploadedEditableSource } from '@/modules/editable-export/server/editable';
+import { assertEditableCapacity, startEditableExport, uploadedEditableSource, uploadedPageCapacity } from '@/modules/editable-export/server/editable';
 import { ApiError, jsonOk } from '@/lib/server/http';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { defineApiRoute } from '@/lib/server/generation/route';
@@ -30,10 +30,9 @@ export const POST = defineApiRoute(async (request) => {
   const entries = [...form.getAll('files'), ...form.getAll('file')];
   const uniqueFiles = entries.filter((value, index) => value instanceof File && entries.indexOf(value) === index) as File[];
   if (uniqueFiles.length === 0) throw new ApiError('VALIDATION_ERROR', '请选择 PDF 或图片文件', 400, false);
-  const pageCapacity = editablePageCapacity(config);
-  if (pageCapacity > 0 && uniqueFiles.length > pageCapacity) {
-    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${pageCapacity} 个图片文件`, 400, false);
-  }
+  // 读 Buffer 前用共享上限门早拒（文件数 = 页数）；未配置通道时 capacity=0，由 uploadedEditableSource 报未配置。
+  const capacity = uploadedPageCapacity(config);
+  if (capacity.capacity > 0) assertEditableCapacity(uniqueFiles.length, capacity);
   const totalSize = uniqueFiles.reduce((sum, file) => sum + file.size, 0);
   if (totalSize > config.uploadMaxBytes) {
     throw new ApiError(

@@ -10,7 +10,7 @@ import { chargeRefundKeys, estimateCredits } from '@/lib/server/credits';
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
-import { beginPaidRun } from '@/lib/server/generation/paid-run';
+import { beginPaidRun, paidRunFailureCopy } from '@/lib/server/generation/paid-run';
 import { editImage, toPublicImageError, type ImageDeps } from '@/lib/server/generation/images';
 import { saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
@@ -135,10 +135,8 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
     if (began.duplicate) {
       throw new ApiError('DUPLICATE_REQUEST', '重复请求：请勿重复提交，结果请稍候查看', 409, false);
     }
-    if (began.failure.code === 'INSUFFICIENT_CREDITS') {
-      throw new ApiError('INSUFFICIENT_CREDITS', began.failure.message, 402, false);
-    }
-    throw new ApiError('CHARGE_FAILED', began.failure.message || '扣费失败', 500, false);
+    const copy = paidRunFailureCopy(began.failure);
+    throw new ApiError(copy.errorCode, began.failure.message || copy.user, copy.status, false);
   }
 
   let title = '';

@@ -10,14 +10,14 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import { ApiError, validationError } from '@/lib/server/http';
-import { estimateCredits, getBalance } from '@/lib/server/credits';
+import { estimateCredits, deriveRefundKey, getBalance } from '@/lib/server/credits';
 import { verifyImage2PptWebhook } from './image2ppt';
 import { editableChargeKey, type EditableExportKind } from './charge-keys';
 import { codiaProvider } from './providers/codia';
 import {
   LEGACY_EDITABLE_PROVIDER_ID,
-  configuredEditableProviders as configuredProviderIds,
-  editablePageCapacity as pageCapacity,
+  configuredEditableProviders,
+  editablePageCapacity,
   editableProviderById,
   resolveEditableProviders,
 } from './providers/registry';
@@ -38,7 +38,9 @@ import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generat
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
 import { getOwnedDeck, listSlides } from '@/lib/server/generation/decks';
 import { getActiveVersionImagePath, listSingleProjectPages } from '@/lib/server/generation/single-pages';
-import { beginPaidRun, failPaidRun, withInFlightRun, type PaidRunFailure } from '@/lib/server/generation/paid-run';
+import { beginPaidRun, failPaidRun, paidRunFailureCopy, withInFlightRun, type PaidRunFailure } from '@/lib/server/generation/paid-run';
+import { reconcileInterruptedRun, runSourceContext } from '@/lib/server/generation/recovery';
+import type { InterruptedRun, RunSourceContext } from '@/lib/server/generation/run-source';
 import { absPathForRelPath, readSiteFile, saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
@@ -123,29 +125,30 @@ export interface EditableExportSource {
   cleanup?(): Promise<void>;
 }
 
-/** 已配置的可编辑转换通道，按主通道优先级排序（回退顺序唯一来源在 providers/registry）。 */
-export function configuredEditableProviders(config: GenerationConfig): EditableProviderId[] {
-  return configuredProviderIds(config);
-}
+/** 已配置的可编辑转换通道与页数上限：模块门面直接转发 registry，不另写一份实现。 */
+export { configuredEditableProviders, editablePageCapacity };
 
 export function isEditableExportConfigured(config: GenerationConfig): boolean {
   return configuredEditableProviders(config).length > 0;
 }
 
-/** 可编辑导出的页数上限 = 已配置通道链的能力上限（0 = 没有可用通道）。 */
-export function editablePageCapacity(config: GenerationConfig): number {
-  return pageCapacity(config);
-}
-
-/** 页数上限只有这一处判定：拒绝文案只给能力数字，不暴露供应商名称。 */
-function assertEditablePageCount(pageCount: number, capacity: number, scope: string): void {
-  if (pageCount <= capacity) return;
+/**
+ * 页数上限的唯一判定：四个发起入口与上传路由早检都走这里，文案只给能力数字、不暴露供应商名称。
+ * count 对上传来源就是文件数（一图一页）——同一口径避免第二套「文件数」文案与页数门漂移。
+ */
+export function assertEditableCapacity(count: number, cap: EditableExportPageCap): void {
+  if (count <= cap.capacity) return;
   throw new ApiError(
     'EXPORT_TOO_MANY_PAGES',
-    `${scope}最多 ${capacity} 页可转可编辑，当前共 ${pageCount} 页`,
+    `${cap.scope}最多 ${cap.capacity} 页可转可编辑，当前共 ${count} 页`,
     400,
     false,
   );
+}
+
+/** 上传来源的页数上限（图片版）：上传路由在读取文件前用同一判定早拒，capacity 仍来自通道链能力。 */
+export function uploadedPageCapacity(config: GenerationConfig): EditableExportPageCap {
+  return { capacity: editablePageCapacity(config), scope: '单次' };
 }
 
 export interface UploadedEditableFile {
@@ -204,7 +207,7 @@ function deckSource(
     },
     notReadyMessage,
     pageCap: (config) => ({
-      capacity: kind === 'editable_text' ? TEXT_EDITABLE_MAX_PAGES : pageCapacity(config),
+      capacity: kind === 'editable_text' ? TEXT_EDITABLE_MAX_PAGES : editablePageCapacity(config),
       scope: '单套',
     }),
     fingerprint: (pages) => fingerprintSource('deck', pages.map((page) => page.versionId)),
@@ -239,7 +242,7 @@ export function singlePageEditableSource(userId: string, projectId: string): Edi
     },
     // 取页已过滤 → 共享入口的缺版本判定不会被单页来源触发，文案只作兜底。
     notReadyMessage: '还有页面未生成成功，完成生成后才能转可编辑',
-    pageCap: (config) => ({ capacity: pageCapacity(config), scope: '单套' }),
+    pageCap: (config) => ({ capacity: editablePageCapacity(config), scope: '单套' }),
     fingerprint: (pages) => fingerprintSource('single-page', pages.map((page) => page.versionId)),
   };
 }
@@ -260,10 +263,8 @@ export async function uploadedEditableSource(
     throw notConfiguredError();
   }
   if (!Array.isArray(files) || files.length === 0) throw validationError('请选择 PDF 或图片文件');
-  const capacity = pageCapacity(config);
-  if (files.length > capacity) {
-    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${capacity} 个图片文件`, 400, false);
-  }
+  // 文件数 = 页数（一图一页）：与四个发起入口共用同一个上限判定与文案。
+  assertEditableCapacity(files.length, uploadedPageCapacity(config));
   const totalBytes = files.reduce((sum, file) => sum + file.data.length, 0);
   if (totalBytes <= 0) throw new ApiError('EMPTY_FILE', '文件内容为空', 400, false);
   if (totalBytes > config.uploadMaxBytes) {
@@ -305,7 +306,7 @@ export async function uploadedEditableSource(
     chargeAction: 'export_editable',
     readPages: () => Array.from({ length: pageCount }, () => ({ versionId: sourceId })),
     notReadyMessage: '上传文件还没有可转换页面，请重新上传',
-    pageCap: (capConfig) => ({ capacity: pageCapacity(capConfig), scope: '单次' }),
+    pageCap: (capConfig) => uploadedPageCapacity(capConfig),
     fingerprint: () => fingerprint,
     meta: { path: saved.relPath, name: sourceName, mime: 'application/pdf' },
     cleanup: async () => {
@@ -324,6 +325,67 @@ function exportChargeKey(row: ExportRow): string {
     refId: String(row.ref_id || ''),
     exportId: String(row.id),
   });
+}
+
+/**
+ * 不可续跑的中途行置 failed：
+ * - 未扣费（claim 后进程死亡）：钱没扣，重新发起即可；
+ * - 已退款（退款已落账、置终态前崩溃）：续跑等于免费交付一次，只补终态。
+ */
+function failInterruptedExport(exportId: string, refunded: boolean): void {
+  const now = nowMs();
+  getGenDb()
+    .prepare(
+      `UPDATE export_jobs SET status = 'failed', stage = 'failed', error = ?, completed_at = ?, updated_at = ?
+       WHERE id = ? AND status IN ('pending', 'processing')`,
+    )
+    .run(
+      refunded ? '转换中断，星星已退回，请重新转换' : '转换尚未开始（服务重启），星星未扣，请重新转换',
+      now,
+      now,
+      exportId,
+    );
+}
+
+/** 退款是否已落账：决定「续跑」还是「只补终态」——已退款的行绝不能续跑（否则免费交付）。 */
+function refundAlreadyIssued(chargeKey: string): boolean {
+  return Boolean(
+    getGenDb().prepare('SELECT 1 FROM credit_ledger WHERE idempotency_key = ?').get(deriveRefundKey(chargeKey)),
+  );
+}
+
+/**
+ * 单条导出行 → 运行源条目：整批入口（editableRunSource）与读路径（getExport/listExports）共用，
+ * 判活（心跳 + 在飞）与「已退款不续跑」只此一份。resume 由调用方注入（读路径要带 deps）。
+ */
+export function interruptedEditableRun(
+  row: ExportRow,
+  ctx: RunSourceContext,
+  resume: (exportId: string) => void,
+): InterruptedRun {
+  const exportId = String(row.id);
+  const chargeKey = exportChargeKey(row);
+  const refunded = refundAlreadyIssued(chargeKey);
+  const resumable = Number(row.charged_credits) > 0 && !refunded;
+  return {
+    key: exportId,
+    domain: 'editable',
+    userId: String(row.user_id),
+    interrupted: !ctx.isLive(chargeKey, Number(row.updated_at)),
+    // 有扣费且未退款 = 续跑（不退星，结算只启动管线）；否则按失败收敛（钱已不在或从未扣）
+    settlement: resumable ? 'resume' : 'refund',
+    chargeKey,
+    refundReason: '可编辑导出中断退回',
+    refType: String(row.ref_type || 'deck'),
+    refId: String(row.ref_id || ''),
+    settle: () => {
+      if (resumable) {
+        resume(exportId);
+        return;
+      }
+      failInterruptedExport(exportId, refunded);
+    },
+  };
 }
 
 /** 管线终态结算：新运行走 paid-run 句柄，续跑走恢复口——退款与终态顺序都只有模块一份。 */
@@ -915,8 +977,7 @@ async function startEditableExportRun(
     throw notConfiguredError();
   }
   const pages = source.readPages();
-  const cap = source.pageCap(config);
-  assertEditablePageCount(pages.length, cap.capacity, cap.scope);
+  assertEditableCapacity(pages.length, source.pageCap(config));
   // 上限判定先于就绪判定：超限来源先看到页数错误（与历史行为一致）。
   if (pages.some((page) => !page.versionId)) {
     throw new ApiError('EXPORT_NOT_READY', source.notReadyMessage, 409, false);
@@ -1060,10 +1121,8 @@ async function launchEditableExport(
     if (began.duplicate) {
       throw new ApiError('DUPLICATE_REQUEST', '该导出已有扣费记录，请勿重复提交，结果请在下载中心查看', 409, false);
     }
-    if (began.failure.code === 'INSUFFICIENT_CREDITS') {
-      throw new ApiError('INSUFFICIENT_CREDITS', began.failure.message, 402, false);
-    }
-    throw new ApiError('CHARGE_FAILED', began.failure.message || '扣费失败', 500, false);
+    const copy = paidRunFailureCopy(began.failure);
+    throw new ApiError(copy.errorCode, began.failure.message || copy.user, copy.status, false);
   }
 
   const chargedRow = db.prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow;
@@ -1105,13 +1164,29 @@ function providerForRow(row: ExportRow, deps: EditableExportDeps): EditableProvi
   return deps.providers?.find((provider) => provider.id === id) ?? editableProviderById(id) ?? codiaProvider;
 }
 
-/** 懒恢复（服务器重启不丢单）：editable/editable_text 且 pending/processing 的行现场推进 */
+/**
+ * 懒恢复：editable/editable_text 且 pending/processing 的行。
+ * ① 过期行经单条恢复入口就地收敛（与鉴权门整批入口共享同一结算；续跑只启动不等待）；
+ * ② 未过期且有上游任务的行现场推进一次（读路径顺手把已有任务推进到最新）。
+ */
 async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): Promise<ExportRow> {
   const runDeps = snapshotEditableDeps(deps);
   const kind = String(row.kind);
   if (kind !== 'editable' && kind !== 'editable_text') return row;
   if (!['pending', 'processing'].includes(String(row.status))) return row;
   const exportId = String(row.id);
+  const reload = () =>
+    (getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow) ?? row;
+  // 单条收敛：读路径不能等鉴权门的整批心跳扫描；结算动作与整批入口是同一份实现。
+  const interrupted = interruptedEditableRun(
+    row,
+    runSourceContext(),
+    (id) => resumeInterruptedExport(id, runDeps),
+  );
+  if (interrupted.interrupted) {
+    reconcileInterruptedRun(interrupted);
+    return reload();
+  }
   const taskId = String(row.upstream_task_id || '');
   const pageCount = Number(row.page_count) || 0;
   const provider = kind === 'editable' ? providerForRow(row, runDeps) : null;
@@ -1137,10 +1212,8 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
       console.error('[anppt-v2][exports] editable lazy-recovery poll failed:', error);
       return row;
     }
-    return (getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow) ?? row;
+    return reload();
   }
-  // 无上游任务时不在这里判活/重跑：中断导出由运行源按 updated_at 心跳 + paid-run 在飞
-  // 注册表判定，在鉴权门（recovery.reconcileUser）调度——读路径只推进已存在的上游任务。
   return row;
 }
 

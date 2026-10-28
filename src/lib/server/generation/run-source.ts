@@ -1,8 +1,7 @@
-// 恢复运行源（RunSource）契约与注册表：每个生成域只列「在途运行 + 结算动作 + 扣费键」，
-// 平台恢复入口（recovery.ts）只做过期判定、按 ledger 实扣退款、日志与计数——不 import 模块、
-// 不出现按域分支。判活时钟与 paid-run 在飞注册表经 RunSourceContext 注入，来源不自读时间。
-// 域在装配期登记：平台两源随本模块导入登记，模块源由顶层 src/recovery-assembly.ts 注入
-// （平台件不得 import 模块，见 docs/DEVELOPMENT.md §1）。
+// 恢复运行源契约与注册表：各域只列「在途任务 + 结算动作 + 扣费键」，平台恢复入口只做
+// 过期判定/按实扣退款/日志计数，不 import 模块、不按域分支（装配期登记，平台件不 import 模块）。
+// 判活时钟与在飞注册表经 RunSourceContext 注入：来源不自读时间，测试不改数据库时间戳。
+// 机制见 docs/DEBUG-HANDBOOK.md §4。
 
 /** 一段被判定为中断的在途任务。判活结论由运行源给出（用 ctx 的口径），收敛与补退统一走 reconcileInterrupted。 */
 export interface InterruptedRun {

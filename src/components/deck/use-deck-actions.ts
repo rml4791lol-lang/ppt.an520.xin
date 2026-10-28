@@ -1,13 +1,15 @@
 "use client";
 
 // deck 动作执行器的 React 外壳：只把执行器的在飞集合镜像成渲染态（判重仍由执行器同步完成）。
-// 余额刷新统一走这里，组件不再各自调 notifyCreditsRefresh。
-import { useCallback, useMemo, useState } from "react";
+// 执行器实例按 deckId 保持稳定（回调经 latest-ref 读取）：每次渲染重建会把在飞集合丢掉，
+// 双击就能穿透判重。余额刷新统一走这里，组件不再各自调 notifyCreditsRefresh。
+import { useCallback, useEffect, useRef, useState } from "react";
 import { deckIntentAction, type DeckState } from "@/lib/client/deck-api";
 import {
   createDeckActionRunner,
   isDeckActionBusy,
   type DeckActionRun,
+  type DeckActionRunner,
 } from "@/lib/client/deck-actions";
 import type { DeckIntent, DeckIntentKind } from "@/lib/deck-intents";
 import { notifyCreditsRefresh } from "@/components/deck/use-deck-state";
@@ -23,22 +25,38 @@ export function useDeckActions(input: {
   onInsufficientCredits: (message: string) => void;
   toast: (text: string) => void;
 }): { run: DeckActionRun; busy: DeckActionBusy } {
-  const { deckId, onState, onInsufficientCredits, toast } = input;
+  const { deckId } = input;
   const [keys, setKeys] = useState<readonly string[]>([]);
+  const latest = useRef(input);
+  const runner = useRef<{ deckId: string; runner: DeckActionRunner } | null>(null);
 
-  const runner = useMemo(
-    () =>
-      createDeckActionRunner({
-        deckId,
-        dispatch: <K extends DeckIntentKind>(intent: Extract<DeckIntent, { kind: K }>) =>
-          deckIntentAction(deckId, intent),
-        onState,
-        onCreditsChanged: notifyCreditsRefresh,
-        onInsufficientCredits,
-        toast,
-        onBusyChange: setKeys,
-      }),
-    [deckId, onState, onInsufficientCredits, toast],
+  useEffect(() => {
+    latest.current = input;
+  });
+
+  const getRunner = useCallback(() => {
+    if (!runner.current || runner.current.deckId !== latest.current.deckId) {
+      const runDeckId = latest.current.deckId;
+      runner.current = {
+        deckId: runDeckId,
+        runner: createDeckActionRunner({
+          deckId: runDeckId,
+          dispatch: <K extends DeckIntentKind>(intent: Extract<DeckIntent, { kind: K }>) =>
+            deckIntentAction(latest.current.deckId, intent),
+          onState: (state) => latest.current.onState(state),
+          onCreditsChanged: notifyCreditsRefresh,
+          onInsufficientCredits: (message) => latest.current.onInsufficientCredits(message),
+          toast: (text) => latest.current.toast(text),
+          onBusyChange: setKeys,
+        }),
+      };
+    }
+    return runner.current.runner;
+  }, []);
+
+  const run = useCallback<DeckActionRun>(
+    (intent, opts) => getRunner().run(intent, opts),
+    [getRunner],
   );
 
   const busy = useCallback<DeckActionBusy>(
@@ -46,5 +64,5 @@ export function useDeckActions(input: {
     [keys, deckId],
   );
 
-  return { run: runner.run, busy };
+  return { run, busy };
 }

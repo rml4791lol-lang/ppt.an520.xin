@@ -170,8 +170,20 @@ export async function runDeckActionTests({ check }) {
       calls.toasts[1] === '参考图设置失败，请重试。', calls.toasts.join(' | '));
 
     await runner.run({ kind: 'generateSlides', params: {} });
-    check('未登记动作失败：沿用服务端文案（迁移中的旧调用点行为不变）',
-      calls.toasts[2] === '生成正在进行中，请稍候', calls.toasts.join(' | '));
+    check('整套生成失败：已登记为收费动作，文案带未扣星承诺（不再回退服务端原话）',
+      calls.toasts[2] === `整套生成提交失败，${REFUND_PROMISE}`, calls.toasts.join(' | '));
+
+    await runner.run({ kind: 'retryFailedSlides', params: {} });
+    check('重试失败页失败：收费动作同样承诺未扣星',
+      calls.toasts[3] === `重试失败页提交失败，${REFUND_PROMISE}`, calls.toasts.join(' | '));
+
+    await runner.run({ kind: 'structureSlides', params: {} });
+    check('内容梳理失败：免费动作只提示重试，不误报退款',
+      calls.toasts[4] === '内容梳理失败，请重试。', calls.toasts.join(' | '));
+
+    await runner.run({ kind: 'updateSlide', params: { slideId: 's1', title: '新标题' } });
+    check('未登记动作失败：沿用服务端文案（行为不变）',
+      calls.toasts[5] === '生成正在进行中，请稍候', calls.toasts.join(' | '));
 
     const silent = harness({
       actions,
@@ -179,9 +191,23 @@ export async function runDeckActionTests({ check }) {
         throw new ApiClientError('LLM_RATE_LIMITED', '请求过于频繁', 429);
       },
     });
-    const silentResult = await silent.runner.run({ kind: 'refineSlide', params: { slideId: 's1', editInstruction: 'x' } }, { silent: true });
-    check('silent：失败不弹提示、由调用方展示，仍返回 null',
-      silentResult === null && silent.calls.toasts.length === 0);
+    const notices = [];
+    const silentResult = await silent.runner.run(
+      { kind: 'generateOutline', params: {} },
+      { silent: true, onFailure: (_failure, message) => notices.push(message) },
+    );
+    check('silent + onFailure：错误屏拿到与 toast 同一份文案，不弹提示',
+      silentResult === null && silent.calls.toasts.length === 0
+        && notices[0] === '大纲生成失败，请重试。', JSON.stringify({ notices, toasts: silent.calls.toasts }));
+    check('动作目录：支付/免费语义覆盖全部已迁移 handler',
+      ['generateSlides', 'retryFailedSlides', 'generateSlide', 'refineSlide', 'eraseSlide', 'editSlideText', 'fuseSlide']
+        .every((kind) => actions.deckActionDefinition(kind)?.billing === 'charged')
+        && ['generateOutline', 'structureSlides', 'structureSlide', 'splitSlide', 'setReferenceImage', 'commitVersion']
+          .every((kind) => actions.deckActionDefinition(kind)?.billing === 'free'));
+    check('页面级错误展示复用同一承诺（组件不手写第二份文案）',
+      actions.deckChargeNotice('generateSlide', '生成服务超时或返回异常。')
+        === '生成服务超时或返回异常，本次未扣除星星，可重新尝试。'
+        && actions.deckChargeNotice('structureSlide', '梳理服务超时') === '梳理服务超时，请重试。');
   }
 
   // ---------- 登录态失效：用服务端原话，不拼退款承诺 ----------
@@ -241,14 +267,14 @@ export async function runDeckActionTests({ check }) {
       JSON.stringify({ toasts: calls.toasts, states: calls.states.length, credits: calls.credits }));
   }
 
-  // ---------- 动作目录：收费/免费语义 + 覆盖六个手写 handler ----------
+  // ---------- 动作目录：收费/免费语义 + 实体推导 ----------
   {
-    for (const kind of ['refineSlide', 'eraseSlide', 'editSlideText', 'fuseSlide', 'generateSlide']) {
+    for (const kind of ['refineSlide', 'eraseSlide', 'editSlideText', 'fuseSlide', 'generateSlide', 'generateSlides', 'retryFailedSlides']) {
       const definition = actions.deckActionDefinition(kind);
       check(`动作目录：${kind} 登记为收费（失败承诺未扣星）`, definition?.billing === 'charged',
         JSON.stringify(definition));
     }
-    for (const kind of ['setReferenceImage', 'commitVersion']) {
+    for (const kind of ['generateOutline', 'structureSlides', 'structureSlide', 'splitSlide', 'setReferenceImage', 'commitVersion']) {
       const definition = actions.deckActionDefinition(kind);
       check(`动作目录：${kind} 登记为免费（失败只提示重试）`, definition?.billing === 'free',
         JSON.stringify(definition));
@@ -268,8 +294,14 @@ export async function runDeckActionTests({ check }) {
     const scattered = DECK_COMPONENTS.filter((rel) => source(rel).includes(REFUND_PROMISE));
     check('退款承诺不在组件里手写（只在动作目录生成）', scattered.length === 0, scattered.join(', '));
 
+    // 任何「不扣除星星 / 未扣除星星」句都只允许由动作目录生成
+    const legacyPromises = DECK_COMPONENTS.filter((rel) => /不扣除星星|未扣除星星/.test(source(rel)));
+    check('组件不再手写任何退款/未扣星承诺（文案只在动作目录）',
+      legacyPromises.length === 0, legacyPromises.join(', '));
+
     const executor = source('src/lib/client/deck-actions.ts');
     check('动作目录是退款承诺的唯一来源', executor.includes(REFUND_PROMISE));
+    check('页面级错误展示走 deckChargeNotice（同一承诺）', executor.includes('export function deckChargeNotice'));
 
     const slideEditor = source('src/components/deck/step-generate.tsx');
     check('单页编辑器不再用本地 submitting 布尔表示忙', !/setSubmitting/.test(slideEditor));
@@ -284,5 +316,13 @@ export async function runDeckActionTests({ check }) {
     check('工作台不再用 busyKind 单布尔表示在飞动作', !/\bbusyKind\b/.test(workbench));
     check('工作台的在飞状态由执行器派生（busy 读动作键）',
       /busy\("generateOutline"\)/.test(workbench) && /busy\("structureSlides"\)/.test(workbench));
+
+    const deckHook = source('src/components/deck/use-deck-actions.ts');
+    check('deck 执行器实例跨渲染稳定（latest-ref 读取回调，不在 useMemo 里重建）',
+      deckHook.includes('useRef(input)') && deckHook.includes('runner.current')
+        && !/useMemo\(/.test(deckHook),
+      deckHook.slice(0, 120));
+    check('单页执行器同样用 latest-ref（两个 hook 同一去重口径）',
+      source('src/components/single-page/use-single-page-actions.ts').includes('useRef(input)'));
   }
 }

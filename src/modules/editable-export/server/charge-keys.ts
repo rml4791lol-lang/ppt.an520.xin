@@ -6,6 +6,8 @@
 //
 // 两条前缀已被历史账本数据依赖，改动会让在途任务对不上账，故只允许在此处演进。
 
+import { normalizeChargeKey } from '@/lib/server/credits';
+
 export type EditableExportKind = 'editable' | 'editable_text';
 
 const LEDGER_PREFIX: Record<EditableExportKind, string> = {
@@ -20,5 +22,5 @@ export function ledgerPrefixFor(kind: unknown): string {
 
 /** 一条导出任务的扣费键：<前缀>:<来源 id>:<导出 id>。扣费与退款必须走同一个函数。 */
 export function editableChargeKey(input: { kind: unknown; refId: string; exportId: string }): string {
-  return `${ledgerPrefixFor(input.kind)}:${input.refId}:${input.exportId}`;
+  return normalizeChargeKey(`${ledgerPrefixFor(input.kind)}:${input.refId}:${input.exportId}`);
 }

@@ -80,6 +80,48 @@ export interface VisualPlan {
 
 const REFINE_PROMPT_PREFIX = '改图要求（在保持整体风格与版式的前提下执行）：'
 
+/**
+ * 改图意图（微调 / 图上改字 / 涂抹 / 融合）：调用方只传结构化意图与用户要求，
+ * 模板话术与灾备降级说明都归本模块——四处手写文案曾各自漂移。
+ */
+export type RefineIntent =
+  | { kind: 'instruction'; instruction: string }
+  | { kind: 'edit-text'; instruction: string }
+  | { kind: 'erase' }
+  | { kind: 'fuse'; templateName: string; visualKeywords: readonly string[]; instruction?: string }
+
+export interface RefineCopy {
+  /** 交给生图服务的改图指令（不含 REFINE_PROMPT_PREFIX，前缀由 buildVisualPlan 统一加） */
+  instruction: string
+  /** 灾备渠道丢附加图时拼进 prompt 的降级说明（只有带附加图的意图需要） */
+  extraNote?: string
+}
+
+const ERASE_INSTRUCTION =
+  '第二张图是第一张的标记版，红色涂抹区是要擦除的内容；移除该区内容并用与周围一致的底色/留白自然填充，其余元素、文字、版式、配色全部保持不变，图上不得出现红色标记。'
+const ERASE_DEGRADE_NOTE =
+  '（附加的红色涂抹标记图未能传递到生图服务：请依据常识判断图上最可能被用户要求移除的多余元素并移除，用与周围一致的底色/留白自然填充，其余元素、文字、版式、配色全部保持不变。）'
+
+/** 改图意图 → 生图指令与降级说明：模板话术唯一来源。 */
+export function buildRefineCopy(intent: RefineIntent): RefineCopy {
+  switch (intent.kind) {
+    case 'instruction':
+      return { instruction: intent.instruction }
+    case 'edit-text':
+      return { instruction: `图上改字：${intent.instruction}。只改指定文字，其余元素、版式、配色全部保持不变。` }
+    case 'erase':
+      return { instruction: ERASE_INSTRUCTION, extraNote: ERASE_DEGRADE_NOTE }
+    case 'fuse': {
+      const extra = intent.instruction ?? ''
+      const keywords = intent.visualKeywords.slice(0, 8).join('、') || '同色系商务模板'
+      return {
+        instruction: `把第一张图的版式骨架保留，视觉风格向第二张参考图靠拢融合，文字内容保持不变。${extra ? `补充要求：${extra}` : ''}`,
+        extraNote: `（本次未附带融合参考图：请把本页视觉风格向「${intent.templateName.slice(0, 40)}」靠拢——${keywords}——版式骨架与文字内容保持不变。）`,
+      }
+    }
+  }
+}
+
 function toPromptSlide(slide: VisualPlanSlideInput): SlidePromptInput {
   const copy = extractCopyFromDsl(slide.structuredContent ?? '')
   return {

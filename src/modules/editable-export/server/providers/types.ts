@@ -1,7 +1,6 @@
-// 可编辑转换通道接口：发起 / 推进 / 保存 / 清理 + 能力声明。
-// 管线与恢复只依赖本接口——通道名只允许出现在 registry 与各适配器文件里。
-// 共享文案与有限数解析也只在这里一份：三个通道对上游繁忙、未配置、额度不足的说辞
-// 曾是三份复制品，改一处忘一处会让同一条失败在不同通道下给出不同解释。
+// 可编辑转换通道接口：start / advance / save / cleanup + 能力声明；管线与恢复只依赖本接口。
+// 共享文案与有限数解析也只在这里一份——三个通道各写一套说辞会让同一失败给出不同解释。
+// 通道名只允许出现在 registry 与各适配器文件；机制见 docs/DEBUG-HANDBOOK.md §28。
 import { ApiError } from '@/lib/server/http';
 import type { GenerationConfig } from '@/lib/server/generation/config';
 

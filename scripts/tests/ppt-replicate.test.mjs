@@ -10,6 +10,7 @@ export async function runPptReplicateTests(ctx) {
   console.log('\n[7c] 复刻 PPT（结构参考 + 真设计）');
   {
     const replicate = await import('../../src/modules/ppt-replicate/server/replicate.ts');
+    const visualPlan = await import('../../src/lib/server/generation/visual-plan.ts');
     const replicatePages = await import('../../src/modules/ppt-replicate/server/pages.ts');
     const storage = await import('../../src/lib/server/generation/storage.ts');
     const urls = await import('../../src/modules/ppt-replicate/client/replicate-urls.ts');
@@ -104,8 +105,8 @@ export async function runPptReplicateTests(ctx) {
       replicate.budgetReplicateExtracts(100, 48) === replicate.REPLICATE_VLM_PER_PLAN
         && replicate.budgetReplicateExtracts(10, 3) === 3
         && replicate.budgetReplicateExtracts(10, 0) === 0);
-    const newTheme = replicate.buildReplicateInstruction({ structure: card, colorMode: 'new-theme' });
-    const follow = replicate.buildReplicateInstruction({ structure: card, colorMode: 'follow-shell' });
+    const newTheme = visualPlan.buildReplicateInstruction({ structure: card, colorMode: 'new-theme' });
+    const follow = visualPlan.buildReplicateInstruction({ structure: card, colorMode: 'follow-shell' });
     check('复刻指令保画面且两种配色分叉',
       newTheme.includes('保画面') && newTheme.includes('只换色板') && !newTheme.includes('跟随底图的主辅色')
         && !newTheme.includes('结构草图') && follow.includes('跟随底图的主辅色') && follow.includes('水彩森林')
@@ -542,11 +543,20 @@ export async function runPptReplicateTests(ctx) {
     check('facade 懒恢复入口委托平台（无中断时不改状态）',
       facade.reconcileReplicateUser(uid) === false
         && facade.getReplicatePage(uid, 'rp-facade-1').status === 'succeeded');
-    check('facade 暴露复刻提示词契约',
+    check('facade 暴露结构卡与配色策略；提示词配方归视觉计划、不在模块里再转一手',
       facade.resolveReplicateColorMode('new-theme') === 'new-theme'
+        && facade.resolveReplicateColorMode('nope') === 'follow-shell'
         && facade.parseIncomingStructure({ family: 'cards' })?.family === 'cards'
-        && typeof facade.buildReplicateCopyPrompt === 'function'
-        && typeof facade.buildReplicateInstruction === 'function');
+        && typeof visualPlan.buildReplicateCopyPrompt === 'function'
+        && typeof visualPlan.buildReplicateInstruction === 'function'
+        && !('buildReplicateCopyPrompt' in facade)
+        && !('buildReplicateInstruction' in facade));
+    const replicateSrc = readFileSync(
+      new URL('../../src/modules/ppt-replicate/server/replicate.ts', import.meta.url),
+      'utf8',
+    );
+    check('replicate.ts 不再重导出只被测试使用的提示词构建器',
+      !replicateSrc.includes('buildReplicateCopyPrompt') && !replicateSrc.includes('buildReplicateInstruction'));
     const singlePagesSrc = readFileSync(
       new URL('../../src/lib/server/generation/single-pages.ts', import.meta.url),
       'utf8',

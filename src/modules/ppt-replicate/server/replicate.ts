@@ -10,12 +10,7 @@ import { parseOwnedUploadRelPath, readSiteFile } from '@/lib/server/generation/s
 import { cleanString } from '@/lib/server/generation/types'
 import type { ReplicateColorMode, ReplicateStructureCard } from '@/lib/server/generation/visual-plan'
 
-export type { ReplicateColorMode } from '@/lib/server/generation/visual-plan'
-// 复刻合同与换文案配方归视觉计划；这里重导出以保持模块对外契约不变。
-export {
-  buildReplicateCopyPrompt,
-  buildReplicateInstruction,
-} from '@/lib/server/generation/visual-plan'
+export type { ReplicateColorMode }
 
 export type SlideStructureCard = ReplicateStructureCard
 

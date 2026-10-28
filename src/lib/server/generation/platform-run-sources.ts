@@ -4,14 +4,26 @@ import { getGenDb, nowMs } from './db';
 import { deckChargeKey, singlePageChargeKey } from './charge-keys';
 import { registerRunSources, type InterruptedRun, type RunSource, type RunSourceContext } from './run-source';
 
-function jobStillLive(jobId: string, ctx: RunSourceContext): boolean {
+interface JobLivenessRow {
+  id: string;
+  status: string;
+  updated_at: number;
+}
+
+/** 任务判活的唯一口径：本进程在飞，或（queued/running 且心跳未过期）——两条路径共用。 */
+function jobStillLive(jobId: string, row: JobLivenessRow | undefined, ctx: RunSourceContext): boolean {
   if (!jobId) return false;
   if (ctx.isInFlight(jobId)) return true;
-  const job = getGenDb()
-    .prepare('SELECT status, updated_at FROM generation_jobs WHERE id = ?')
-    .get(jobId) as { status: string; updated_at: number } | undefined;
-  if (!job || !['queued', 'running'].includes(String(job.status))) return false;
-  return !ctx.isStale(Number(job.updated_at));
+  if (!row || !['queued', 'running'].includes(String(row.status))) return false;
+  return !ctx.isStale(Number(row.updated_at));
+}
+
+function jobIdStillLive(jobId: string, ctx: RunSourceContext): boolean {
+  if (!jobId) return false;
+  const row = getGenDb()
+    .prepare('SELECT id, status, updated_at FROM generation_jobs WHERE id = ?')
+    .get(jobId) as JobLivenessRow | undefined;
+  return jobStillLive(jobId, row, ctx);
 }
 
 function deckRuns(userId: string, ctx: RunSourceContext): InterruptedRun[] {
@@ -25,9 +37,9 @@ function deckRuns(userId: string, ctx: RunSourceContext): InterruptedRun[] {
   for (const row of generating) {
     const deckId = String(row.id);
     const live = db
-      .prepare("SELECT id, updated_at FROM generation_jobs WHERE deck_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1")
-      .get(deckId) as { id: string; updated_at: number } | undefined;
-    if (live && ctx.isLive(String(live.id), Number(live.updated_at))) protectedDecks.add(deckId);
+      .prepare("SELECT id, status, updated_at FROM generation_jobs WHERE deck_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1")
+      .get(deckId) as JobLivenessRow | undefined;
+    if (live && jobStillLive(String(live.id), live, ctx)) protectedDecks.add(deckId);
   }
 
   const stuck = db
@@ -52,7 +64,7 @@ function deckRuns(userId: string, ctx: RunSourceContext): InterruptedRun[] {
       key: String(slide.slideId),
       domain: 'deck',
       userId: String(slide.userId),
-      interrupted: !jobStillLive(jobId, ctx),
+      interrupted: !jobIdStillLive(jobId, ctx),
       settle: () => {
         if (version && ['queued', 'running'].includes(String(version.status))) {
           db.prepare("UPDATE slide_versions SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(

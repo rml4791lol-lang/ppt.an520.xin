@@ -53,8 +53,6 @@ export function StepPrepare({
           <p className="mt-2 text-sm leading-6 text-ink-2">{error}</p>
           <p className="mt-3 text-xs leading-5 text-ink-3">
             你上传的内容已保留，重新生成不会丢失原始资料。
-            <br />
-            本次失败不扣除星星。
           </p>
           <button
             type="button"

@@ -115,10 +115,11 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   const triggerOutline = useCallback(
     async (force: boolean) => {
       setOutlineError(null);
-      const result = await run({ kind: "generateOutline", params: force ? { force: true } : {} }, { silent: true });
-      if (!result) {
-        setOutlineError("大纲生成失败，本次失败不扣除星星，可重新尝试。");
-      }
+      // 失败文案由执行器按动作计费语义生成（大纲免费 → 只提示重试），错误屏直接用同一份
+      await run(
+        { kind: "generateOutline", params: force ? { force: true } : {} },
+        { silent: true, onFailure: (_failure, message) => setOutlineError(message) },
+      );
     },
     [run],
   );
@@ -187,19 +188,9 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
     if (!confirm || !state) return;
     if (confirm.kind === "confirm-structure") {
       setConfirm(null);
-      const result = await run({ kind: "structureSlides", params: {} }, { silent: true });
-      if (result) {
-        const failed = result.failedSlides?.length ?? 0;
-        toast(
-          failed > 0
-            ? `内容梳理完成，${failed} 页失败（失败页重试不扣除星星）`
-            : "内容梳理完成",
-        );
-        goStep(2);
-      } else {
-        toast("内容梳理失败，本次失败不扣除星星，可重新尝试。");
-        goStep(2);
-      }
+      // 成功/失败提示由动作目录生成（梳理免费，组件不写计费承诺）
+      await run({ kind: "structureSlides", params: {} });
+      goStep(2);
     } else if (confirm.kind === "regen-outline") {
       setConfirm(null);
       await triggerOutline(true);
@@ -217,10 +208,8 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
         kind: "generateSlides",
         params: confirm.forceRegenerate ? { forceRegenerate: true } : {},
       });
-      if (result) {
-        notifyCreditsRefresh();
-        setViewStep(null); // 钉到生成画布
-      }
+      // 收费动作的余额刷新由执行器统一调度；成功文案来自动作目录
+      if (result) setViewStep(null); // 钉到生成画布
     }
   }, [confirm, state, run, toast, goStep, triggerOutline, derivedStep]);
 

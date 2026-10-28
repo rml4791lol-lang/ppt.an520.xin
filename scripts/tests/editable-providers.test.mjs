@@ -5,7 +5,8 @@ export async function runEditableProviderTests(ctx) {
   const {
     check, baseConfig, credits, uid, deck,
   } = ctx;
-  const providersLib = await import('../../src/modules/editable-export/server/providers/index.ts');
+  const providersLib = await import('../../src/modules/editable-export/server/providers/registry.ts');
+  const providerTypes = await import('../../src/modules/editable-export/server/providers/types.ts');
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
   // 生产 view 无 done：测试经 deps.onPipelineDone 收集后台管线，再按需 drain 等终态。
   const pipelineWaits = [];
@@ -558,7 +559,7 @@ export async function runEditableProviderTests(ctx) {
     }
     check('未配置提示：三个通道同一句文案与同一个错误码',
       ['codia', 'image2ppt', 'wps'].every((name) => notConfigured[name]?.code === 'EDITABLE_EXPORT_UNAVAILABLE'
-        && notConfigured[name]?.message === providersLib.UNCONFIGURED_MESSAGE),
+        && notConfigured[name]?.message === providerTypes.UNCONFIGURED_MESSAGE),
       JSON.stringify(Object.fromEntries(Object.entries(notConfigured).map(([key, error]) => [key, error?.message]))));
 
     const busyConfig = {
@@ -583,7 +584,7 @@ export async function runEditableProviderTests(ctx) {
       }
     }
     check('上游繁忙提示：三个通道同一句文案',
-      ['codia', 'image2ppt', 'wps'].every((name) => busy[name]?.message === providersLib.UPSTREAM_BUSY_MESSAGE),
+      ['codia', 'image2ppt', 'wps'].every((name) => busy[name]?.message === providerTypes.UPSTREAM_BUSY_MESSAGE),
       JSON.stringify(Object.fromEntries(Object.entries(busy).map(([key, error]) => [key, error?.message]))));
 
     const upstreamDown = async () => new Response('', { status: 502 });
@@ -600,7 +601,7 @@ export async function runEditableProviderTests(ctx) {
       }
     }
     check('上游 5xx 提示：三个通道同一句文案',
-      ['codia', 'image2ppt', 'wps'].every((name) => unavailable[name]?.message === providersLib.UPSTREAM_BUSY_MESSAGE),
+      ['codia', 'image2ppt', 'wps'].every((name) => unavailable[name]?.message === providerTypes.UPSTREAM_BUSY_MESSAGE),
       JSON.stringify(Object.fromEntries(Object.entries(unavailable).map(([key, error]) => [key, error?.message]))));
 
     const gateErrors = {};
@@ -619,12 +620,12 @@ export async function runEditableProviderTests(ctx) {
     }
     check('未配置提示：三个发起入口同一句文案与同一个码',
       ['deck', 'singlePage', 'upload'].every((name) => gateErrors[name]?.code === 'EDITABLE_EXPORT_UNAVAILABLE'
-        && gateErrors[name]?.message === providersLib.UNCONFIGURED_MESSAGE),
+        && gateErrors[name]?.message === providerTypes.UNCONFIGURED_MESSAGE),
       JSON.stringify(Object.fromEntries(Object.entries(gateErrors).map(([key, error]) => [key, error?.message]))));
 
     check('有限数解析唯一实现：负数/非数字归零、有限值原样',
-      providersLib.finiteNumber(-3) === 0 && providersLib.finiteNumber('abc') === 0
-        && providersLib.finiteNumber(undefined) === 0 && providersLib.finiteNumber('12.5') === 12.5);
+      providerTypes.finiteNumber(-3) === 0 && providerTypes.finiteNumber('abc') === 0
+        && providerTypes.finiteNumber(undefined) === 0 && providerTypes.finiteNumber('12.5') === 12.5);
   }
 
   // ---- 上游轮询抖动：可重试错误继续等同一任务，不重建任务（不重复打上游付费接口）----

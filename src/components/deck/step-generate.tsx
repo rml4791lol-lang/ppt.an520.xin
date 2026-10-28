@@ -12,6 +12,7 @@ import {
   type DeckSlide,
 } from "@/lib/client/deck-api";
 import { ApiClientError } from "@/lib/client/api";
+import { deckChargeNotice } from "@/lib/client/deck-actions";
 import { STYLE_PACKS } from "@/data/style-packs";
 import { useGatedStylePacks } from "@/components/use-gated-style-packs";
 import type { DeckCtx } from "@/components/deck/deck-workbench";
@@ -157,8 +158,8 @@ export function StepGenerate({
   };
 
   const retryFailed = async () => {
-    const result = await run({ kind: "retryFailedSlides", params: {} });
-    if (result) notifyCreditsRefresh();
+    // 收费动作的余额刷新由执行器统一负责
+    await run({ kind: "retryFailedSlides", params: {} });
   };
 
   // 预览键盘导航
@@ -299,7 +300,7 @@ export function StepGenerate({
                             className="min-w-0 flex-1 truncate text-xs text-danger"
                             title={slide.genError}
                           >
-                            {slide.genError || "生成服务超时或返回异常。本次失败不扣除星星。"}
+                            {slide.genError || deckChargeNotice("generateSlide", "生成服务超时或返回异常")}
                           </span>
                           <button
                             type="button"

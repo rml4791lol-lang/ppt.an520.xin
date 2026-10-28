@@ -471,16 +471,12 @@ export function StepOutline({
           onClose={() => setSplitTarget(null)}
           onSubmit={(into) =>
             withLock(async () => {
+              // 成功/失败提示由动作目录生成（拆页免费 → 失败只说重试）
               const result = await run({
                 kind: "splitSlide",
                 params: { slideId: splitTarget.slideId, into },
               });
-              if (result) {
-                setSplitTarget(null);
-                toast(`已拆分为 ${into} 页`);
-              } else {
-                toast("拆页失败，本次失败不扣除星星，可重新尝试。");
-              }
+              if (result) setSplitTarget(null);
             })
           }
         />

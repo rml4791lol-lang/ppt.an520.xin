@@ -1,22 +1,68 @@
 // 计费运行（paid run）：一次收费生成动作的权威顺序与补偿，只有这一份。
-//
-// 顺序不可调换：落 claim 行 → 注册在飞 → 幂等扣费 → 执行 → 成功置终态；
-// 失败先按 ledger 实扣金额退款（幂等）再置 failed。反过来（先终态后退款）崩在中间会
-// 留下「终态但没有退款」的行，恢复再也看不见它 —— 表现是钱扣了不退且不报错。
-//
-// 扣费键由域键模块产出（整套见 charge-keys.ts，前缀是历史账本契约），本模块只消费键：
-// claim 时把键写进域行，恢复优先读存储键，退款键统一由 credits.deriveRefundKey 定长派生。
-// 同一扣费键重放（客户端 requestId 场景）也在本模块识别：本次不扣也不退，钱归第一笔运行所有。
-// 在飞注册表也在本模块：域代码不再手调 mark 函数，批次作用域用 withInFlightRun，
-// 单次运行在 beginPaidRun 内自动登记/释放。判活（心跳过期）仍归恢复入口。
+// 顺序不可调换：claim 行 → 在飞 → 扣费 → 执行 → 终态；失败先按 ledger 实扣金额退款（幂等）再置 failed——
+// 反过来崩在中间会留下「终态但没有退款」的行，恢复再也看不见它。
+// 机制与口径见 docs/DEBUG-HANDBOOK.md §4/§5；扣费键形状归域键模块（charge-keys.ts）。
 import { ApiError, validationError } from '../http';
 import { logProblem } from '../problem-log';
 import { debitCredits, deriveRefundKey, refundCredits } from '../credits';
 import { getDb } from '../db';
 
+/** 计费模块自己判定的失败码（封闭联合）：余额不足 / 扣费失败 / 重放命中已有扣费。 */
+export type ChargeFailureCode = 'INSUFFICIENT_CREDITS' | 'CHARGE_FAILED' | 'DUPLICATE_CHARGE';
+
+/**
+ * 失败码：计费码有固定语义，必须由本模块的文案例表解释；域执行体的失败码（IMAGE_* / EDITABLE_* 等）
+ * 原样透传，计费模块不认识也不解释。`string & {}` 保留字面量补全又允许域码，避免平台认识每个域。
+ */
+export type PaidRunFailureCode = ChargeFailureCode | (string & {});
+
 export interface PaidRunFailure {
-  code: string;
+  code: PaidRunFailureCode;
   message: string;
+}
+
+/** 失败码 → 对外文案的唯一映射：路由错误码、用户文案、版本/任务行短标签都在这里一份。 */
+export interface PaidRunFailureCopy {
+  /** 用户可见文案（页面错误屏 / toast / 路由错误 message） */
+  user: string;
+  /** 版本行、任务表的短标签（历史口径：余额不足与扣费失败只写码，域失败码带原因） */
+  run: string;
+  /** 路由错误码：余额不足保留 402 语义，其余一律扣费失败 */
+  errorCode: 'INSUFFICIENT_CREDITS' | 'CHARGE_FAILED';
+  /** 路由 HTTP 状态 */
+  status: 402 | 500;
+}
+
+/**
+ * 失败 → 对外文案：generate / single-pages / base-image / editable 都读这一份，不再各自 switch 三个码。
+ * 域失败码（IMAGE_* / EDITABLE_* 等）按「码: 原因」透传，与迁移前的版本行文案一致。
+ */
+export function paidRunFailureCopy(failure: PaidRunFailure): PaidRunFailureCopy {
+  switch (failure.code) {
+    case 'INSUFFICIENT_CREDITS':
+      return {
+        user: 'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试',
+        run: 'INSUFFICIENT_CREDITS',
+        errorCode: 'INSUFFICIENT_CREDITS',
+        status: 402,
+      };
+    case 'CHARGE_FAILED':
+      return { user: '扣费失败，请重试', run: 'CHARGE_FAILED', errorCode: 'CHARGE_FAILED', status: 500 };
+    case 'DUPLICATE_CHARGE':
+      return {
+        user: `DUPLICATE_CHARGE: ${failure.message}`,
+        run: `DUPLICATE_CHARGE: ${failure.message}`,
+        errorCode: 'CHARGE_FAILED',
+        status: 500,
+      };
+    default:
+      return {
+        user: `${failure.code}: ${failure.message}`,
+        run: `${failure.code}: ${failure.message}`,
+        errorCode: 'CHARGE_FAILED',
+        status: 500,
+      };
+  }
 }
 
 /** 域适配器只做三件事：落 claim 行、更新本域状态、置终态；不碰扣费/退款/心跳注册。 */
@@ -108,7 +154,10 @@ export function isInFlight(runId: string): boolean {
   return inFlight.has(String(runId || '').trim());
 }
 
-/** 该用户在本进程的在途运行清单（评审/排障用：能直接构造「已扣费未完成」现场）。 */
+/**
+ * 该用户在本进程的在途运行清单（评审/排障用：能直接构造「已扣费未完成」现场）。
+ * @internal 生产读路径不要消费；判活请用 isInFlight。
+ */
 export function listInFlight(userId?: string): Omit<InFlightEntry, 'count'>[] {
   const entries = [...inFlight.values()];
   const scoped = userId === undefined ? entries : entries.filter((entry) => entry.userId === userId);

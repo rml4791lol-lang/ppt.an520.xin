@@ -113,18 +113,13 @@ export function StepStructure({
       return;
     }
     setPendingIds((prev) => new Set(prev).add(slide.slideId));
-    const result = await run(
-      { kind: "structureSlide", params: { slideId: slide.slideId } },
-      { silent: true },
-    );
+    // 失败提示由动作目录生成（梳理免费 → 「请重试」，不再手写未扣星承诺）
+    await run({ kind: "structureSlide", params: { slideId: slide.slideId } });
     setPendingIds((prev) => {
       const next = new Set(prev);
       next.delete(slide.slideId);
       return next;
     });
-    if (!result) {
-      toast("本页梳理失败，本次失败不扣除星星，可重新尝试。");
-    }
   };
 
   const openEditor = (slide: DeckSlide) => {
@@ -218,7 +213,7 @@ export function StepStructure({
       </div>
 
       <p className="mt-2 text-xs leading-5 text-ink-4">
-        AI 不会添加原文中没有的事实、结论或建议；重复、空泛或弱相关信息可能不再呈现。失败页重试不扣除星星。
+        AI 不会添加原文中没有的事实、结论或建议；重复、空泛或弱相关信息可能不再呈现。失败页可单独重试。
       </p>
 
       <div className="mt-5 space-y-4">
@@ -307,7 +302,7 @@ export function StepStructure({
                 ) : slide.structureStatus === "failed" ? (
                   <p className="py-4 text-sm text-danger">
                     处理失败：{friendlyStructureError(slide.structureWarnings[0])}
-                    （失败页重试不扣除星星）
+                    （可单独重试本页）
                   </p>
                 ) : (
                   <p className="py-4 text-sm text-ink-4">

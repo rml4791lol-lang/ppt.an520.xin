@@ -10,7 +10,7 @@ import { assertFeatureVisible } from '../feature-flags';
 import { getGenerationConfig } from './config';
 import { genId, getGenDb, nowMs } from './db';
 import { singlePageChargeKey } from './charge-keys';
-import { beginPaidRun, type BeginPaidRunResult, type PaidRunFailure, type PaidRunStore } from './paid-run';
+import { beginPaidRun, paidRunFailureCopy, type BeginPaidRunResult, type PaidRunFailure, type PaidRunStore } from './paid-run';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { parseOwnedUploadRelPath, readSiteFile, saveFile } from './storage';
 import { loadStyleReferenceDataUrl, resolveStylePack, type ResolvedStylePack } from './style-packs';
@@ -354,21 +354,16 @@ function singlePageRunStore(
         );
         return;
       }
-      const versionText = failure.code === 'INSUFFICIENT_CREDITS' || failure.code === 'CHARGE_FAILED'
-        ? failure.code
-        : `${failure.code}: ${failure.message}`;
-      const pageText = failure.code === 'INSUFFICIENT_CREDITS'
-        ? 'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试'
-        : failure.code === 'CHARGE_FAILED' ? '扣费失败，请重试' : versionText;
+      const copy = paidRunFailureCopy(failure);
       db.prepare('UPDATE single_page_versions SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
         'failed',
-        versionText,
+        copy.run,
         ts,
         row.versionId,
       );
       db.prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
         'failed',
-        pageText,
+        copy.user,
         ts,
         page.pageId,
       );
@@ -438,8 +433,8 @@ export function beginSinglePagePaidRun(
 
 function paidRunApiError(failure: PaidRunFailure, duplicate: boolean): ApiError {
   if (duplicate) return new ApiError('DUPLICATE_REQUEST', '重复请求：请勿重复提交，刷新后可查看结果', 409, false);
-  if (failure.code === 'INSUFFICIENT_CREDITS') return new ApiError('INSUFFICIENT_CREDITS', failure.message, 402, false);
-  return new ApiError('CHARGE_FAILED', failure.message || '扣费失败，请重试', 500, false);
+  const copy = paidRunFailureCopy(failure);
+  return new ApiError(copy.errorCode, failure.message || copy.user, copy.status, false);
 }
 
 /**

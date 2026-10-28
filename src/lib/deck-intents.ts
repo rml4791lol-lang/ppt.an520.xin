@@ -2,6 +2,7 @@
 // 唯一请求形态是 {intent:{kind,params}}；旧 {action,...params} 入口已删除（取舍见 docs/DEBUG-HANDBOOK.md §29）。
 import {
   readIntentFields,
+  readRequiredText,
   type IntentFieldReader,
   type IntentParamsTable,
 } from './intent-envelope';
@@ -68,12 +69,6 @@ function readRole(f: IntentFieldReader, key: string): SlideRole | undefined {
   if ((ROLES as readonly string[]).includes(role)) return role as SlideRole;
   f.fail('role 不合法');
   return undefined;
-}
-
-function readRequiredText(f: IntentFieldReader, key: string, max: number, message: string): string {
-  const value = f.text(key, max);
-  if (!value) f.fail(message);
-  return value;
 }
 
 /** addSlide 的新页草稿：撤销删除要还原章节，清洗口径与 insertSlide 一致 */

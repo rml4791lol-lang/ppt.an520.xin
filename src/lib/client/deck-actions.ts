@@ -26,9 +26,41 @@ const REFUND_PROMISE: Record<DeckBilling, string> = {
 
 /**
  * 动作目录：kind → 计费语义（决定退款承诺）+ 失败/成功文案。
- * 只登记已走执行器的动作；未登记的动作失败时回退服务端文案（旧调用点在迁移中，行为不变）。
+ * 收费动作（整套生成 / 重试失败页 / 六种页级改图）必须登记，失败才有未扣星承诺；
+ * 免费动作（大纲/梳理/拆页/参考图/切版本）只提示重试。未登记的动作回退服务端文案。
  */
 const DECK_ACTIONS: DeckActionTable = {
+  generateOutline: {
+    billing: "free",
+    failure: "大纲生成失败",
+  },
+  structureSlides: {
+    billing: "free",
+    failure: "内容梳理失败",
+    success: (result) =>
+      (result.failedSlides?.length ?? 0) > 0
+        ? `内容梳理完成，${result.failedSlides?.length} 页失败（可对失败页重试）`
+        : "内容梳理完成",
+  },
+  structureSlide: {
+    billing: "free",
+    failure: "本页梳理失败",
+  },
+  splitSlide: {
+    billing: "free",
+    failure: "拆页失败",
+    success: (result) => `已拆分为 ${result.into} 页`,
+  },
+  generateSlides: {
+    billing: "charged",
+    failure: "整套生成提交失败",
+    success: "已开始生成整套页面，完成后自动更新",
+  },
+  retryFailedSlides: {
+    billing: "charged",
+    failure: "重试失败页提交失败",
+    success: "已开始重试失败页，完成后自动更新",
+  },
   generateSlide: {
     billing: "charged",
     failure: "重新生成提交失败",
@@ -119,6 +151,16 @@ function deckActionFailureText(kind: DeckIntentKind, failure: DeckActionFailure)
   return action ? `${action.failure}${REFUND_PROMISE[action.billing]}` : failure.message;
 }
 
+/**
+ * 页面级错误（服务端给的 genError 等）在客户端展示时复用同一条计费承诺：
+ * 组件只提供错误详情，不再手写「未扣除星星」之类第二份文案。
+ */
+export function deckChargeNotice(kind: DeckIntentKind, detail: string): string {
+  const action = deckActionDefinition(kind);
+  const text = detail.trim().replace(/[。.\s]+$/u, "");
+  return action ? `${text}${REFUND_PROMISE[action.billing]}` : text;
+}
+
 export interface DeckActionRunOptions<K extends DeckIntentKind> {
   /** 成功清理：清空输入、退出涂抹模式等；余额刷新由执行器统一调度 */
   onSuccess?: (result: DeckIntentResult<K>) => void;
@@ -126,6 +168,8 @@ export interface DeckActionRunOptions<K extends DeckIntentKind> {
   success?: string | ((result: DeckIntentResult<K>) => string) | false;
   /** 失败静默：调用方自己展示（如大纲错误屏） */
   silent?: boolean;
+  /** 失败回调：调用方要展示全屏错误/页内提示时，直接用执行器生成的同一份文案 */
+  onFailure?: (failure: DeckActionFailure, message: string) => void;
 }
 
 export type DeckActionRun = <K extends DeckIntentKind>(
@@ -177,8 +221,10 @@ export function createDeckActionRunner(deps: DeckActionRunnerDeps): DeckActionRu
       return result;
     } catch (error) {
       const failure = normalizeDeckActionError(error);
+      const message = deckActionFailureText(intent.kind, failure);
       if (failure.insufficient) deps.onInsufficientCredits(failure.message);
-      else if (!opts.silent) deps.toast(deckActionFailureText(intent.kind, failure));
+      else if (!opts.silent) deps.toast(message);
+      opts.onFailure?.(failure, message);
       return null;
     } finally {
       keys.delete(key);

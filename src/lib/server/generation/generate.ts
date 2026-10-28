@@ -27,14 +27,16 @@ import {
   resolveStylePack,
   type DeckContext,
 } from './style-packs';
-import { beginPaidRun, withInFlightRun, type PaidRunStore } from './paid-run';
+import { beginPaidRun, paidRunFailureCopy, withInFlightRun, type PaidRunStore } from './paid-run';
 import { deckGateFacts, generationPrecondition } from '../../deck-gates';
 import { buildOutlinePageMapping, type TemplateRouteContext } from './mapping';
 import {
+  buildRefineCopy,
   buildVisualPlan,
   ensureVisualPlanBlueprint,
   resolveVisualPlanPageTypes,
   resolveVisualPlanReference,
+  type RefineIntent,
 } from './visual-plan';
 import { getTemplate, getTemplatePages, resolveTemplateKind } from '../templates';
 import { cleanString, type JobKind } from './types';
@@ -56,9 +58,9 @@ async function runSlideGeneration(
   jobId: string,
   kind: JobKind,
   opts: {
-    refineInstruction?: string;
+    /** 改图意图（微调/图上改字/涂抹/融合）：模板话术由视觉计划装配，调用方不拼文案 */
+    refine?: RefineIntent;
     refineExtraImages?: Buffer[];
-    refineExtraNote?: string;
     deckContext?: DeckContext;
     template?: TemplateRouteContext | null;
     /** 整套路径已解析页型（映射与提示词读同一键）；单页路径缺省。 */
@@ -73,6 +75,8 @@ async function runSlideGeneration(
   // 扣费键形状归 charge-keys（前缀是历史账本契约）；claim/扣费/退款/终态顺序归 paid-run
   const chargeKey = deckChargeKey({ deckId: deck.id, jobId, slideId: slide.slideId });
   const pack = resolveStylePack(deck.stylePackId);
+  // 改图意图 → 指令/降级说明只经视觉计划装配（微调/图上改字/涂抹/融合话术一份）
+  const refineCopy = opts.refine ? buildRefineCopy(opts.refine) : null;
   const plan = buildVisualPlan({
     slide,
     deckContext: opts.deckContext ?? {
@@ -84,7 +88,7 @@ async function runSlideGeneration(
     template: opts.template,
     anchorImagePath: deck.anchorImagePath || undefined,
     mode: kind === 'deck-refine' ? 'refine' : 'generate',
-    refineInstruction: opts.refineInstruction,
+    refineInstruction: refineCopy?.instruction,
     pageType: opts.pageType,
   });
   const store: PaidRunStore<SlideVersionRow, { imagePath: string; imageUrl: string }> = {
@@ -107,21 +111,10 @@ async function runSlideGeneration(
       });
     },
     markFailed: (version, failure) => {
-      const insufficient = failure.code === 'INSUFFICIENT_CREDITS';
-      const chargeFailed = failure.code === 'CHARGE_FAILED';
-      const detail = `${failure.code}: ${failure.message}`;
-      updateSlideVersion(version.versionId, {
-        status: 'failed',
-        error: insufficient ? 'INSUFFICIENT_CREDITS: 🌟 星星不足' : chargeFailed ? '扣费失败' : detail,
-      });
-      updateSlideGen(deck.id, slide.slideId, {
-        genStatus: 'failed',
-        genError: insufficient
-          ? 'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试本页'
-          : chargeFailed
-            ? '扣费失败，请重试'
-            : detail,
-      });
+      // 失败码 → 文案只有 paid-run 一份（余额不足 402 / 扣费失败 / 域失败码透传）
+      const copy = paidRunFailureCopy(failure);
+      updateSlideVersion(version.versionId, { status: 'failed', error: copy.run });
+      updateSlideGen(deck.id, slide.slideId, { genStatus: 'failed', genError: copy.user });
     },
   };
   const began = beginPaidRun({
@@ -149,7 +142,7 @@ async function runSlideGeneration(
       if (!source) throw new Error('原图不存在，无法改图');
       // erase/fuse 自带第二图（标记图/融合样张）；指令微调与图上改字则附风格锚点作第二参考图
       let extraImages = opts.refineExtraImages;
-      let instruction = opts.refineInstruction || '';
+      let instruction = refineCopy?.instruction || '';
       if (!extraImages && deck.anchorImagePath) {
         const anchor = await readSiteFile(deck.anchorImagePath, config);
         if (anchor) {
@@ -162,7 +155,7 @@ async function runSlideGeneration(
           image: source,
           instruction,
           extraImages,
-          extraImageNote: opts.refineExtraNote,
+          extraImageNote: refineCopy?.extraNote,
           userKey: deck.userId,
         },
         deps,
@@ -197,11 +190,10 @@ export interface StartGenerationOptions {
   /** 指定页（generate-slide / refine-slide / retry-failed）；空 = 按 forceRegenerate 决定范围 */
   slideIds?: string[];
   forceRegenerate?: boolean;
-  refineInstruction?: string;
+  /** 改图意图（微调/图上改字/涂抹/融合）：模板话术由视觉计划装配 */
+  refine?: RefineIntent;
   /** 改图类 action 的附加图（erase 标记图 / fuse 融合样张），逐页复用 */
   refineExtraImages?: Buffer[];
-  /** 灾备丢图时的第二图文字描述（见 images.ts extraImageNote） */
-  refineExtraNote?: string;
   kind?: JobKind;
 }
 
@@ -293,9 +285,8 @@ export async function startDeckGeneration(
           cursor += 1;
           const result = await runSlideGeneration(deck, slide, job.jobId, kind, {
             unitPrice: estimate.unitPrice,
-            refineInstruction: options.refineInstruction,
+            refine: options.refine,
             refineExtraImages: options.refineExtraImages,
-            refineExtraNote: options.refineExtraNote,
             template,
             pageType: pageTypeByPageIndex.get(slide.pageIndex),
             deckContext: {

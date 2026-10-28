@@ -19,13 +19,8 @@ export type { SinglePageRow, SinglePageStatusView, SinglePageVersionView };
 // 实体写口与生成入口在 ./pages；本文件只做对外收口，调用方不再摸模块内部文件。
 export { generateReplicatePage, saveReplicateDraft } from './pages';
 export type { ReplicateDraftInput, ReplicateGenerateInput } from './pages';
-// 提示词契约也是模块对外的一部分（拆页计划、批量任务与测试共用一份），仍在 facade 收口。
-export {
-  buildReplicateCopyPrompt,
-  buildReplicateInstruction,
-  parseIncomingStructure,
-  resolveReplicateColorMode,
-} from './replicate';
+// 结构卡解析与配色策略是模块对外的一部分；提示词配方归视觉计划，不在 facade 再转一手。
+export { parseIncomingStructure, resolveReplicateColorMode } from './replicate';
 export type { ReplicateColorMode, SlideStructureCard } from './replicate';
 
 export type ReplicateProjectDetail = ReturnType<typeof getSingleProjectDetail>;

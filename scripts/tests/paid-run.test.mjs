@@ -338,6 +338,55 @@ export async function runPaidRunTests(ctx) {
   }
 
   {
+    // --- 失败码 → 对外文案的唯一映射：三个计费码 + 域失败码透传 ---
+    const insufficient = paidRun.paidRunFailureCopy({ code: 'INSUFFICIENT_CREDITS', message: '🌟 星星不足，请充值后继续' });
+    check('失败文案：余额不足 = 402 + 星星不足（用户文案与版本短标签同源）',
+      insufficient.status === 402 && insufficient.errorCode === 'INSUFFICIENT_CREDITS'
+        && insufficient.run === 'INSUFFICIENT_CREDITS' && insufficient.user.includes('星星不足'));
+    const chargeFailed = paidRun.paidRunFailureCopy({ code: 'CHARGE_FAILED', message: 'x' });
+    check('失败文案：扣费失败 = 500 且提示重试',
+      chargeFailed.status === 500 && chargeFailed.errorCode === 'CHARGE_FAILED'
+        && chargeFailed.user === '扣费失败，请重试');
+    const duplicate = paidRun.paidRunFailureCopy({ code: 'DUPLICATE_CHARGE', message: '该扣费键已有扣费' });
+    check('失败文案：重放命中已有扣费按扣费失败码返回、原因透传',
+      duplicate.status === 500 && duplicate.user.includes('该扣费键已有扣费'));
+    const domain = paidRun.paidRunFailureCopy({ code: 'IMAGE_TIMEOUT', message: '图片生成等待超时' });
+    check('失败文案：域失败码原样透传（计费模块不认识具体域）',
+      domain.status === 500 && domain.run === 'IMAGE_TIMEOUT: 图片生成等待超时'
+        && domain.user === 'IMAGE_TIMEOUT: 图片生成等待超时');
+  }
+
+  {
+    // --- 扣费键归一：域键模块与扣费/退款同一口径（文本超长/空白不得让存储键与账本键分叉）---
+    const chargeKeys = await import('../../src/lib/server/generation/charge-keys.ts');
+    const uid = await makeUser('keys');
+    const longId = ` ${'k'.repeat(200)} `;
+    const normalized = chargeKeys.deckChargeKey({ deckId: 'd-keys', jobId: 'j-keys', slideId: longId });
+    check('整套扣费键归一：超长 id 截到 128 且与账本扣费键逐字相同',
+      normalized.length === 128 && normalized === credits.chargeRefundKeys(normalized).chargeKey,
+      `len=${normalized.length}`);
+    const padded = chargeKeys.deckChargeKey({ deckId: 'd-keys', jobId: 'j-keys', slideId: 's-keys  ' });
+    check('整套扣费键归一：首尾空白被裁掉（与扣费侧 cleanKey 同口径）',
+      padded === 'deck-generate:d-keys:j-keys:s-keys', padded);
+    const began = paidRun.beginPaidRun({
+      domain: 'deck',
+      userId: uid,
+      action: 'deck_page_generate',
+      unitPrice: 10,
+      chargeKey: normalized,
+      refType: 'deck',
+      refId: 'd-keys',
+      reason: '生成第 1 页',
+      refundReason: '第 1 页生成失败退回',
+      store: makeStore([]),
+    });
+    check('整套扣费键归一：claim 存的键就是账本键（恢复按存储键拼退款不会落空）',
+      began.charged === true && Boolean(ledgerRow(normalized)) && credits.getBalance(uid) === 90,
+      `${began.charged} / ${Boolean(ledgerRow(normalized))}`);
+    began.run.succeed({});
+  }
+
+  {
     // --- 批次在飞作用域：执行中可判活/列出，结束或抛错都释放 ---
     const uid = await makeUser('scope');
     let during = null;

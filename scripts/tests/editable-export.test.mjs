@@ -52,6 +52,10 @@ export async function runEditableExportTests(ctx) {
           === keyLib.editableChargeKey({ kind: 'editable', refId: 'd', exportId: 'e' }));
       check('退款键：由扣费键定长派生且不等于扣费键',
         chargeRefundKeys(deckKey).refundKey !== deckKey && chargeRefundKeys(deckKey).chargeKey === deckKey);
+      const longKey = keyLib.editableChargeKey({ kind: 'editable', refId: ` ${'r'.repeat(200)} `, exportId: 'exp-long' });
+      check('扣费键：超长/空白来源 id 与扣费侧同一归一（存储键 = 账本键，退款不会派生到别的键）',
+        longKey.length === 128 && longKey === chargeRefundKeys(longKey).chargeKey,
+        `len=${longKey.length}`);
     }
 
     // ---- 已启动任务固定 Codia 配置快照：管理员中途切换只影响后续新任务 ----
@@ -292,13 +296,15 @@ export async function runEditableExportTests(ctx) {
       check('懒恢复成功不触碰余额', credits.getBalance(uid) === before);
     }
 
-    // ---- 读点不再自带续跑（T13 删除 30s 宽限）：续跑是运行源的结算动作 ----
+    // ---- 读路径单条收敛（恢复保留两个入口：整批 + 单条共享同一结算）----
     {
+      const staleMs = Number(baseConfig.jobStaleMs);
       const now = Date.now();
-      genDb.prepare(`INSERT INTO export_jobs
-          (id, user_id, ref_type, ref_id, kind, status, page_count, file_path, file_url, error, upstream_task_id, charged_credits, created_at, updated_at)
-         VALUES ('exp_lazy_read', ?, 'deck', ?, 'editable', 'processing', 2, '', '', '', '', 40, ?, ?)`)
-        .run(uid, deck.id, now - 60_000, now - 60_000);
+      const insertReadRow = (id, opts = {}) =>
+        genDb.prepare(`INSERT INTO export_jobs
+            (id, user_id, ref_type, ref_id, kind, status, page_count, file_path, file_url, error, upstream_task_id, charged_credits, created_at, updated_at)
+           VALUES (?, ?, 'deck', ?, 'editable', 'processing', 2, '', '', '', ?, ?, ?, ?)`)
+          .run(id, uid, deck.id, opts.taskId || '', opts.charged ?? 40, now - staleMs * 2, now - staleMs * 2);
       let pollN = 0;
       const readFetcher = makeMockFetcher([
         { match: '/v2/open/tasks/task_read', payload: () => (pollN++ > 0
@@ -308,22 +314,34 @@ export async function runEditableExportTests(ctx) {
         { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_read' } } },
         { match: 'read.pptx', payload: new Response(Buffer.from('read-pptx-binary')) },
       ]);
+      // ① 过期但未扣费（claim 后进程死亡）：列表读一眼即按失败收敛，不触达上游
+      insertReadRow('exp_lazy_read', { charged: 0 });
       const beforeRead = credits.getBalance(uid);
       exportsLib.listExports(uid, {}, codiaDeps(readFetcher));
       await new Promise((resolve) => setTimeout(resolve, 60));
       const readStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read')?.status || '');
-      check('读点不再自带续跑：列表读一眼不会重跑无上游任务的中断导出（判活归运行源）',
-        readStatus === 'processing' && readFetcher.calls.length === 0,
+      check('读路径单条收敛：过期未扣费行由 listExports 置 failed，不触发上游',
+        readStatus === 'failed' && readFetcher.calls.length === 0,
         `实际 ${readStatus} / 上游调用 ${readFetcher.calls.length}`);
-      // 同一支续跑函数就是运行源的结算动作：注入依赖后把这条行跑完，不重复扣星
-      exportsLib.resumeInterruptedExport('exp_lazy_read', codiaDeps(readFetcher));
+      check('读路径单条收敛不动余额（未扣费行没有可退金额）', credits.getBalance(uid) === beforeRead);
+
+      // ② 过期但已扣费：getExport 经同一条目启动续跑（只启动不等待），管线随后成功
+      const chargeKey = `export-editable:${deck.id}:exp_lazy_read_resume`;
+      insertReadRow('exp_lazy_read_resume');
+      credits.debitCredits(uid, 40, {
+        reason: '转可编辑 PPTX（2 页）', idempotencyKey: chargeKey, refType: 'deck', refId: deck.id,
+      });
+      const beforeResume = credits.getBalance(uid);
+      const returning = await exportsLib.getExport(uid, 'exp_lazy_read_resume', codiaDeps(readFetcher));
+      check('读路径续跑不等待：getExport 返回时行仍是 processing（结算只启动管线）',
+        returning.status === 'processing', `实际 ${returning.status}`);
       let resumedStatus = 'processing';
       for (let i = 0; i < 150 && resumedStatus !== 'succeeded'; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 20));
-        resumedStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read')?.status || '');
+        resumedStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read_resume')?.status || '');
       }
-      check('续跑结算动作：运行源的续跑函数把中断导出续跑成功', resumedStatus === 'succeeded', `实际 ${resumedStatus}`);
-      check('续跑不重复扣星（钱归首次运行）', credits.getBalance(uid) === beforeRead);
+      check('读路径续跑最终成功（同一份结算动作，不重传同一任务）', resumedStatus === 'succeeded', `实际 ${resumedStatus}`);
+      check('读路径续跑不重复扣星、不退款（钱归首次运行）', credits.getBalance(uid) === beforeResume);
     }
 
     // ---- 未 generated deck → 409 ----
@@ -620,16 +638,19 @@ export async function runEditableExportTests(ctx) {
         body: manyForm,
       }));
       const manyJson = await manyResponse.json();
-      check('外部上传文件数按当前通道能力拒绝（只配置 Codia → 20 张）',
+      check('外部上传文件数按当前通道能力拒绝（只配置 Codia → 20 张，与页数门同一句文案）',
         manyResponse.status === 400
           && manyJson?.error?.code === 'EXPORT_TOO_MANY_PAGES'
-          && manyJson?.error?.message === '单次最多 20 个图片文件'
+          && manyJson?.error?.message === '单次最多 20 页可转可编辑，当前共 21 页'
           && !/codia|image2ppt|wps/i.test(String(manyJson?.error?.message)),
         `${manyResponse.status} ${manyJson?.error?.message}`);
       const routeSource = readFileSync(new URL('../../src/app/api/editable-conversions/route.ts', import.meta.url), 'utf8');
-      check('上传路由不再自带页数常量：文件数上限读通道能力',
-        routeSource.includes('editablePageCapacity')
-          && !/MAX_UPLOAD_FILES\s*=/.test(routeSource));
+      const moduleSource = readFileSync(new URL('../../src/modules/editable-export/server/editable.ts', import.meta.url), 'utf8');
+      check('页数上限只有一个判定与一句文案：路由与四个发起入口都走共享门',
+        routeSource.includes('assertEditableCapacity') && routeSource.includes('uploadedPageCapacity')
+          && moduleSource.includes('export function assertEditableCapacity')
+          && !/MAX_UPLOAD_FILES\s*=/.test(routeSource)
+          && !routeSource.includes('个图片文件') && !moduleSource.includes('个图片文件'));
     }
 
     // 对外文案：可编辑上限 50 + 通道能力口径（help / FAQ / about / legal / 上传页）
@@ -647,8 +668,12 @@ export async function runEditableExportTests(ctx) {
         about.includes('单次最多 50 页') && !about.includes('单次最多 20 页'));
       check('首页 FAQ 文案：可编辑单次上限 50 页',
         marketing.includes('单次最多 50 页') && !marketing.includes('单次最多 20 页'));
-      check('上传页文案与客户端上限：50 张图片',
-        converter.includes('最多 50 张') && converter.includes('const MAX_FILES = 50;') && !converter.includes('最多 20 张'));
+      check('上传页文案与客户端上限：50 张图片（附当前可用转换通道限定语）',
+        converter.includes('最多 50 张') && converter.includes('当前可用的转换通道')
+          && converter.includes('const MAX_FILES = 50;') && !converter.includes('最多 20 张'));
+      check('手册不谎报转换器页口径（页面确实写了通道能力限定语）',
+        copyOf('docs/DEBUG-HANDBOOK.md').includes('/tools/editable-converter')
+          && copyOf('docs/DEBUG-HANDBOOK.md').includes('2026-10-29 评审补上同一句限定语'));
       check('服务条款带通道能力口径',
         legalTerms.includes('页数上限') && legalTerms.includes('转换通道'));
       check('上传卡片不再提示「超过 20 页暂不支持转可编辑」（整套上限 40 页在可编辑能力内）',
@@ -1342,6 +1367,43 @@ export async function runEditableExportTests(ctx) {
       genDb.prepare("UPDATE export_jobs SET status = 'failed', updated_at = ? WHERE id = ?").run(Date.now(), fresh.exportId);
     }
 
+    // ---- 读路径同样受在飞守卫（单条入口复用同一判活上下文）----
+    {
+      const guarded = await makeExportRow({ updatedAt: Date.now() - staleMs * 2 });
+      paidRunLib.holdInFlight({ runId: guarded.chargeKey, domain: 'editable', userId: tid, action: 'export_editable' });
+      const noFetch = makeMockFetcher([]);
+      const before = credits.getBalance(tid);
+      let view = null;
+      try {
+        view = await exportsLib.getExport(tid, guarded.exportId, codiaDeps13(noFetch));
+      } finally {
+        paidRunLib.releaseInFlight(guarded.chargeKey);
+      }
+      check('T13：读路径在飞守卫：心跳过期但本进程在跑 → 不收敛、不重跑、不动余额',
+        view?.status === 'processing' && noFetch.calls.length === 0 && credits.getBalance(tid) === before,
+        `${view?.status} / ${noFetch.calls.length}`);
+      genDb.prepare("UPDATE export_jobs SET status = 'failed', updated_at = ? WHERE id = ?").run(Date.now(), guarded.exportId);
+    }
+
+    // ---- 读路径：退款已落账的过期行只补终态，不续跑（否则等于免费交付一次）----
+    {
+      const refundedRow = await makeExportRow({ updatedAt: Date.now() - staleMs * 2 });
+      credits.refundCredits(tid, 20, {
+        reason: '可编辑导出失败退回',
+        idempotencyKey: credits.deriveRefundKey(refundedRow.chargeKey),
+        refType: 'upload',
+        refId: refundedRow.sourceId,
+      });
+      const refundsBefore = refundKeys(tid).length;
+      const balanceBefore = credits.getBalance(tid);
+      const noFetch = makeMockFetcher([]);
+      const view = await exportsLib.getExport(tid, refundedRow.exportId, codiaDeps13(noFetch));
+      check('T13：读路径对已退款行只补 failed 终态、不续跑、不重复退款',
+        view.status === 'failed' && noFetch.calls.length === 0
+          && credits.getBalance(tid) === balanceBefore && refundKeys(tid).length === refundsBefore,
+        `${view.status} / ${noFetch.calls.length} / ${refundKeys(tid).length}`);
+    }
+
     // ---- 重启中断（有可恢复上游任务）：按心跳续跑既有任务，不重传、不重建、不重复扣星 ----
     {
       const resumed = await makeExportRow({ taskId: 'task_t13_resume', provider: 'codia', updatedAt: Date.now() - staleMs * 2 });
@@ -1498,8 +1560,19 @@ export async function runEditableExportTests(ctx) {
           && !moduleSource.includes('chargeRefundKeys'));
       check('T13：模块扣费与退款走计费运行模块（beginPaidRun / failPaidRun）',
         moduleSource.includes('beginPaidRun') && moduleSource.includes('failPaidRun'));
-      check('T13：单条走读恢复口 reconcileInterruptedRun 已删除（注册表取代）',
-        !recoverySource.includes('reconcileInterruptedRun') && !moduleSource.includes('reconcileInterruptedRun'));
+      // 恢复保留两个入口（整批 / 单条）：单条是整批结算的薄包装，读路径不能等心跳扫描
+      const moduleRecovery = readFileSync(
+        new URL('../../src/modules/editable-export/server/recovery.ts', import.meta.url), 'utf8');
+      check('T13：单条恢复入口存在且是整批结算的薄包装（不复制结算逻辑）',
+        recoverySource.includes('export function reconcileInterruptedRun')
+          && /return reconcileInterrupted\(\[run\]\)/.test(recoverySource)
+          && moduleSource.includes('reconcileInterruptedRun'));
+      check('T13：读路径与整批入口共用同一行条目映射（interruptedEditableRun）',
+        moduleSource.includes('export function interruptedEditableRun')
+          && moduleSource.includes('reconcileInterruptedRun(interrupted)')
+          && moduleRecovery.includes('interruptedEditableRun'));
+      check('T13：已退款不续跑的判据只在一处（运行源不再自己实现）',
+        !moduleRecovery.includes('deriveRefundKey') && !moduleRecovery.includes('refundAlreadyIssued'));
     }
   }
 

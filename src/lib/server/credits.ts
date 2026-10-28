@@ -39,6 +39,7 @@ function cleanKey(key: unknown): string {
 /**
  * 扣费键归一（trim + 128 上限）：域键模块与扣费/退款必须同一口径，
  * 否则键模块产出的键写进行、扣费时却被截断，恢复按存储键拼出的退款键会找不到扣费行。
+ * @internal 只供 `*-charge-keys.ts` 与扣费/退款路径使用；业务代码经域键模块取键。
  */
 export function normalizeChargeKey(rawChargeKey: unknown): string {
   return cleanKey(rawChargeKey);

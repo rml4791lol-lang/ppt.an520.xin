@@ -57,17 +57,30 @@ export function reconcileInterrupted(runs: InterruptedRun[]): number {
   return healed.length;
 }
 
+/** 判活上下文：两个恢复入口共用同一口径（时钟可注入给崩溃测试）。 */
+export function runSourceContext(now: () => number = nowMs): RunSourceContext {
+  return {
+    isStale: (heartbeatMs) => isStale(heartbeatMs, now),
+    isInFlight: (runId) => isInFlight(runId),
+    isLive: (runId, heartbeatMs) => isInFlight(runId) || !isStale(heartbeatMs, now),
+  };
+}
+
 /**
- * 唯一恢复入口：按注册表收敛该用户全部生成域的在途任务，返回收敛条数。
+ * 单条收敛入口（恢复保留两个入口）：读路径手上有这一行时直接收敛，不等整批心跳扫描。
+ * 结算实现与整批入口完全相同——只是把同一份 reconcileInterrupted 喂一条，不复制逻辑。
+ */
+export function reconcileInterruptedRun(run: InterruptedRun): number {
+  return reconcileInterrupted([run]);
+}
+
+/**
+ * 整批恢复入口：按注册表收敛该用户全部生成域的在途任务，返回收敛条数。
  * 由 requireUser 在鉴权门调用——新增读/写路径只要走这道门，就不用再接恢复。
  * 判活时钟经 ctx 注入每个运行源（测试构造崩溃现场不必再改数据库时间戳）；
  * 新增域 = 装配期登记一个运行源，本函数与结算顺序都不动。
  */
 export function reconcileUser(userId: string, now: () => number = nowMs): number {
-  const ctx: RunSourceContext = {
-    isStale: (heartbeatMs) => isStale(heartbeatMs, now),
-    isInFlight: (runId) => isInFlight(runId),
-    isLive: (runId, heartbeatMs) => isInFlight(runId) || !isStale(heartbeatMs, now),
-  };
+  const ctx = runSourceContext(now);
   return reconcileInterrupted(listRunSources().flatMap((source) => source.listRuns(userId, ctx)));
 }

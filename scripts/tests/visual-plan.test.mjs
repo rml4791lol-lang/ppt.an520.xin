@@ -4,7 +4,7 @@
 // 改图后缀归模块；复刻是计划的一个 mode（保壳世界）；蓝图失败在接口内降级为空串。
 // 原孤儿脚本 test-page-types/test-mapping/test-prompt 中未被门覆盖的断言并入本段。
 // 由 scripts/test-generation.mjs 汇总调用。
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 export async function runVisualPlanTests(ctx) {
@@ -285,6 +285,35 @@ export async function runVisualPlanTests(ctx) {
   check('两种模式共用同一页型键与参考优先级',
     refined.pageTypeKey === plan.pageTypeKey
       && refined.references.map((item) => item.source).join(',') === 'anchor,template,style');
+  // 改图意图 → 指令/降级说明：微调、图上改字、涂抹、融合的模板话术只在计划模块一份
+  {
+    const plain = visualPlan.buildRefineCopy({ kind: 'instruction', instruction: '把标题放大一点' });
+    check('改图意图（微调）：只透传用户要求', plain.instruction === '把标题放大一点' && !plain.extraNote);
+    const editText = visualPlan.buildRefineCopy({ kind: 'edit-text', instruction: '把标题改成年度报告' });
+    check('改图意图（图上改字）：用户指令 + 只改指定文字的硬约束',
+      editText.instruction.includes('把标题改成年度报告') && editText.instruction.includes('只改指定文字')
+        && editText.instruction.includes('保持不变'));
+    const erase = visualPlan.buildRefineCopy({ kind: 'erase' });
+    check('改图意图（涂抹）：擦除指令与去红约束归计划模块',
+      erase.instruction.includes('红色涂抹区') && erase.instruction.includes('不得出现红色标记')
+        && Boolean(erase.extraNote?.includes('红色涂抹标记图未能传递')));
+    const fuse = visualPlan.buildRefineCopy({
+      kind: 'fuse',
+      templateName: '水彩森林模板',
+      visualKeywords: ['水彩', '森林', '留白'],
+      instruction: '更商务一点',
+    });
+    check('改图意图（融合）：骨架保留 + 补充要求 + 丢图降级说明都归计划模块',
+      fuse.instruction.includes('版式骨架保留') && fuse.instruction.includes('补充要求：更商务一点')
+        && fuse.extraNote?.includes('水彩森林模板') && fuse.extraNote?.includes('水彩、森林、留白'));
+    const actionsSrc = readFileSync(
+      new URL('../../src/lib/server/generation/actions.ts', import.meta.url),
+      'utf8',
+    );
+    check('动作层不再手写改图模板话术（涂抹/改字/融合文案只在视觉计划）',
+      !actionsSrc.includes('红色涂抹区') && !actionsSrc.includes('图上改字：')
+        && !actionsSrc.includes('版式骨架保留') && !actionsSrc.includes('融合参考图'));
+  }
 
   // 八段提示词契约补强（原 test-prompt.mjs 中未被门覆盖的断言并入）
   const contractSlide = {
