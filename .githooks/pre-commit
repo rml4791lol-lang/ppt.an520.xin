@@ -1,0 +1,5 @@
+#!/bin/sh
+# 提交前只跑快集（秒级到分钟级）；完整门由 CI 兜底，紧急绕过用 git commit --no-verify。
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+exec node scripts/gate.mjs --fast
