@@ -1,21 +1,20 @@
 // PPT 转模版底座·截图 AI 路线：VLM 抽标题 + 精准编辑模型做「去风格化 + 文字中性词替换」。
 // 5🌟/张（env 价键 ppt_to_base，插件动作 tool.ppt-to-base），失败全退；requestId 幂等，重放 409。
-// 扣费前先落 ppt_to_base_jobs 状态行：进程崩溃/重启打断在途请求时，由 recovery.reconcileUser
-// 在鉴权门按 charge_key 补退（见 docs/DEBUG-HANDBOOK.md §4）。
+// 扣费/退款/终态顺序归 paid-run（行先于扣费、失败先退款）；进程崩溃/重启打断在途请求时，
+// 由 recovery.reconcileUser 在鉴权门按 charge_key 补退（见 docs/DEBUG-HANDBOOK.md §4）。
 // 编辑提示词纪律（GPT Image 2.5 最佳实践）：点名参考图角色 → 改变项/保留项分离 → 不变量重复声明 → 中性词逐字加引号。
 import { ApiError, validationError } from '@/lib/server/http';
 import { findUserById } from '@/lib/server/auth';
 import { assertFeatureVisible } from '@/lib/server/feature-flags';
-import { chargeRefundKeys, debitCredits, estimateCredits, refundCredits } from '@/lib/server/credits';
+import { chargeRefundKeys, estimateCredits } from '@/lib/server/credits';
 import { chatCompletion } from '@/lib/server/engine';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
-import { markJobActive, markJobDone } from '@/lib/server/generation/recovery';
+import { beginPaidRun } from '@/lib/server/generation/paid-run';
 import { editImage, toPublicImageError, type ImageDeps } from '@/lib/server/generation/images';
 import { saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { hitRateLimit } from '@/lib/server/rate-limit';
-import { logProblem } from '@/lib/server/problem-log';
 
 export const PPT_TO_BASE_ACTION = 'ppt_to_base';
 export const PPT_TO_BASE_RATE = { windowMs: 60 * 60 * 1000, max: 30 };
@@ -102,71 +101,61 @@ export async function runPptToBase(userId: string, input: PptToBaseInput, deps: 
   }
 
   const unitPrice = estimateCredits({ action: PPT_TO_BASE_ACTION }).credits;
-  // 与 credits.cleanKey 同口径归一：重放命中即拒，不重复扣费也不再生成；
-  // 退款键不拼后缀（超长键会被截回扣费键），由扣费键定长派生
-  const { chargeKey, refundKey } = chargeRefundKeys(`ppt-to-base:${userId}:${requestId}`);
+  // 与 credits.cleanKey 同口径归一：重放命中幂等键即拒，不重复扣费也不再生成
+  const chargeKey = chargeRefundKeys(`ppt-to-base:${userId}:${requestId}`).chargeKey;
   const jobId = genId('ptb');
   const ts = nowMs();
-  // 先落状态行再扣费：进程死在扣费后，残留 running 行也能被懒恢复补退
-  getGenDb()
-    .prepare(
-      `INSERT INTO ppt_to_base_jobs (id, user_id, request_id, charge_key, status, error, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'running', '', ?, ?)`,
-    )
-    .run(jobId, userId, requestId, chargeKey, ts, ts);
-  markJobActive(jobId);
-  try {
-    let debit;
-    try {
-      debit = debitCredits(userId, unitPrice, {
-        reason: 'PPT 转模版底座',
-        idempotencyKey: chargeKey,
-        refType: 'ppt-to-base',
-        refId: requestId,
-      });
-    } catch (error) {
-      finishJob(jobId, 'failed', error instanceof ApiError ? error.code : 'DEBIT_FAILED');
-      throw error;
-    }
-    if (debit.duplicate) {
-      finishJob(jobId, 'failed', 'DUPLICATE_REQUEST');
+  // 顺序归 paid-run：claim 行 → 注册在飞 → 幂等扣费 → 执行 → 终态；失败先退款再置 failed。
+  // 重放（同一 requestId）由模块识别：钱归首笔运行所有，本次只置 failed 并回 409，不退款。
+  const began = beginPaidRun<{ jobId: string }, void>({
+    domain: 'ppt-to-base',
+    userId,
+    action: PPT_TO_BASE_ACTION,
+    unitPrice,
+    chargeKey,
+    refType: 'ppt-to-base',
+    refId: requestId,
+    reason: 'PPT 转模版底座',
+    refundReason: '底座生成失败退回',
+    store: {
+      claim: (claimedKey) => {
+        getGenDb()
+          .prepare(
+            `INSERT INTO ppt_to_base_jobs (id, user_id, request_id, charge_key, status, error, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'running', '', ?, ?)`,
+          )
+          .run(jobId, userId, requestId, claimedKey, ts, ts);
+        return { jobId };
+      },
+      markSucceeded: () => finishJob(jobId, 'succeeded'),
+      markFailed: (_row, failure) => finishJob(jobId, 'failed', `${failure.code}: ${failure.message}`),
+    },
+  });
+  if (!began.charged) {
+    if (began.duplicate) {
       throw new ApiError('DUPLICATE_REQUEST', '重复请求：请勿重复提交，结果请稍候查看', 409, false);
     }
-
-    try {
-      const title = await extractTitleText(input.image, runDeps);
-      const edited = await editImage(
-        { image: input.image, instruction: BASE_IMAGE_INSTRUCTION, userKey: userId },
-        runDeps,
-      );
-      const saved = await saveFile('generated', userId, edited, { kind: 'ppt-to-base', ext: '.png', id: genId('base') }, config);
-      finishJob(jobId, 'succeeded');
-      return { title, imageUrl: saved.url, balance: debit.balance };
-    } catch (error) {
-      // 先退款后落 failed：中途崩溃时残留行仍是 running，懒恢复会按同一退款键补退（不双退）
-      try {
-        refundCredits(userId, unitPrice, {
-          reason: '底座生成失败退回',
-          idempotencyKey: refundKey,
-          refType: 'ppt-to-base',
-          refId: requestId,
-        });
-      } catch (refundError) {
-        logProblem({
-          category: 'ppt-to-base',
-          level: 'error',
-          message: '底座生成失败退款失败',
-          detail: refundError,
-          userId,
-          refType: 'ppt-to-base',
-          refId: requestId,
-        });
-      }
-      const pub = toPublicImageError(error);
-      finishJob(jobId, 'failed', `${pub.code}: ${pub.message}`);
-      throw new ApiError(pub.code, pub.message, pub.status, true);
+    if (began.failure.code === 'INSUFFICIENT_CREDITS') {
+      throw new ApiError('INSUFFICIENT_CREDITS', began.failure.message, 402, false);
     }
-  } finally {
-    markJobDone(jobId);
+    throw new ApiError('CHARGE_FAILED', began.failure.message || '扣费失败', 500, false);
   }
+
+  let title = '';
+  let imageUrl = '';
+  try {
+    title = await extractTitleText(input.image, runDeps);
+    const edited = await editImage(
+      { image: input.image, instruction: BASE_IMAGE_INSTRUCTION, userKey: userId },
+      runDeps,
+    );
+    const saved = await saveFile('generated', userId, edited, { kind: 'ppt-to-base', ext: '.png', id: genId('base') }, config);
+    imageUrl = saved.url;
+  } catch (error) {
+    const pub = toPublicImageError(error);
+    began.run.fail({ code: pub.code, message: pub.message });
+    throw new ApiError(pub.code, pub.message, pub.status, true);
+  }
+  began.run.succeed(undefined);
+  return { title, imageUrl, balance: began.balance };
 }

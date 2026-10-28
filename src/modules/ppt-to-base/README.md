@@ -5,8 +5,8 @@
 ## 边界
 
 - **主路线·截图 AI 通用化**（5🌟/张，失败全退）：
-  - `server/base-image.ts`：开关硬门 → 限流（30 次/时）→ 估价取价（env 价键 `ppt_to_base`，插件动作 `tool.ppt-to-base`）→ 先落 `ppt_to_base_jobs` running 行再 requestId 幂等扣费（重放 409）→ VLM 抽主标题（失败降级空串，不阻塞）→ 精准编辑模型去风格化 → 落盘 `generated/`（kind `ppt-to-base`，行置 succeeded）；失败经定长派生退款键全退后抛公开错误码。
-  - 崩溃恢复：`ppt_to_base_jobs` 只由本模块读写，结算入口 `server/recovery.ts`（`interruptedPptToBaseRuns`：列 running 行 + 置 failed + 扣费键/退款描述）；平台 `recovery.reconcileUser(userId)` 在鉴权门（`requireUser`）注入判活口径（本进程注册表或心跳未超 `jobStaleMs`）并调度它，超时置 failed 并按实扣金额补退（幂等），见 `docs/DEBUG-HANDBOOK.md` §4。
+  - `server/base-image.ts`：开关硬门 → 限流（30 次/时）→ 估价取价（env 价键 `ppt_to_base`，插件动作 `tool.ppt-to-base`）→ 计费与退款顺序归平台 `paid-run`（claim 先落 `ppt_to_base_jobs` running 行 → 在飞注册 → requestId 幂等扣费；重放由模块识别为 duplicate、本次行置 failed 并回 409、不退款）→ VLM 抽主标题（失败降级空串，不阻塞）→ 精准编辑模型去风格化 → 落盘 `generated/`（kind `ppt-to-base`，行置 succeeded）；失败经 `paid-run` 的 `run.fail`（按 ledger 实扣金额、定长派生退款键）先退款再置 failed，然后抛公开错误码。
+  - 崩溃恢复：`ppt_to_base_jobs` 只由本模块读写，结算入口 `server/recovery.ts`（`interruptedPptToBaseRuns`：列 running 行 + 结算动作（置 failed）+ 扣费键/退款描述）；平台 `recovery.reconcileUser(userId)` 在鉴权门（`requireUser`）注入判活口径（`paid-run` 在飞注册表，键 = 扣费键；心跳未超 `jobStaleMs` 兜底）并调度它，补退与置 failed 顺序归 `paid-run.failPaidRun`（幂等，只退一次），见 `docs/DEBUG-HANDBOOK.md` §4。
   - 编辑指令 `BASE_IMAGE_INSTRUCTION` 的纪律：点名参考图角色 → 改变项/保留项分离 → 不变量重复声明 → 中性词逐字加引号 → 约束词频与原文块数一致。
   - 薄壳路由（不在本目录）：`src/app/api/tools/ppt-to-base/route.ts`（multipart file+requestId；解析 body 之前先做开关硬门 + content-length 预检，之后 ≤10MB、PNG magic 校验）。
   - `client/image-prepare.ts`：任意截图 letterbox 成 1536×864 白底 PNG 再上传。
