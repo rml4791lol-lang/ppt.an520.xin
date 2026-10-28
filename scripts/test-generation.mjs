@@ -21,6 +21,7 @@ import { runDeckActionTests } from './tests/deck-actions.test.mjs';
 import { runSinglePageActionTests } from './tests/single-page-actions.test.mjs';
 import { runSurfaceIntentTests } from './tests/surface-intents.test.mjs';
 import { runPaidRunTests } from './tests/paid-run.test.mjs';
+import { runSinglePagePaidRunTests } from './tests/single-page-paid-run.test.mjs';
 import { runVisualPlanTests } from './tests/visual-plan.test.mjs';
 import { runSurfaceIntentParserTests } from './tests/surface-intent-parsers.test.mjs';
 
@@ -1309,6 +1310,7 @@ console.log('\n[7b] 单页项目详情 / 版本选择 / i2i 原稿重设计');
 }
 
 await runPptReplicateTests({ check, expectThrows, auth, credits, uid, llmConfig, singlePages, projects, makeMockFetcher, editsOkHandler, imageOkHandler, PNG_1X1_B64 });
+await runSinglePagePaidRunTests({ check, expectThrows, auth, credits, makeMockFetcher, editsOkHandler, imageConfig, PNG_1X1_B64 });
 
 console.log('\n[8] 项目列表 / 改名 / 软删');
 {
