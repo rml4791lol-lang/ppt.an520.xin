@@ -1,7 +1,6 @@
 // deck typed intent 契约测试：意图是唯一入口；顺序约束由 src/lib/deck-gates.ts 一份不变量生成，
-// 拒绝码/文案与 state.availableIntents 同源。由 scripts/test-generation.mjs 汇总调用，全程 mock。
-import { readFileSync } from 'node:fs';
-
+// 拒绝码/文案与 state.availableIntents 同源。分派覆盖断言运行时处理器注册表，不读服务端源码。
+// 由 scripts/test-generation.mjs 汇总调用，全程 mock。
 export async function runDeckIntentTests(ctx) {
   const { check, auth, decks, fullDeps } = ctx;
   const intents = await import('../../src/lib/deck-intents.ts');
@@ -15,21 +14,22 @@ export async function runDeckIntentTests(ctx) {
 
   console.log('\n[4d] deck typed intent：唯一入口 / 前置不变量 / 可用集合');
 
-  // ---------- 契约：dispatch 覆盖全部 kind，旧 action 词汇消失 ----------
-  const actionsSrc = readFileSync(new URL('../../src/lib/server/generation/actions.ts', import.meta.url), 'utf8');
-  const routeSrc = readFileSync(new URL('../../src/app/api/deck/[id]/route.ts', import.meta.url), 'utf8');
-  const switchKinds = [...new Set([...actionsSrc.matchAll(/case '([A-Za-z]+)':/g)].map((m) => m[1]))];
-  check('dispatch 的 case 覆盖全部意图（源码 switch ↔ DECK_INTENT_KINDS 双向齐全）',
-    switchKinds.length === 20 && DECK_INTENT_KINDS.length === 20
-      && DECK_INTENT_KINDS.every((kind) => switchKinds.includes(kind))
-      && switchKinds.every((kind) => DECK_INTENT_KINDS.includes(kind)),
-    `switch=${switchKinds.length} kinds=${DECK_INTENT_KINDS.length}`);
+  // ---------- 契约：处理器注册表覆盖全部 kind，旧 action 词汇消失 ----------
+  const handlers = actions.DECK_INTENT_HANDLERS;
+  const handlerKinds = handlers ? Object.keys(handlers) : [];
+  check('dispatch 的处理器注册表覆盖全部意图（注册表 ↔ DECK_INTENT_KINDS 双向齐全）',
+    handlerKinds.length === 20 && DECK_INTENT_KINDS.length === 20
+      && DECK_INTENT_KINDS.every((kind) => typeof handlers?.[kind] === 'function')
+      && handlerKinds.every((kind) => DECK_INTENT_KINDS.includes(kind)),
+    `registry=${handlerKinds.length} kinds=${DECK_INTENT_KINDS.length}`);
   check('意图 kind 唯一（无重复登记）', new Set(DECK_INTENT_KINDS).size === 20);
-  check('无类型入口已删除：dispatch 不再有 dispatchDeckAction / body.action',
-    !actionsSrc.includes('dispatchDeckAction') && !actionsSrc.includes('body.action'));
-  check('路由边界只解意图（readIntentParams + deck 表），不再收 action 信封',
-    routeSrc.includes('readIntentParams') && routeSrc.includes('DECK_INTENT_PARAMS')
-      && !routeSrc.includes('parseDeckRequest'));
+  const parserKinds = Object.keys(intents.DECK_INTENT_PARAMS);
+  check('处理器注册表与参数解析表同源（kind 集合一致）',
+    parserKinds.length === handlerKinds.length
+      && parserKinds.every((kind) => handlerKinds.includes(kind)),
+    `parsers=${parserKinds.length} handlers=${handlerKinds.length}`);
+  check('无类型入口已删除：dispatchDeckAction 不再导出',
+    typeof actions.dispatchDeckAction === 'undefined');
 
   check('解析：合法意图收窄通过',
     parseDeckIntent({ kind: 'commitVersion', params: { slideId: 's1', versionId: 'v1' } })?.kind === 'commitVersion');
@@ -137,15 +137,32 @@ export async function runDeckIntentTests(ctx) {
   const unlockedAgain = await dispatch(uid, deck.id, 'unlockStructure');
   check('已解锁时再次 unlock 是幂等 no-op（不新增拒绝面）',
     unlockedAgain.status === 200 && unlockedAgain.extra.alreadyUnlocked === true);
+  check('响应 extra 按 kind 收窄：unlock 只带自身字段，不混入他 kind 的 job 摘要',
+    Object.keys(unlocked.extra).sort().join(',') === 'invalidated,warning'
+      && !('job' in unlocked.extra),
+    JSON.stringify(Object.keys(unlocked.extra)));
   check('页级意图不登记 deck 级可用集合（改图/参考图逐页判断）',
     !unlocked.state.availableIntents.includes('refineSlide')
       && !unlocked.state.availableIntents.includes('setReferenceImage'));
-  check('响应类型无索引签名兜底：dispatch 的 extra 按 kind 收窄',
-    !actionsSrc.includes('Record<string, unknown>')
-      && actionsSrc.includes('extra: DeckIntentExtra[K]'));
-  check('调度器不再清洗请求字段：解析器是唯一清洗点（无 cleanIdList / cleanString(params.*)）',
-    !actionsSrc.includes('cleanIdList')
-      && !/cleanString\(\s*(?:intent\.)?params\./.test(actionsSrc));
+  // ---------- 分派只认注册表：替换某 kind 的处理器后，调用的是替换实现 ----------
+  const originalUpdateSlideHandler = actions.DECK_INTENT_HANDLERS.updateSlide;
+  let handlerCalls = 0;
+  actions.DECK_INTENT_HANDLERS.updateSlide = async (handlerCtx, handlerIntent) => {
+    handlerCalls += 1;
+    return originalUpdateSlideHandler(handlerCtx, handlerIntent);
+  };
+  let swapped = null;
+  try {
+    swapped = await dispatch(uid, deck.id, 'updateSlide', {
+      slideId: unlocked.state.slides[0].slideId,
+      chapter: '注册表直派',
+    });
+  } finally {
+    actions.DECK_INTENT_HANDLERS.updateSlide = originalUpdateSlideHandler;
+  }
+  check('dispatch 只按注册表分派（替换 kind 处理器后调用的是替换实现）',
+    swapped?.status === 200 && handlerCalls === 1,
+    `status=${swapped?.status} calls=${handlerCalls}`);
 
   // ---------- 路由边界：同一条 POST 只服务意图 ----------
   const routeDeck = decks.createDeck(uid, {
@@ -184,6 +201,27 @@ export async function runDeckIntentTests(ctx) {
       && intentBody.data.contentChanged === true && intentBody.data.slides[0].title === '路由改名'
       && Array.isArray(intentBody.data.availableIntents),
     JSON.stringify({ status: intentRes.status, extra: intentBody.data?.contentChanged }));
+
+  // 字段上限只在解析器里执行：超长 title 经路由落库按 200 截断（动作不做第二遍清洗）
+  const longTitleRes = await callRoute({
+    intent: { kind: 'updateSlide', params: { slideId: routeSlideId, title: '长'.repeat(500) } },
+  });
+  const longTitleBody = await longTitleRes.json();
+  check('字段清洗只在解析器：超长 title 经路由按解析器上限 200 截断',
+    longTitleRes.status === 200 && longTitleBody.data.slides[0].title === '长'.repeat(200),
+    `len=${longTitleBody.data?.slides?.[0]?.title?.length}`);
+
+  // 路由只解意图信封：body 里残留的旧动作名不参与分派（意图照常执行，页数不变）
+  const slidesBeforeMixed = decks.getDeckState(uid, routeDeck.id).slides.length;
+  const mixedRes = await callRoute({
+    action: 'add-slide',
+    intent: { kind: 'updateSlide', params: { slideId: routeSlideId, chapter: '意图优先' } },
+  });
+  const mixedBody = await mixedRes.json();
+  check('路由只解意图信封：残留 action 名不参与分派',
+    mixedRes.status === 200 && mixedBody.data.slides[0].chapter === '意图优先'
+      && mixedBody.data.slides.length === slidesBeforeMixed,
+    `实际 ${mixedRes.status} chapter=${mixedBody.data?.slides?.[0]?.chapter} slides=${mixedBody.data?.slides?.length}`);
 
   const legacyRes = await callRoute({ action: 'add-slide' });
   const legacyBody = await legacyRes.json();
