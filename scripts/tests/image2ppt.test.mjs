@@ -1,4 +1,5 @@
 // Image2PPT 可编辑转换通道测试：提交/轮询/下载/回调验签/主备切换，全 mock。
+import { startEditableWithDone } from './editable-start-helpers.mjs';
 import { createHmac } from 'node:crypto';
 
 export async function runImage2PptTests(ctx) {
@@ -6,6 +7,9 @@ export async function runImage2PptTests(ctx) {
     check, baseConfig, credits, uid, deck, makeMockFetcher,
   } = ctx;
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
+  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
+  const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
+    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
   const i2p = await import('../../src/modules/editable-export/server/image2ppt.ts');
   const { getGenDb } = await import('../../src/lib/server/generation/db.ts');
 
@@ -142,10 +146,7 @@ export async function runImage2PptTests(ctx) {
       { match: '/api/v1/jobs', payload: { jobId: 'job_pipeline', status: 'pending', slideCount: 2, creditsReserved: 2 } },
     ]);
     const before = credits.getBalance(uid);
-    const started = await exportsLib.startDeckEditableExport(
-      uid,
-      deck.id,
-      { fetchImpl: fetcher, config: i2pConfig, pollIntervalMs: 1, retryDelayMs: 0 },
+    const started = await startDeckEditableFor(uid, deck.id, { fetchImpl: fetcher, config: i2pConfig, pollIntervalMs: 1, retryDelayMs: 0 },
       { force: true },
     );
     check('Image2PPT 管线发起：processing + 40🌟', started.status === 'processing' && started.credits === 40);
@@ -177,10 +178,7 @@ export async function runImage2PptTests(ctx) {
         return { error: { message: 'temporary' } };
       } },
     ]);
-    const started = await exportsLib.startDeckEditableExport(
-      uid,
-      deck.id,
-      { fetchImpl: fetcher, config: bothConfig, pollIntervalMs: 1, retryDelayMs: 0 },
+    const started = await startDeckEditableFor(uid, deck.id, { fetchImpl: fetcher, config: bothConfig, pollIntervalMs: 1, retryDelayMs: 0 },
       { force: true },
     );
     await started.done;
