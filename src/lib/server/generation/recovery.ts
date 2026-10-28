@@ -10,6 +10,7 @@ import { deriveRefundKey, refundCredits } from '../credits';
 import { logProblem } from '../problem-log';
 import { interruptedPptToBaseRuns } from '@/modules/ppt-to-base/server/recovery';
 import { getGenDb, nowMs } from './db';
+import { deckChargeKey } from './charge-keys';
 import { getGenerationConfig } from './config';
 
 // ---- 本进程活跃任务注册表（generate.ts / single-pages.ts / ppt-to-base 注册） ----
@@ -167,9 +168,11 @@ function deckRuns(userId: string): InterruptedRun[] {
     const deckId = String(slide.deckId);
     if (protectedDecks.has(deckId)) continue;
     const version = db
-      .prepare('SELECT id, job_id, status FROM slide_versions WHERE slide_id = ? ORDER BY version_no DESC LIMIT 1')
-      .get(String(slide.slideId)) as { id: string; job_id: string; status: string } | undefined;
+      .prepare('SELECT id, job_id, status, charge_key FROM slide_versions WHERE slide_id = ? ORDER BY version_no DESC LIMIT 1')
+      .get(String(slide.slideId)) as { id: string; job_id: string; status: string; charge_key: string } | undefined;
     const jobId = String(version?.job_id || '');
+    // 存储键优先（键形演进后老行仍对得上账）；迁移前无 charge_key 的老行回退键模块
+    const storedChargeKey = String(version?.charge_key || '');
     runs.push({
       key: String(slide.slideId),
       domain: 'deck',
@@ -189,7 +192,7 @@ function deckRuns(userId: string): InterruptedRun[] {
           String(slide.slideId),
         );
       },
-      chargeKey: jobId ? `deck-generate:${deckId}:${jobId}:${slide.slideId}` : '',
+      chargeKey: storedChargeKey || (jobId ? deckChargeKey({ deckId, jobId, slideId: String(slide.slideId) }) : ''),
       refundReason: `第 ${Number(slide.pageIndex) + 1} 页生成中断退回`,
       refType: 'deck',
       refId: deckId,
