@@ -1,7 +1,7 @@
 # AnPPT v2 开发与架构约定
 
 > 本文是开发流程与架构纪律的权威入口；系统全貌（部署/链路/运维）见 `docs/DEBUG-HANDBOOK.md`。
-> 改代码前读本文；改完代码同步两份文档。最后更新：2026-08-22
+> 改代码前读本文；改完代码同步两份文档。最后更新：2026-10-28（门命令化、工作树脚本、护栏自检）
 
 ## 1. 金字塔分层
 
@@ -58,9 +58,8 @@ npm run gate:fast  # 迭代快集：跳过 build 与两套测试，其余同一�
 
 - 改业务逻辑必须同步加/改断言；`npm run gate` 全绿才允许提交，断言数变化同步更新 README 与手册 §8。
 - 并行工作时用 `npm run worktree -- <name> [base]` 建工作树（实体 `node_modules`，可跑 tsc；build 只在主仓跑）。
-- 新克隆先启用提交前快集：`git config core.hooksPath .githooks`；紧急绕过 `git commit --no-verify`，完整门由 CI 兜底。
+- 新克隆 `npm install` 会经 `prepare` 自动启用提交前快集（`core.hooksPath=.githooks`）；手工兜底 `git config core.hooksPath .githooks`。紧急绕过用 `git commit --no-verify`，完整门由 CI 兜底。
 
-- 改业务逻辑必须同步加/改断言；两套测试全绿才允许提交，断言数变化同步更新 README 与手册 §8。
 - WPS、Image2PPT、Codia、生图、VLM **禁止真实调用进测试**（全部 mock）；真机验证走 dev 环境小额度实测。
 - 日志系统的 schema、writer、health、monitor 或 deploy 验证改动，必须同时阅读并更新 `docs/LOGGING.md`；多人并行时不要直接改生产服务器副本。
 - commit 用英文祈使句；不执行 git commit/push/reset/rebase，除非用户明确要求。

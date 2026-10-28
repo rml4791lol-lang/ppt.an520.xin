@@ -16,7 +16,8 @@ const STEP_DEFS = [
 
 const FAST_STEP_NAMES = ['branch', 'markers', 'lint', 'typegen', 'tsc'];
 
-const MARKER_EXT_RE = /\.(md|ts|tsx|mjs)$/i;
+// 覆盖 agent 会手写/合并的全部文本类型：规范要求 md/ts/tsx/mjs，外加 yml/sh/json（CI 与钩子本身就是这些后缀）。
+const MARKER_EXT_RE = /\.(md|ts|tsx|mjs|js|yml|yaml|sh|json)$/i;
 const MARKER_RE = /^<<<<<<< /;
 
 function main() {

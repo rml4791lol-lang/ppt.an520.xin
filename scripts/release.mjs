@@ -28,9 +28,11 @@ Options:
   --dry-run                          Resolve, generate and hash, then stop.
   -h, --help                         Print this help.
 
-The remote checkout must be clean before anything runs. Exit status is 0 only
-when the resulting tree matches; on failure the remote checkout is restored to
-the commit it started from and the temporary patch is removed.`;
+The upload retries up to three times and resumes through rsync when the server has it.
+The remote checkout must be clean and in sync with origin before anything runs.
+Exit status is 0 only when the resulting tree matches. Failures before the push
+restore the remote checkout; a failure after the push (deploy) leaves the verified
+commit in place because rewinding the checkout would only fork it from origin.`;
 
 const DEFAULTS = {
   target: 'hk-hermes',
@@ -186,6 +188,7 @@ class Remote {
     this.localMode = opts.localPath !== null;
     this.target = opts.target;
     this.repo = this.localMode ? opts.localPath : opts.remoteRepo;
+    this.rsync = undefined; // lazily probed on first upload
   }
 
   invocation(argv) {
@@ -228,9 +231,31 @@ class Remote {
       fs.copyFileSync(localFile, remoteFile);
       return;
     }
+    // rsync --append-verify resumes a half-transferred patch on retry; scp has no resume,
+    // so it stays as the fallback when the server has no rsync.
+    if (this.rsyncAvailable()) {
+      const rsync = run('rsync', [
+        '-q',
+        '--partial',
+        '--append-verify',
+        '--timeout=120',
+        '-e',
+        `ssh ${SSH_OPTIONS.join(' ')}`,
+        localFile,
+        `${this.target}:${remoteFile}`,
+      ]);
+      if (!rsync.error && rsync.status === 0) return;
+    }
     const result = run('scp', [...SSH_OPTIONS, '-q', localFile, `${this.target}:${remoteFile}`]);
     if (result.error) throw new StepError('upload', `scp: ${result.error.message}`);
     if (result.status !== 0) throw new StepError('upload', `scp ${this.target}:${remoteFile}: ${failureText(result)}`);
+  }
+
+  rsyncAvailable() {
+    if (this.rsync !== undefined) return this.rsync;
+    const probe = run('ssh', [...SSH_OPTIONS, this.target, 'command -v rsync >/dev/null 2>&1']);
+    this.rsync = !probe.error && probe.status === 0;
+    return this.rsync;
   }
 
   remove(remoteFile) {
@@ -297,6 +322,24 @@ function release(context) {
     context.branchTipBefore = remote.git(['rev-parse', '--verify', `${branchRef}^{commit}`], 'refs').trim();
   } else if (branchProbe.status !== 1) {
     throw new StepError('refs', `cannot inspect ${branchRef}: ${failureText(branchProbe)}`);
+  }
+
+  // A remote checkout that is behind or diverged from origin makes the step-6 push
+  // fail after we already mutated the checkout; abort early with the fix instead.
+  const fetched = remote.gitResult(['fetch', '--quiet', 'origin', opts.branch]);
+  if (!fetched.error && fetched.status === 0) {
+    const originProbe = remote.gitResult(['rev-parse', '--verify', '--quiet', `origin/${opts.branch}`]);
+    if (originProbe.status === 0) {
+      context.originTip = originProbe.stdout.trim();
+      if (context.originTip !== remoteHead) {
+        throw new StepError(
+          'refs',
+          `remote checkout is at ${remoteHead} but origin/${opts.branch} is ${context.originTip}; run git pull in ${remote.repo} before releasing`,
+        );
+      }
+    }
+  } else {
+    detail('warning: could not fetch origin; skipped remote/origin sync check');
   }
 
   detail(`local  ${localHead} tree ${localTree}`);
@@ -442,6 +485,7 @@ function release(context) {
 
   stepHeader(6, 'push to origin');
   remote.git(['push', 'origin', opts.branch], 'push');
+  context.pushed = true;
   detail(`pushed ${opts.branch} to origin`);
 
   stepHeader(7, 'deploy');
@@ -525,6 +569,7 @@ function main() {
     remotePatchPath: null,
     generatedPatch: null,
     remoteMutated: false,
+    pushed: false,
     branchMoved: false,
     branchExisted: false,
     branchTipBefore: null,
@@ -546,7 +591,14 @@ function main() {
     const step = error instanceof StepError ? error.step : 'internal';
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[release] ${step}: ${message}`);
-    if (context.remoteMutated) rollback(context);
+    if (context.remoteMutated && !context.pushed) rollback(context);
+    if (context.pushed) {
+      // The commit and its tree are verified and already on origin; rewinding the server
+      // checkout would only fork it from origin. Deploy failures are fixed and re-run.
+      console.error(
+        '[release] note: release commit is already pushed; the remote checkout is left at it. Fix the failure, then re-run the deploy helper.',
+      );
+    }
     cleanup(context);
     process.exitCode = 1;
   }

@@ -14,6 +14,8 @@ description: AnPPT v2 全量门——任何改动算"完成"前跑一条命令�
 纪律：
 
 - 门就是唯一口径：不要手抄命令，也不要在文档里另写一套五步；文档提到但命令没有的检查视为缺陷。
+- 冲突标记步骤覆盖 `*.md`/`*.ts`/`*.tsx`/`*.mjs` 及 `*.js`/`*.yml`/`*.yaml`/`*.sh`/`*.json`（含未跟踪新文件），排除 `node_modules`。
+- 护栏自检 `npm run test:guardrails` 故意不并入门（避免门测门递归），由 CI 在完整门之后单独运行。
 - 测试断言数变化 → 同步 `README.md` 与 `docs/DEBUG-HANDBOOK.md` §8 的数字。
 - 解冲突后照常跑完整门：冲突标记由门内 markers 步骤全量扫描（2026-10-27 一个带冲突标记的 merge 躲过了 lint/tsc/build）。
 - 测试里 Codia/生图/VLM 一律 mock；真机验证走 dev 小额度（`npm run dev -- -p 3120`）。

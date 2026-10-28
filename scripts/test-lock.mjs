@@ -1,7 +1,7 @@
 // 两套测试套件共用一把跨工作树的文件锁。
 // 背景：2026-10-27 四个工作树并发跑测试时出现过一次假红（重复上传相同内容复用成功结果且不扣星），
 // 单独重跑三次全绿。锁放在 os.tmpdir()，所以不同 worktree / 会话也会排队，而不是互相干扰。
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -80,8 +80,16 @@ export function acquireTestLock(label) {
     const owner = readOwner();
     const stale = staleReason(owner);
     if (stale) {
+      // 抢占式回收：两个等待者可能同时判定陈旧，rename 只有一个能成功，
+      // 避免后者删掉前者刚拿到手的锁（双持锁）。
+      const tomb = `${LOCK_DIR}.stale-${process.pid}-${Date.now()}`;
+      try {
+        renameSync(LOCK_DIR, tomb);
+      } catch {
+        continue;
+      }
       console.log(`⚠ 清理陈旧测试锁：${stale}`);
-      rmSync(LOCK_DIR, { recursive: true, force: true });
+      rmSync(tomb, { recursive: true, force: true });
       continue;
     }
     if (Date.now() >= nextNotice) {

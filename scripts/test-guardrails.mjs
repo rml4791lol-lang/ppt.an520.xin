@@ -4,24 +4,30 @@
 // 2026-10-28 的事故是「命令退出码 0，但内容不对」，所以这里既要有会红的夹具，也要有干净对照。
 // 故意不并入门（避免门测门递归），由 CI 在完整门之后单独跑。
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const GATE = path.join(REPO_ROOT, 'scripts/gate.mjs');
 const WORKTREE = path.join(REPO_ROOT, 'scripts/worktree.mjs');
 const RELEASE = path.join(REPO_ROOT, 'scripts/release.mjs');
 const VERIFY_HEALTH = path.join(REPO_ROOT, 'scripts/verify-health.mjs');
+const TEST_LOCK = path.join(REPO_ROOT, 'scripts/test-lock.mjs');
+const LOCK_DIR = path.join(tmpdir(), 'anppt-v2-test-suite.lock');
 const NODE = process.execPath;
 
 let passed = 0;
@@ -89,6 +95,35 @@ function commitAll(dir, message) {
   return gitOk(['rev-parse', 'HEAD'], dir);
 }
 
+// 复用主仓依赖、但完全活在临时目录里的最小仓库：lint/tsc 夹具不该污染主仓。
+function scaffoldRepo(prefix) {
+  const dir = initRepo(tempDir(prefix));
+  writeFixture(path.join(dir, 'package.json'), JSON.stringify({ name: 'guardrails-fixture', private: true, scripts: { lint: 'eslint' } }, null, 2) + '\n');
+  writeFixture(
+    path.join(dir, 'tsconfig.json'),
+    JSON.stringify(
+      {
+        compilerOptions: {
+          target: 'ES2022',
+          lib: ['esnext'],
+          strict: true,
+          noEmit: true,
+          module: 'esnext',
+          moduleResolution: 'bundler',
+          skipLibCheck: true,
+          allowJs: true,
+        },
+        include: ['src/**/*.ts'],
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  copyFileSync(path.join(REPO_ROOT, 'eslint.config.mjs'), path.join(dir, 'eslint.config.mjs'));
+  symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
+  return dir;
+}
+
 function cleanupAll() {
   for (const fn of cleanupFns.splice(0).reverse()) {
     try {
@@ -153,6 +188,13 @@ process.on('exit', cleanupAll);
   const untrackedRun = node([GATE, '--steps', 'markers'], { cwd: untracked });
   check('未跟踪新文件里的冲突标记也要被抓到', untrackedRun.status !== 0, `exit ${untrackedRun.status}`);
 
+  const yml = initRepo(tempDir('guardrails-markers-yml-'));
+  writeFixture(path.join(yml, 'README.md'), '# base\n');
+  commitAll(yml, 'base');
+  writeFixture(path.join(yml, '.github/workflows/ci.yml'), 'on: push\n<<<<<<< HEAD\njobs: {}\n');
+  const ymlRun = node([GATE, '--steps', 'markers'], { cwd: yml });
+  check('CI/钩子这类 yml/sh 文件也在扫描范围', ymlRun.status !== 0, `exit ${ymlRun.status}`);
+
   const clean = initRepo(tempDir('guardrails-markers-clean-'));
   writeFixture(path.join(clean, 'README.md'), '# base\n');
   commitAll(clean, 'base');
@@ -162,26 +204,24 @@ process.on('exit', cleanupAll);
 
 // ---------------------------------------------------------------- 门：lint / tsc
 {
-  console.log('\n[3] 门：lint 错与类型错必须让门失败');
-  const lintFixture = path.join(REPO_ROOT, 'scripts/guardrails-fixture-lint.ts');
-  cleanupFns.push(() => rmSync(lintFixture, { force: true }));
-  writeFixture(lintFixture, 'const unusedGuardrailFixture = 1;\nexport {};\n');
-  const lintRun = node([GATE, '--steps', 'lint'], { cwd: REPO_ROOT });
-  check('lint 错：门必须失败', lintRun.status !== 0, `exit ${lintRun.status}`);
+  console.log('\n[3] 门：lint 错与类型错必须让门失败（临时目录夹具，不污染主仓）');
+  const lintRepo = scaffoldRepo('guardrails-lint-');
+  writeFixture(path.join(lintRepo, 'src/lint-error.ts'), 'const unusedGuardrailFixture = 1;\nexport {};\n');
+  const lintRun = node([GATE, '--steps', 'lint'], { cwd: lintRepo });
+  check('lint 错：门必须失败', lintRun.status !== 0, `exit ${lintRun.status} ${lintRun.stderr.slice(0, 200)}`);
   check(
     '失败信息指向 lint 规则或文件',
-    /guardrails-fixture-lint|@typescript-eslint|eslint/i.test(`${lintRun.stdout}\n${lintRun.stderr}`),
+    /lint-error|@typescript-eslint|eslint/i.test(`${lintRun.stdout}\n${lintRun.stderr}`),
     lintRun.stderr.slice(0, 300),
   );
 
-  const tscFixture = path.join(REPO_ROOT, 'scripts/guardrails-fixture-tsc.ts');
-  cleanupFns.push(() => rmSync(tscFixture, { force: true }));
-  writeFixture(tscFixture, 'export const badGuardrailFixture: number = "not a number";\n');
-  const tscRun = node([GATE, '--steps', 'typegen,tsc'], { cwd: REPO_ROOT });
-  check('类型错：门必须失败', tscRun.status !== 0, `exit ${tscRun.status}`);
+  const tscRepo = scaffoldRepo('guardrails-tsc-');
+  writeFixture(path.join(tscRepo, 'src/type-error.ts'), 'export const badGuardrailFixture: number = "not a number";\n');
+  const tscRun = node([GATE, '--steps', 'tsc'], { cwd: tscRepo });
+  check('类型错：门必须失败', tscRun.status !== 0, `exit ${tscRun.status} ${tscRun.stderr.slice(0, 200)}`);
   check(
     '失败信息是 tsc 诊断（含文件名）',
-    /guardrails-fixture-tsc\.ts.*error TS\d+/s.test(`${tscRun.stdout}\n${tscRun.stderr}`),
+    /type-error\.ts.*error TS\d+/s.test(`${tscRun.stdout}\n${tscRun.stderr}`),
     tscRun.stderr.slice(0, 300),
   );
 }
@@ -191,8 +231,14 @@ process.on('exit', cleanupAll);
   console.log('\n[4] 工作树脚本：产物 node_modules 是实体目录，不是符号链接');
   const name = 'guardrails-fixture';
   const target = path.join(REPO_ROOT, '.worktrees', name);
-  git(['worktree', 'remove', '--force', target], REPO_ROOT);
-  git(['branch', '-D', name], REPO_ROOT);
+  // 只清自己名下的夹具；不碰并行 agent 的工作树。
+  const registered = git(['worktree', 'list', '--porcelain'], REPO_ROOT)
+    .stdout.split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length));
+  if (registered.includes(target)) git(['worktree', 'remove', '--force', target], REPO_ROOT);
+  if (git(['branch', '--list', name], REPO_ROOT).stdout.trim()) git(['branch', '-D', name], REPO_ROOT);
+
   const created = node([WORKTREE, name], { cwd: REPO_ROOT });
   cleanupFns.push(() => {
     git(['worktree', 'remove', '--force', target], REPO_ROOT);
@@ -221,7 +267,7 @@ process.on('exit', cleanupAll);
 
 // ---------------------------------------------------------------- 发布脚本
 {
-  console.log('\n[5] 发布脚本：截断补丁与树哈希不等都必须中止且不留半成品');
+  console.log('\n[5] 发布脚本：截断的二进制补丁与树哈希不等都必须中止且不留半成品');
   const dir = tempDir('guardrails-release-');
   const source = path.join(dir, 'source');
   mkdirSync(source);
@@ -239,6 +285,7 @@ process.on('exit', cleanupAll);
 
   writeFixture(path.join(source, 'app.txt'), 'B\n');
   writeFixture(path.join(source, 'added.txt'), 'new file\n');
+  writeFixture(path.join(source, 'blob.bin'), randomBytes(128 * 1024)); // 二进制 hunk：复刻 5.2MB 补丁事故形态
   commitAll(source, 'second');
   const treeB = gitOk(['rev-parse', 'HEAD^{tree}'], source);
 
@@ -250,21 +297,31 @@ process.on('exit', cleanupAll);
   if (diff.status !== 0) throw new Error(`生成夹具补丁失败：${diff.stderr}`);
   writeFileSync(patch, diff.stdout);
 
+  const bytes = readFileSync(patch);
+  const binaryAt = bytes.indexOf(Buffer.from('GIT binary patch'));
+  if (binaryAt < 0) throw new Error('夹具补丁里没有二进制 hunk，无法复刻截断事故');
+  const truncated = path.join(dir, 'truncated.patch');
+  // 从二进制 hunk 中间截断：git 2.56 对这类补丁会 exit 0 只在 stderr 报 corrupt，
+  // 所以这里同时为「退出码 0 但内容不对」守卫提供回归。
+  writeFileSync(truncated, bytes.subarray(0, binaryAt + Math.max(64, Math.floor((bytes.length - binaryAt) * 0.5))));
+
   const remoteHead = () => gitOk(['rev-parse', 'HEAD'], remote);
   const remoteClean = () => gitOk(['status', '--porcelain'], remote) === '';
-  const truncated = path.join(dir, 'truncated.patch');
-  const bytes = readFileSync(patch);
-  writeFileSync(truncated, bytes.subarray(0, Math.max(64, Math.floor(bytes.length * 0.5))));
 
   const truncatedRun = node(
     [RELEASE, '--target', `local:${remote}`, '--patch', truncated, '--expected-tree', treeB],
     { cwd: source },
   );
-  check('截断补丁：发布必须被拒绝（exit 非 0）', truncatedRun.status !== 0, `exit ${truncatedRun.status}`);
+  check('截断二进制补丁：发布必须被拒绝（exit 非 0）', truncatedRun.status !== 0, `exit ${truncatedRun.status}`);
   check(
-    '拒绝信息指向 apply 步骤',
-    /\[release\] apply:/.test(truncatedRun.stderr),
+    '拒绝发生在 apply/tree 校验（不是提交之后）',
+    /\[release\] (apply|tree):/.test(truncatedRun.stderr),
     truncatedRun.stderr.slice(0, 400),
+  );
+  check(
+    'stderr 保留 git 的 corrupt 诊断（审计用）',
+    /corrupt|apply --check|does not match/i.test(`${truncatedRun.stdout}\n${truncatedRun.stderr}`),
+    truncatedRun.stderr.slice(0, 300),
   );
   check('截断补丁后远端 HEAD 未变', remoteHead() === shaA, remoteHead());
   check('截断补丁后远端工作树干净', remoteClean());
@@ -326,11 +383,7 @@ process.on('exit', cleanupAll);
   delete missing.logging;
   const missingRun = health(missing);
   check('缺 logging 字段：必须失败', missingRun.status !== 0, `exit ${missingRun.status}`);
-  check(
-    '缺字段原因可读',
-    /logging\.ok/.test(missingRun.stderr),
-    missingRun.stderr.slice(0, 200),
-  );
+  check('缺字段原因可读', /logging\.ok/.test(missingRun.stderr), missingRun.stderr.slice(0, 200));
 
   const stale = structuredClone(good);
   const staleRun = health(stale, { EXPECTED_RELEASE: 'rev-new' });
@@ -367,15 +420,59 @@ process.on('exit', cleanupAll);
   );
 }
 
+// ---------------------------------------------------------------- 测试锁
+{
+  console.log('\n[8] 测试锁：等待提示、陈旧锁回收（不再双持锁）');
+  const lockUrl = pathToFileURL(TEST_LOCK).href;
+  const acquirer = () =>
+    node(
+      [
+        '--input-type=module',
+        '-e',
+        `const lock = await import(${JSON.stringify(lockUrl)});\nlock.acquireTestLock('guardrails');\nlock.releaseTestLock();\nconsole.log('acquired');`,
+      ],
+      { cwd: REPO_ROOT, timeout: 20000 },
+    );
+
+  rmSync(LOCK_DIR, { recursive: true, force: true });
+  cleanupFns.push(() => rmSync(LOCK_DIR, { recursive: true, force: true }));
+  mkdirSync(LOCK_DIR, { recursive: true });
+  writeFileSync(
+    path.join(LOCK_DIR, 'owner.json'),
+    JSON.stringify({ pid: 999999, hostname: hostname(), label: 'ghost', startedAt: new Date().toISOString() }) + '\n',
+  );
+  const dead = acquirer();
+  check('过期锁（持有者 pid 已退出）被回收后取得锁', dead.status === 0 && /acquired/.test(dead.stdout), `${dead.status} ${dead.stderr.slice(0, 200)}`);
+  check('回收时打印陈旧锁原因', /清理陈旧测试锁/.test(dead.stdout), dead.stdout);
+  check('取得并释放后锁目录消失', !existsSync(LOCK_DIR));
+
+  // 持有者用「孤儿 sleep」：父 shell 立刻退出，sleep 被 init 收养，退出后会被真正回收。
+  // 直接 spawn 成子进程不行——父进程阻塞在 spawnSync 时收不到 SIGCHLD，子进程变僵尸，
+  // kill(pid, 0) 会一直成功，等待方永远等不到陈旧判定（2026-10-28 实测踩过）。
+  const holderStart = spawnSync('sh', ['-c', 'sleep 3 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' });
+  const holderPid = Number((holderStart.stdout || '').trim());
+  mkdirSync(LOCK_DIR, { recursive: true });
+  writeFileSync(
+    path.join(LOCK_DIR, 'owner.json'),
+    JSON.stringify({ pid: holderPid, hostname: hostname(), label: 'holder', startedAt: new Date().toISOString() }) + '\n',
+  );
+  const startedAt = Date.now();
+  const waited = acquirer();
+  const elapsed = Date.now() - startedAt;
+  check('持有者存活时打印等待提示', waited.status === 0 && /等待测试锁/.test(waited.stdout), waited.stdout.slice(0, 300));
+  check('等待至少 1s 才取得锁（没有直接跑）', elapsed >= 1000, `${elapsed}ms`);
+  check('等待结束后锁被释放', !existsSync(LOCK_DIR));
+}
+
 // ---------------------------------------------------------------- 收尾
 cleanupAll();
 {
-  console.log('\n[8] 夹具清理');
-  check('仓内临时夹具已删除', !existsSync(path.join(REPO_ROOT, 'scripts/guardrails-fixture-lint.ts')) && !existsSync(path.join(REPO_ROOT, 'scripts/guardrails-fixture-tsc.ts')));
+  console.log('\n[9] 夹具清理');
   check('工作树夹具已删除', !existsSync(path.join(REPO_ROOT, '.worktrees/guardrails-fixture')));
+  check('测试锁已释放', !existsSync(LOCK_DIR));
   const leftovers = git(['status', '--porcelain'], REPO_ROOT).stdout
     .split('\n')
-    .filter((line) => /guardrails-fixture/.test(line));
+    .filter((line) => /guardrails-fixture|guardrails-(lint|tsc)/.test(line));
   check('主仓没有夹具留下的未跟踪文件', leftovers.length === 0, leftovers.join(' | '));
 }
 

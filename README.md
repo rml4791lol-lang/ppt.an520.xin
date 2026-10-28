@@ -48,10 +48,10 @@ deploy/                   systemd 单元 / 部署脚本 / Caddy 切换块 / Runb
 ## 开发
 
 ```bash
-npm install
+npm install                 # prepare 钩子把 core.hooksPath 指向 .githooks，提交前自动跑快集
 npm run dev                 # http://localhost:3000
-./node_modules/.bin/tsc --noEmit
-node scripts/test-backend.mjs && node scripts/test-generation.mjs
+npm run gate                # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build
+npm run gate:fast           # 迭代快集：跳过 build 与两套测试
 ```
 
 本地联调常用 env（见 `.env.example` 全量注释）：
@@ -60,4 +60,4 @@ node scripts/test-backend.mjs && node scripts/test-generation.mjs
 
 ## 部署
 
-见 `deploy/README.md`（Git production 分支 + 不可变 release 发布 + Caddy 切换/回滚）。
+见 `deploy/README.md`（Git production 分支 + 不可变 release 发布 + Caddy 切换/回滚）。本地与远端历史分叉、`deploy.sh` 的 push 推不动时用 `npm run release -- --dry-run` 先确认基线（补丁上传 + 校验和 + 树哈希比对，见手册 §2）。

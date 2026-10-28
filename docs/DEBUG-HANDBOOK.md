@@ -1,7 +1,7 @@
 # AnPPT 探查与 Debug 手册（agent 交接用）
 
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
-> 最后更新：2026-10-20（问题日志请求追踪 / 脱敏 / 落盘健康契约 / 发布后自动校验与回滚；PPT 美化批量任务服务端化 / 刷新续看 / 项目更新时间按页修正）
+> 最后更新：2026-10-28（门命令化 `npm run gate`、提交前钩子与 CI、工作树脚本、测试互斥、发布脚本 `npm run release`；此前：问题日志请求追踪 / 脱敏 / 落盘健康契约 / 发布后自动校验与回滚；PPT 美化批量任务服务端化 / 刷新续看 / 项目更新时间按页修正）
 
 ## 1. 系统是什么
 
@@ -22,6 +22,7 @@ ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Nex
   ⚠️ 老的 `anppt-daily-backup.sh`（03:15）备份的是 **slideflow 老系统**，与 anppt-v2 无关，别看错。
 - Caddy 反代：`ppt.an520.xin → 127.0.0.1:3100`（Caddyfile 备份 `/etc/caddy/Caddyfile.bak-anppt-20260819-205014`）。
 - 部署：本地工作区干净并已提交后运行 `bash deploy/deploy.sh`。脚本把 HEAD 推到 `production`，服务器从 `/opt/anppt-v2/source` 拉取、构建、生成不可变 release，**再次检查三队列**后原子切换 `current` 并 restart。**restart 会打断在线用户的在途请求**；任一队列非 0 或检查失败时只暂存 release，不切换、不重启。重启后还必须通过 `/api/health` 的 `db/logging.ok/logging.writable/release` 契约，失败自动回滚。修改 `deploy/deploy-production.sh` 时先按 `docs/LOGGING.md` §5 做一次 helper bootstrap。
+- **发布脚本 `npm run release`（2026-10-28）**：本地与远端历史分叉、`deploy.sh` 的 push 推不动时走这条。补丁用 `git diff --binary`（排除本地工具链与忽略文件）→ 上传（sha256 校验，rsync 可续传，≤3 次）→ 服务器 `git apply` → **`git write-tree` 必须等于本地 `HEAD^{tree}`** → 在远端历史上 `commit-tree` 提交 → push → 触发 `deploy-production`（deploy helper 自带队列检查与健康回滚）。失败语义：push 之前失败会把远端 checkout 恢复到 `remoteHead` 且不留半成品提交；push 之后失败（部署）不回滚已推送的提交，按提示修好后重跑 helper。先 `npm run release -- --dry-run` 确认 base 可解析（远端 HEAD 被推进后先 `git fetch origin` 或传 `--base`）；补丁只含已提交的 HEAD 树。
 - **部署前必须同时检查整套生成、PPT 美化批量任务与导出队列**（可编辑转换也可能在后台下载结果）：
 
 ```bash

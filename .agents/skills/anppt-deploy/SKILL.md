@@ -5,11 +5,11 @@ description: AnPPT v2 部署流程（ppt.an520.xin / hk-hermes）。当用户说
 
 # AnPPT v2 部署
 
-唯一入口：`bash deploy/deploy.sh`（本地 build → rsync → 查在途 → 重启+自检，脚本内置在途守卫）。
+唯一入口：`bash deploy/deploy.sh`（本地 build → rsync → 查在途 → 重启+自检，脚本内置在途守卫）。本地与远端历史分叉、push 推不动时走 `npm run release`（补丁上传 + 校验和 + 树哈希比对，见手册 §2；先 `-- --dry-run`）。
 
 部署前：
 
-1. 全量门五连全绿（见 anppt-gate）
+1. `npm run gate` 全绿（见 anppt-gate）
 2. docs 已同步（DEBUG-HANDBOOK 对应小节 + README 断言数）
 3. 若涉及开关板新功能：确认 flag 状态符合预期（新功能一律 beta 起步）
 
