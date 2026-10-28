@@ -1,6 +1,6 @@
 // 可编辑导出模块服务端：WPS / Image2PPT / Codia 多通道重转换链（20🌟/页，任务制+懒恢复）
 // + 轻量文字可编辑档（VLM 覆盖层，5🌟/页）
-// + 导出中心查询（listExports/getExport，含可编辑行的懒恢复触发）。
+// + 导出中心查询（listExports/getExport/quoteExport，含可编辑行的懒恢复触发）。
 // 图片版 PPTX 导出在平台件 src/lib/server/exports.ts。
 import { createRequire } from 'node:module';
 import { createWriteStream } from 'node:fs';
@@ -16,6 +16,7 @@ import { codiaProvider } from './providers/codia';
 import {
   LEGACY_EDITABLE_PROVIDER_ID,
   configuredEditableProviders as configuredProviderIds,
+  editablePageCapacity as pageCapacity,
   editableProviderById,
   resolveEditableProviders,
 } from './providers/registry';
@@ -43,8 +44,10 @@ import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
 import { logProblem } from '@/lib/server/problem-log';
 // ---------- 可编辑导出（WPS / Image2PPT / Codia 多通道） ----------
 
-/** Codia 单任务页数上限（官方限制 ≤20 页/任务） */
-const EDITABLE_MAX_PAGES = 20;
+/** 文字可编辑档不走上游通道（VLM 覆盖层本地组装）：页数上限取产品口径，图片版上限由通道链能力决定。 */
+const TEXT_EDITABLE_MAX_PAGES = 50;
+/** 超过 20 页的来源视作大套：原始页图会让合成 PDF 超过通道的单文件上限。 */
+const LARGE_SOURCE_PAGES = 20;
 /** 轮询间隔（官方建议 3-5 秒） */
 const POLL_INTERVAL_MS = 4_000;
 /** 懒恢复宽限：建行 30s 后仍无上游任务视为进程中断，重跑管线 */
@@ -91,6 +94,22 @@ export function configuredEditableProviders(config: GenerationConfig): EditableP
 
 export function isEditableExportConfigured(config: GenerationConfig): boolean {
   return configuredEditableProviders(config).length > 0;
+}
+
+/** 可编辑导出的页数上限 = 已配置通道链的能力上限（0 = 没有可用通道）。 */
+export function editablePageCapacity(config: GenerationConfig): number {
+  return pageCapacity(config);
+}
+
+/** 页数上限只有这一处判定：拒绝文案只给能力数字，不暴露供应商名称。 */
+function assertEditablePageCount(pageCount: number, capacity: number, scope: string): void {
+  if (pageCount <= capacity) return;
+  throw new ApiError(
+    'EXPORT_TOO_MANY_PAGES',
+    `${scope}最多 ${capacity} 页可转可编辑，当前共 ${pageCount} 页`,
+    400,
+    false,
+  );
 }
 
 export interface UploadedEditableFile {
@@ -241,17 +260,46 @@ async function buildImagePdf(images: Buffer[]): Promise<Buffer> {
   const require = createRequire(import.meta.url);
   const { PDFDocument } = require('pdf-lib') as { PDFDocument: { create(): Promise<PdfDoc> } };
   const pdf = await PDFDocument.create();
+  const compressPages = images.length > LARGE_SOURCE_PAGES;
   for (const image of images) {
     const isJpeg = image.length >= 3 && image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff;
     const isPng = image.length >= 8 && image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     if (!isJpeg && !isPng) {
       throw new ApiError('UNSUPPORTED_IMAGE', '图片仅支持 PNG、JPG 或 JPEG', 400, false);
     }
+    if (compressPages) {
+      const compressed = await compressPageImage(image);
+      const embedded = await pdf.embedJpg(compressed.data);
+      const page = pdf.addPage([compressed.width, compressed.height]);
+      page.drawImage(embedded, { x: 0, y: 0, width: compressed.width, height: compressed.height });
+      continue;
+    }
     const embedded = isJpeg ? await pdf.embedJpg(image) : await pdf.embedPng(image);
     const page = pdf.addPage([embedded.width, embedded.height]);
     page.drawImage(embedded, { x: 0, y: 0, width: embedded.width, height: embedded.height });
   }
   return Buffer.from(await pdf.save());
+}
+
+interface SharpPage {
+  rotate(): SharpPage;
+  resize(options: { width: number; height: number; fit: 'inside'; withoutEnlargement: boolean }): SharpPage;
+  flatten(options: { background: { r: number; g: number; b: number } }): SharpPage;
+  jpeg(options: { quality: number; chromaSubsampling: string }): SharpPage;
+  toBuffer(options: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number } }>;
+}
+
+/** 大套页图统一转 JPEG：压到 1920×1080 以内、质量 88、透明处烘白底，保住上游 OCR 可读性。 */
+async function compressPageImage(image: Buffer): Promise<{ data: Buffer; width: number; height: number }> {
+  const require = createRequire(import.meta.url);
+  const sharp = require('sharp') as (input: Buffer, options?: { limitInputPixels?: number }) => SharpPage;
+  const { data, info } = await sharp(image, { limitInputPixels: 100_000_000 })
+    .rotate()
+    .resize({ width: 1920, height: 1080, fit: 'inside', withoutEnlargement: true })
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .jpeg({ quality: 88, chromaSubsampling: '4:4:4' })
+    .toBuffer({ resolveWithObject: true });
+  return { data, width: info.width, height: info.height };
 }
 
 async function getPdfPageCount(pdf: Buffer): Promise<number> {
@@ -622,14 +670,7 @@ export async function startDeckEditableExport(
   if (slides.length === 0) {
     throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
   }
-  if (slides.length > EDITABLE_MAX_PAGES) {
-    throw new ApiError(
-      'EXPORT_TOO_MANY_PAGES',
-      `单套最多 ${EDITABLE_MAX_PAGES} 页可转可编辑，当前共 ${slides.length} 页`,
-      400,
-      false,
-    );
-  }
+  assertEditablePageCount(slides.length, pageCapacity(config), '单套');
   const versionIds = slides.map((slide) => cleanString(slide.activeVersionId, 100));
   if (versionIds.some((id) => !id)) {
     throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转可编辑', 409, false);
@@ -780,14 +821,7 @@ export async function startSinglePageEditableExport(
   if (pages.length === 0) {
     throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
   }
-  if (pages.length > EDITABLE_MAX_PAGES) {
-    throw new ApiError(
-      'EXPORT_TOO_MANY_PAGES',
-      `单套最多 ${EDITABLE_MAX_PAGES} 页可转可编辑，当前共 ${pages.length} 页`,
-      400,
-      false,
-    );
-  }
+  assertEditablePageCount(pages.length, pageCapacity(config), '单套');
   const versionIds = pages.map((page) => cleanString(page.activeVersionId, 100));
   return launchEditableExport(
     userId,
@@ -813,8 +847,9 @@ export async function startUploadedEditableExport(
     throw notConfiguredError();
   }
   if (!Array.isArray(files) || files.length === 0) throw validationError('请选择 PDF 或图片文件');
-  if (files.length > EDITABLE_MAX_PAGES) {
-    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${EDITABLE_MAX_PAGES} 个图片文件`, 400, false);
+  const capacity = pageCapacity(config);
+  if (files.length > capacity) {
+    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${capacity} 个图片文件`, 400, false);
   }
   const totalBytes = files.reduce((sum, file) => sum + file.data.length, 0);
   if (totalBytes <= 0) throw new ApiError('EMPTY_FILE', '文件内容为空', 400, false);
@@ -844,14 +879,7 @@ export async function startUploadedEditableExport(
       : `${files.length} 张图片`;
   }
   if (pageCount < 1) throw new ApiError('EMPTY_FILE', '文件中没有可转换页面', 400, false);
-  if (pageCount > EDITABLE_MAX_PAGES) {
-    throw new ApiError(
-      'EXPORT_TOO_MANY_PAGES',
-      `单次最多 ${EDITABLE_MAX_PAGES} 页可转可编辑，当前共 ${pageCount} 页`,
-      400,
-      false,
-    );
-  }
+  assertEditablePageCount(pageCount, capacity, '单次');
 
   const fingerprint = createHash('sha256').update(pdf).digest('hex');
   const sourceId = `upload_${fingerprint.slice(0, 32)}`;
@@ -1267,6 +1295,7 @@ export async function startDeckTextEditableExport(
   if (slides.length === 0) {
     throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
   }
+  assertEditablePageCount(slides.length, TEXT_EDITABLE_MAX_PAGES, '单套');
   const versionIds = slides.map((slide) => cleanString(slide.activeVersionId, 100));
   if (versionIds.some((id) => !id)) {
     throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转文字可编辑', 409, false);
@@ -1407,4 +1436,50 @@ export async function getExport(userId: string, exportId: string, deps: Editable
     activeFingerprint = '';
   }
   return toExportView(row, activeFingerprint);
+}
+
+/** 导出报价（对齐旁门 /api/pptx-exports/quote 的三种 body 形态） */
+export function quoteExport(userId: string, body: Record<string, unknown>) {
+  const deckId = cleanString(body.deckId, 80);
+  const projectId = cleanString(body.projectId, 80);
+  const pageIds = Array.isArray(body.pageIds) ? body.pageIds.map((id) => cleanString(id, 80)) : [];
+  const pageId = cleanString(body.pageId, 80);
+  let pageCount = 0;
+  let refType = 'deck';
+  if (deckId) {
+    pageCount = listSlides(getOwnedDeck(userId, deckId).id).filter((slide) => slide.activeVersionId).length;
+  } else if (projectId) {
+    refType = 'single-page';
+    pageCount = listSingleProjectPages(userId, projectId).filter((page) => page.activeVersionId).length;
+  } else if (pageIds.length > 0) {
+    refType = 'single-page';
+    pageCount = pageIds.length;
+  } else if (pageId || body.versionId) {
+    refType = 'single-page';
+    pageCount = 1;
+  } else {
+    throw validationError('缺少 deckId / projectId / pageIds');
+  }
+  const editableUnitPrice = estimateCredits({ action: 'export_editable', pages: 1 }).unitPrice;
+  const config = getGenerationConfig();
+  const providers = resolveEditableProviders(config, pageCount).map((provider) => provider.id);
+  const editableAvailable = pageCount > 0 && providers.length > 0;
+  return {
+    pageCount,
+    refType,
+    provider: providers[0] || '',
+    providers,
+    quotes: [
+      { kind: 'image', credits: 0, available: pageCount > 0 },
+      {
+        kind: 'editable',
+        credits: editableUnitPrice * pageCount,
+        unitPrice: editableUnitPrice,
+        available: editableAvailable,
+        ...(editableAvailable
+          ? {}
+          : { code: 'EDITABLE_EXPORT_UNAVAILABLE', message: '可编辑导出暂不可用' }),
+      },
+    ],
+  };
 }

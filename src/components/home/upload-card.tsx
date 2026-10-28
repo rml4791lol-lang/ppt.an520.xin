@@ -409,7 +409,6 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 {isCustomDuration && customPageCount === null
                   ? `自定义页数范围 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 页`
                   : `预计约 ${selectedPageCount} 页 · 生成按页计费，确认前显示估价`}
-                {selectedPageCount > 20 && " · 超过 20 页暂不支持转可编辑 PPTX"}
               </p>
             </div>
           )}

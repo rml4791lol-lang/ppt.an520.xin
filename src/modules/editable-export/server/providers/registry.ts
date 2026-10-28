@@ -38,3 +38,9 @@ export function resolveEditableProviders(config: GenerationConfig, pageCount: nu
 export function configuredEditableProviders(config: GenerationConfig): EditableProviderId[] {
   return resolveEditableProviders(config, 0).map((provider) => provider.id);
 }
+
+/** 可编辑导出的页数上限 = 已配置通道链的能力上限；0 表示没有可用通道。 */
+export function editablePageCapacity(config: GenerationConfig): number {
+  return resolveEditableProviders(config, 0)
+    .reduce((capacity, provider) => Math.max(capacity, provider.capabilities.maxPages), 0);
+}

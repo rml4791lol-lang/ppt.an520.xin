@@ -1,8 +1,8 @@
-// 逐页生图管线：估价 → 整单余额校验（不足 402）→ 建持久化 job → 按配置逐页并发。
-// 每页的扣费/退款/终态顺序归 paid-run.ts；键形归 charge-keys.ts。
+// 逐页生图管线：估价 → 整单余额校验（不足 402）→ 建持久化 job → 按配置逐页并发
+// → 版本行落扣费键 → debit → 成功落盘 / 失败 refund。键形归 charge-keys.ts。
 import { ApiError } from '../http';
 import { logProblem } from '../problem-log';
-import { estimateCredits, getBalance } from '../credits';
+import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '../credits';
 import { getGenerationConfig } from './config';
 import { deckChargeKey } from './charge-keys';
 import { getGenDb } from './db';
@@ -18,7 +18,6 @@ import {
   updateSlideVersion,
   type DeckRow,
   type DeckSlideRow,
-  type SlideVersionRow,
 } from './decks';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';
@@ -30,7 +29,7 @@ import {
   type DeckContext,
   type SlidePromptInput,
 } from './style-packs';
-import { beginPaidRun, withInFlightRun, type PaidRunStore } from './paid-run';
+import { markJobActive, markJobDone } from './recovery';
 import { deckGateFacts, generationPrecondition } from '../../deck-gates';
 import { ensureDeckBlueprint } from './blueprint';
 import { buildOutlinePageMapping, resolveTemplateReferenceImage, type TemplateRouteContext } from './mapping';
@@ -118,8 +117,8 @@ async function runSlideGeneration(
 ): Promise<'succeeded' | 'failed'> {
   const config = deps.config ?? getGenerationConfig();
   const { unitPrice } = opts;
-  // 扣费键形状归 charge-keys（前缀是历史账本契约）；claim/扣费/退款/终态顺序归 paid-run
-  const chargeKey = deckChargeKey({ deckId: deck.id, jobId, slideId: slide.slideId });
+  // 扣费键形状归 charge-keys（前缀是历史账本契约）；退款键由它定长派生
+  const { chargeKey, refundKey } = chargeRefundKeys(deckChargeKey({ deckId: deck.id, jobId, slideId: slide.slideId }));
   const { prompt, referencePath, anchorReference } = promptForSlide(
     slide,
     deck.stylePackId,
@@ -128,58 +127,36 @@ async function runSlideGeneration(
     opts.template,
     deck.anchorImagePath || undefined,
   );
-  const store: PaidRunStore<SlideVersionRow, { imagePath: string; imageUrl: string }> = {
-    claim: (key) => createSlideVersion(slide, {
-      kind: kind === 'deck-refine' ? 'refine' : 'generate',
-      prompt,
-      jobId,
-      chargeKey: key,
-    }),
-    markRunning: (version) => {
-      updateSlideGen(deck.id, slide.slideId, { genStatus: 'running', genError: '' });
-      updateSlideVersion(version.versionId, { status: 'running' });
-    },
-    markSucceeded: (version, saved) => {
-      updateSlideVersion(version.versionId, { status: 'succeeded', imagePath: saved.imagePath, imageUrl: saved.imageUrl });
-      updateSlideGen(deck.id, slide.slideId, {
-        genStatus: 'succeeded',
-        genError: '',
-        activeVersionId: version.versionId,
-      });
-    },
-    markFailed: (version, failure) => {
-      const insufficient = failure.code === 'INSUFFICIENT_CREDITS';
-      const chargeFailed = failure.code === 'CHARGE_FAILED';
-      const detail = `${failure.code}: ${failure.message}`;
-      updateSlideVersion(version.versionId, {
-        status: 'failed',
-        error: insufficient ? 'INSUFFICIENT_CREDITS: 🌟 星星不足' : chargeFailed ? '扣费失败' : detail,
-      });
-      updateSlideGen(deck.id, slide.slideId, {
-        genStatus: 'failed',
-        genError: insufficient
-          ? 'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试本页'
-          : chargeFailed
-            ? '扣费失败，请重试'
-            : detail,
-      });
-    },
-  };
-  const began = beginPaidRun({
-    domain: 'deck',
-    userId: deck.userId,
-    action: kind === 'deck-refine' ? 'deck_page_refine' : 'deck_page_generate',
-    unitPrice,
+  // 先落版本行再扣费：扣费一旦发生，行上必有键可供恢复退款
+  const version = createSlideVersion(slide, {
+    kind: kind === 'deck-refine' ? 'refine' : 'generate',
+    prompt,
+    jobId,
     chargeKey,
-    refType: 'deck',
-    refId: deck.id,
-    reason: `生成第 ${slide.pageIndex + 1} 页`,
-    refundReason: `第 ${slide.pageIndex + 1} 页生成失败退回`,
-    store,
   });
-  if (!began.charged) return 'failed';
-  const version = began.run.row;
-  let saved: { relPath: string; url: string };
+
+  try {
+    debitCredits(deck.userId, unitPrice, {
+      reason: `生成第 ${slide.pageIndex + 1} 页`,
+      idempotencyKey: chargeKey,
+      refType: 'deck',
+      refId: deck.id,
+    });
+  } catch (error) {
+    const insufficient = error instanceof ApiError && error.code === 'INSUFFICIENT_CREDITS';
+    updateSlideVersion(version.versionId, {
+      status: 'failed',
+      error: insufficient ? 'INSUFFICIENT_CREDITS: 🌟 星星不足' : '扣费失败',
+    });
+    updateSlideGen(deck.id, slide.slideId, {
+      genStatus: 'failed',
+      genError: insufficient ? 'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试本页' : '扣费失败，请重试',
+    });
+    return 'failed';
+  }
+
+  updateSlideGen(deck.id, slide.slideId, { genStatus: 'running', genError: '' });
+  updateSlideVersion(version.versionId, { status: 'running' });
   try {
     let image: Buffer;
     if (kind === 'deck-refine') {
@@ -222,20 +199,51 @@ async function runSlideGeneration(
       }
       image = await generateImage({ prompt, referenceImages, userKey: deck.userId }, deps);
     }
-    saved = await saveFile(
+    const saved = await saveFile(
       'generated',
       deck.userId,
       image,
       { kind: deck.id, ext: '.png', id: version.versionId },
       config,
     );
+    updateSlideVersion(version.versionId, { status: 'succeeded', imagePath: saved.relPath, imageUrl: saved.url });
+    updateSlideGen(deck.id, slide.slideId, {
+      genStatus: 'succeeded',
+      genError: '',
+      activeVersionId: version.versionId,
+    });
+    return 'succeeded';
   } catch (error) {
-    // 失败先退款再置 failed（顺序归 paid-run；退款键由扣费键定长派生，重复执行不双退）
-    began.run.fail(toPublicImageError(error));
+    const publicError = toPublicImageError(error);
+    updateSlideVersion(version.versionId, {
+      status: 'failed',
+      error: `${publicError.code}: ${publicError.message}`,
+    });
+    updateSlideGen(deck.id, slide.slideId, {
+      genStatus: 'failed',
+      genError: `${publicError.code}: ${publicError.message}`,
+    });
+    // 失败自动退还（幂等：refund 键唯一，重复执行不重复返还）
+    try {
+      refundCredits(deck.userId, unitPrice, {
+        reason: `第 ${slide.pageIndex + 1} 页生成失败退回`,
+        idempotencyKey: refundKey,
+        refType: 'deck',
+        refId: deck.id,
+      });
+    } catch (refundError) {
+      logProblem({
+        category: 'generation',
+        level: 'error',
+        message: `第 ${slide.pageIndex + 1} 页生成失败退款失败`,
+        detail: refundError,
+        userId: deck.userId,
+        refType: 'deck',
+        refId: deck.id,
+      });
+    }
     return 'failed';
   }
-  began.run.succeed({ imagePath: saved.relPath, imageUrl: saved.url });
-  return 'succeeded';
 }
 
 export interface StartGenerationOptions {
@@ -311,81 +319,83 @@ export async function startDeckGeneration(
   touchDeck(deck.id, { status: 'generating', error: '' });
   updateJob(job.jobId, { status: 'running' });
 
-  const done = withInFlightRun({ runId: job.jobId, domain: 'deck', userId, action: kind }, async () => {
-    try {
-      // 全局视觉规范：每套一次 LLM（平台吸收），缓存命中则零成本；失败降级为空串不阻塞生成
-      const blueprint = await ensureDeckBlueprint(deck, allSlides, runDeps).catch((error: unknown) => {
-        console.warn(
-          '[anppt-v2][generation] 全局视觉规范生成失败，本次不带规范继续:',
-          error instanceof Error ? error.message : error,
-        );
-        return '';
-      });
-      // 双路线分流：真模板（kind=template）先算 outline_page_mapping，整批复用
-      const stylePackRecord = getTemplate(deck.stylePackId);
-      const templatePages =
-        stylePackRecord && resolveTemplateKind(stylePackRecord) === 'template'
-          ? getTemplatePages(stylePackRecord)
-          : [];
-      const template: TemplateRouteContext | null =
-        templatePages.length > 0
-          ? { pages: templatePages, mapping: buildOutlinePageMapping(allSlides, templatePages) }
-          : null;
-      let succeeded = 0;
-      let failed = 0;
-      // 逐页并发，上限 config.generateConcurrency（默认 6）
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < targets.length) {
-          const slide = targets[cursor];
-          cursor += 1;
-          const result = await runSlideGeneration(deck, slide, job.jobId, kind, {
-            unitPrice: estimate.unitPrice,
-            refineInstruction: options.refineInstruction,
-            refineExtraImages: options.refineExtraImages,
-            refineExtraNote: options.refineExtraNote,
-            template,
-            deckContext: {
-              totalPages: allSlides.length,
-              pageIndex: slide.pageIndex,
-              chapter: slide.chapter,
-              deckTitle: deck.title,
-              sourceContext: cleanString(deck.sourceText, 6_000),
-              blueprint: blueprint || undefined,
-            },
-          }, runDeps);
-          if (result === 'succeeded') succeeded += 1;
-          else failed += 1;
-          // 心跳：每页完成即刷新 job.updated_at，供崩溃恢复区分「在跑」与「已死」
-          updateJob(job.jobId, {});
-        }
-      };
-      const workers = Array.from({ length: Math.min(config.generateConcurrency, targets.length) }, () => worker());
-      await Promise.all(workers);
-      updateJob(job.jobId, {
-        status: failed === 0 ? 'succeeded' : succeeded === 0 ? 'failed' : 'partial',
-        succeeded,
-        failed,
-        error: failed > 0 ? `${failed} 页生成失败，已自动退回积分，可点「重试失败页」` : '',
-      });
-      touchDeck(deck.id, {
-        status: failed === 0 ? 'generated' : 'partial',
-        error: '',
-      });
-    } catch (error) {
-      // 管线级异常（非页面级）：job 置终态后走统一恢复——卡 queued/running 的页
-      // 收敛为 failed、孤儿扣费补退款、deck 状态收敛（见 recovery.ts）
-      logProblem({
-        category: 'generation',
-        level: 'error',
-        message: '生成管线异常中断',
-        detail: error,
-        userId: deck.userId,
-        refType: 'deck',
-        refId: deck.id,
-      });
-      updateJob(job.jobId, { status: 'failed', error: '生成管线异常中断，请重试失败页' });
-    }
+  const done = (async () => {
+    markJobActive(job.jobId);
+    // 全局视觉规范：每套一次 LLM（平台吸收），缓存命中则零成本；失败降级为空串不阻塞生成
+    const blueprint = await ensureDeckBlueprint(deck, allSlides, runDeps).catch((error: unknown) => {
+      console.warn(
+        '[anppt-v2][generation] 全局视觉规范生成失败，本次不带规范继续:',
+        error instanceof Error ? error.message : error,
+      );
+      return '';
+    });
+    // 双路线分流：真模板（kind=template）先算 outline_page_mapping，整批复用
+    const stylePackRecord = getTemplate(deck.stylePackId);
+    const templatePages =
+      stylePackRecord && resolveTemplateKind(stylePackRecord) === 'template'
+        ? getTemplatePages(stylePackRecord)
+        : [];
+    const template: TemplateRouteContext | null =
+      templatePages.length > 0
+        ? { pages: templatePages, mapping: buildOutlinePageMapping(allSlides, templatePages) }
+        : null;
+    let succeeded = 0;
+    let failed = 0;
+    // 逐页并发，上限 config.generateConcurrency（默认 6）
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < targets.length) {
+        const slide = targets[cursor];
+        cursor += 1;
+        const result = await runSlideGeneration(deck, slide, job.jobId, kind, {
+          unitPrice: estimate.unitPrice,
+          refineInstruction: options.refineInstruction,
+          refineExtraImages: options.refineExtraImages,
+          refineExtraNote: options.refineExtraNote,
+          template,
+          deckContext: {
+            totalPages: allSlides.length,
+            pageIndex: slide.pageIndex,
+            chapter: slide.chapter,
+            deckTitle: deck.title,
+            sourceContext: cleanString(deck.sourceText, 6_000),
+            blueprint: blueprint || undefined,
+          },
+        }, runDeps);
+        if (result === 'succeeded') succeeded += 1;
+        else failed += 1;
+        // 心跳：每页完成即刷新 job.updated_at，供崩溃恢复区分「在跑」与「已死」
+        updateJob(job.jobId, {});
+      }
+    };
+    const workers = Array.from({ length: Math.min(config.generateConcurrency, targets.length) }, () => worker());
+    await Promise.all(workers);
+    updateJob(job.jobId, {
+      status: failed === 0 ? 'succeeded' : succeeded === 0 ? 'failed' : 'partial',
+      succeeded,
+      failed,
+      error: failed > 0 ? `${failed} 页生成失败，已自动退回积分，可点「重试失败页」` : '',
+    });
+    touchDeck(deck.id, {
+      status: failed === 0 ? 'generated' : 'partial',
+      error: '',
+    });
+  })().catch((error) => {
+    // 管线级异常（非页面级）：job 置终态后走统一恢复——卡 queued/running 的页
+    // 收敛为 failed、孤儿扣费补退款、deck 状态收敛（见 recovery.ts）
+    logProblem({
+      category: 'generation',
+      level: 'error',
+      message: '生成管线异常中断',
+      detail: error,
+      userId: deck.userId,
+      refType: 'deck',
+      refId: deck.id,
+    });
+    markJobDone(job.jobId);
+    updateJob(job.jobId, { status: 'failed', error: '生成管线异常中断，请重试失败页' });
+  }).finally(() => {
+    markJobDone(job.jobId);
   });
 
   return { jobId: job.jobId, status: 'running', total: targets.length, done };

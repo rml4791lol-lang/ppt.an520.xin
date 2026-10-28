@@ -422,6 +422,28 @@ export async function runEditableExportTests(ctx) {
       check('402 后不产生 export 行', rows === 0, `实际 ${rows}`);
     }
 
+    // ---- 页数门：单页项目与整套同一口径（按已配置通道能力）----
+    {
+      credits.refundCredits(uid, 300, { reason: '单页页数门测试补贴', idempotencyKey: 'test-topup-sp-page-cap' });
+      let projectId = '';
+      for (let index = 0; index < 21; index += 1) {
+        const g = await singlePages.generateSinglePage(uid, {
+          pageId: `sp-cap-${index}`, title: `上限${index}`, content: `单页页数门夹具第 ${index} 页`, projectId,
+        }, imgDeps6c);
+        projectId = g.page.projectId;
+      }
+      let rejected = null;
+      try {
+        await exportsLib.startSinglePageEditableExport(uid, projectId, codiaDeps(makeMockFetcher([])));
+      } catch (error) {
+        rejected = error;
+      }
+      check('单页项目 21 页同样按通道能力拒绝（只配置 Codia → 20）',
+        rejected?.code === 'EXPORT_TOO_MANY_PAGES'
+          && rejected?.message === '单套最多 20 页可转可编辑，当前共 21 页',
+        `${rejected?.code} ${rejected?.message}`);
+    }
+
     // ---- 并发：processing 中再次 start → 409 EXPORT_RUNNING ----
     {
       let release = false;
@@ -491,6 +513,46 @@ export async function runEditableExportTests(ctx) {
     check('重复上传相同内容复用成功结果且不扣星', reused.reused && reused.exportId === started.exportId && reused.credits === 0);
     check('复用成功结果不会遗留重复源文件', !existsSync(uploadSourceAbs));
 
+    // ---- 上传 PDF 页数门：同样按已配置通道能力拒绝 ----
+    {
+      const { createRequire } = await import('node:module');
+      const { PDFDocument } = createRequire(import.meta.url)('pdf-lib');
+      const makePdf = async (pageCount) => {
+        const document = await PDFDocument.create();
+        for (let index = 0; index < pageCount; index += 1) document.addPage([640, 360]);
+        return Buffer.from(await document.save());
+      };
+      const rejectedCodia = await (async () => {
+        try {
+          await exportsLib.startUploadedEditableExport(uid, [
+            { name: 'many.pdf', mime: 'application/pdf', data: await makePdf(21) },
+          ], { fetchImpl: makeMockFetcher([]), config: baseConfig, pollIntervalMs: 1 });
+          return null;
+        } catch (error) {
+          return error;
+        }
+      })();
+      check('上传 21 页 PDF：只配置 Codia 时按能力 20 拒绝',
+        rejectedCodia?.code === 'EXPORT_TOO_MANY_PAGES'
+          && rejectedCodia?.message === '单次最多 20 页可转可编辑，当前共 21 页',
+        `${rejectedCodia?.code} ${rejectedCodia?.message}`);
+      const i2pConfig = { ...baseConfig, image2pptApiKey: 'i2p-page-cap-key', editableProvider: 'image2ppt' };
+      const rejectedI2p = await (async () => {
+        try {
+          await exportsLib.startUploadedEditableExport(uid, [
+            { name: 'many.pdf', mime: 'application/pdf', data: await makePdf(51) },
+          ], { fetchImpl: makeMockFetcher([]), config: i2pConfig, pollIntervalMs: 1 });
+          return null;
+        } catch (error) {
+          return error;
+        }
+      })();
+      check('上传 51 页 PDF：配置 Image2PPT 时按能力 50 拒绝',
+        rejectedI2p?.code === 'EXPORT_TOO_MANY_PAGES'
+          && rejectedI2p?.message === '单次最多 50 页可转可编辑，当前共 51 页',
+        `${rejectedI2p?.code} ${rejectedI2p?.message}`);
+    }
+
     const poorUpload = await auth.registerWithPassword(
       { account: 'uploadpoor', password: 'password123', confirmPassword: 'password123' },
       '127.0.0.1',
@@ -521,6 +583,53 @@ export async function runEditableExportTests(ctx) {
     } finally {
       if (oldUploadLimit === undefined) delete process.env.ANPPT_V2_UPLOAD_MAX_BYTES;
       else process.env.ANPPT_V2_UPLOAD_MAX_BYTES = oldUploadLimit;
+    }
+
+    // 路由层文件数上限跟随通道能力（Codia-only → 20），不再有写死的 20 常量
+    {
+      const manyForm = new FormData();
+      for (let index = 0; index < 21; index += 1) {
+        manyForm.append('files', new File([Buffer.from(PNG_1X1_B64, 'base64')], `${index + 1}.png`, { type: 'image/png' }));
+      }
+      const manyResponse = await editableRoute.POST(new Request('http://localhost/api/editable-conversions', {
+        method: 'POST',
+        headers: { cookie: `anppt_v2_session=${token}`, 'x-anppt-action': '1' },
+        body: manyForm,
+      }));
+      const manyJson = await manyResponse.json();
+      check('外部上传文件数按当前通道能力拒绝（只配置 Codia → 20 张）',
+        manyResponse.status === 400
+          && manyJson?.error?.code === 'EXPORT_TOO_MANY_PAGES'
+          && manyJson?.error?.message === '单次最多 20 个图片文件'
+          && !/codia|image2ppt|wps/i.test(String(manyJson?.error?.message)),
+        `${manyResponse.status} ${manyJson?.error?.message}`);
+      const routeSource = readFileSync(new URL('../../src/app/api/editable-conversions/route.ts', import.meta.url), 'utf8');
+      check('上传路由不再自带页数常量：文件数上限读通道能力',
+        routeSource.includes('editablePageCapacity')
+          && !/MAX_UPLOAD_FILES\s*=/.test(routeSource));
+    }
+
+    // 对外文案：可编辑上限 50 + 通道能力口径（help / FAQ / about / legal / 上传页）
+    {
+      const copyOf = (relPath) => readFileSync(new URL(`../../${relPath}`, import.meta.url), 'utf8');
+      const help = copyOf('src/app/(main)/help/page.tsx');
+      const about = copyOf('src/app/(main)/about/page.tsx');
+      const marketing = copyOf('src/components/home/marketing-sections.tsx');
+      const converter = copyOf('src/modules/editable-export/client/editable-converter-client.tsx');
+      const legalTerms = copyOf('src/app/(main)/legal/terms/page.tsx');
+      const uploadCard = copyOf('src/components/home/upload-card.tsx');
+      check('help 文案：可编辑单次上限 50 页且不再写 20',
+        help.includes('单次最多 50 页') && !help.includes('单次最多 20 页') && !help.includes('超过 20 页'));
+      check('about 文案：可编辑单次上限 50 页',
+        about.includes('单次最多 50 页') && !about.includes('单次最多 20 页'));
+      check('首页 FAQ 文案：可编辑单次上限 50 页',
+        marketing.includes('单次最多 50 页') && !marketing.includes('单次最多 20 页'));
+      check('上传页文案与客户端上限：50 张图片',
+        converter.includes('最多 50 张') && converter.includes('const MAX_FILES = 50;') && !converter.includes('最多 20 张'));
+      check('服务条款带通道能力口径',
+        legalTerms.includes('页数上限') && legalTerms.includes('转换通道'));
+      check('上传卡片不再提示「超过 20 页暂不支持转可编辑」（整套上限 40 页在可编辑能力内）',
+        !uploadCard.includes('超过 20 页暂不支持转可编辑'));
     }
 
     const fileRoute = await import('../../src/app/api/files/[...path]/route.ts');
@@ -630,6 +739,69 @@ export async function runEditableExportTests(ctx) {
         exp.status === 'failed' && exp.error.includes('已退回') && credits.getBalance(uid) === before, `实际 ${exp.status} ${exp.error || ''}`);
       check('refund 键唯一（export-editable-text）',
         textLedgerKeys().filter((k) => k === credits.deriveRefundKey(`export-editable-text:${deck.id}:${started.exportId}`)).length === 1);
+    }
+
+    // ---- 文字档页数上限取产品口径 50：不继承 Codia 的 20，也不看通道配置 ----
+    {
+      const textSourceImage = genDb
+        .prepare(
+          `SELECT sv.image_path AS imagePath
+           FROM deck_slides ds
+           JOIN slide_versions sv ON sv.id = ds.active_version_id
+           WHERE ds.deck_id = ? AND sv.image_path <> ''
+           ORDER BY ds.page_index LIMIT 1`,
+        )
+        .get(deck.id)?.imagePath;
+      if (!textSourceImage) throw new Error('文字档上限夹具缺少源页图');
+      const makeTextDeck = (pageCount) => {
+        const created = decks.createDeck(uid, {
+          title: `${pageCount}页文字档上限`,
+          sourceFileName: '',
+          sourceText: 'x',
+          durationMinutes: 30,
+          targetPageCount: pageCount,
+          qualityTier: 'standard',
+          stylePackId: '',
+        });
+        genDb.prepare("UPDATE decks SET status = 'generated' WHERE id = ?").run(created.id);
+        const now = Date.now();
+        const insSlide = genDb.prepare(
+          `INSERT INTO deck_slides (id, deck_id, page_index, gen_status, active_version_id, created_at, updated_at)
+           VALUES (?, ?, ?, 'succeeded', ?, ?, ?)`,
+        );
+        const insVersion = genDb.prepare(
+          `INSERT INTO slide_versions
+            (id, slide_id, deck_id, version_no, kind, status, image_path, created_at, updated_at)
+           VALUES (?, ?, ?, 1, 'generate', 'succeeded', ?, ?, ?)`,
+        );
+        for (let index = 0; index < pageCount; index += 1) {
+          const slideId = `${created.id}_s${index}`;
+          const versionId = `${created.id}_v${index}`;
+          insSlide.run(slideId, created.id, index, versionId, now + index, now + index);
+          insVersion.run(versionId, slideId, created.id, textSourceImage, now + index, now + index);
+        }
+        return created;
+      };
+
+      credits.refundCredits(uid, 400, { reason: '文字档上限测试补贴', idempotencyKey: 'test-topup-text-page-cap' });
+      const d50 = makeTextDeck(50);
+      const started50 = await exportsLib.startDeckTextEditableExport(uid, d50.id, textDeps(makeMockFetcher([])), { force: true });
+      check('文字可编辑档 50 页可发起（Codia-only 配置也不因 20 被拒）',
+        started50.pageCount === 50 && started50.credits === 250 && started50.status === 'processing',
+        `${started50.pageCount} ${started50.status} ${started50.credits}`);
+      await started50.done;
+
+      const d51 = makeTextDeck(51);
+      let rejected = null;
+      try {
+        await exportsLib.startDeckTextEditableExport(uid, d51.id, textDeps(makeMockFetcher([])), { force: true });
+      } catch (error) {
+        rejected = error;
+      }
+      check('文字可编辑档 51 页按产品上限 50 被拒',
+        rejected?.code === 'EXPORT_TOO_MANY_PAGES'
+          && rejected?.message === '单套最多 50 页可转可编辑，当前共 51 页',
+        `${rejected?.code} ${rejected?.message}`);
     }
 
     // ---- 余额不足 402：先校验再建行，不产生 export 行 ----

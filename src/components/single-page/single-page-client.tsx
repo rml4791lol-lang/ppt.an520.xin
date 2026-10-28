@@ -30,15 +30,6 @@ import {
   getCreditBalance,
   renameProject,
 } from "@/lib/client/deck-api";
-import {
-  singlePageActionDefinition,
-  type SinglePageAction,
-  type SinglePageActionOutcome,
-  type SinglePageGenerateAction,
-  type SinglePageRefineAction,
-  type SinglePageSelectVersionAction,
-} from "@/lib/client/single-page-actions";
-import { useSinglePageActions } from "@/components/single-page/use-single-page-actions";
 import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
 import {
   createPage,
@@ -285,24 +276,30 @@ export function SinglePageClient() {
     return next;
   };
 
-  // ---------- 三个动作的领域流程（执行器只管忙/互斥/401/402/文案，流程留在页面） ----------
+  // ---------- 生成（逐版本串行调用，每版 10🌟） ----------
+  const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
   const [genProgress, setGenProgress] = useState<string>("");
 
-  const runGenerate = async (action: SinglePageGenerateAction): Promise<SinglePageActionOutcome> => {
-    const { page, versions } = action;
+  const generate = async (page: SpPage) => {
+    if (replicateOrigin) {
+      toast("这是美化作品，请到 PPT 美化继续生成");
+      return;
+    }
+    if (!page.stylePackId || generatingIds.has(page.pageId)) return;
+    setGeneratingIds((prev) => new Set(prev).add(page.pageId));
     setViewStep(null);
     updatePage(page.pageId, { status: "generating", error: undefined });
-    const uploaded = await ensureImageUploaded(page);
-    const content =
-      uploaded.text.trim() ||
-      (uploaded.kind === "image"
-        ? `请参考上传的原稿图重新设计这一页 PPT（原稿文件：${uploaded.sourceImagePath ?? "见上传图片"}）。`
-        : "");
-    let pid = projectId;
-    let succeeded = 0;
     try {
-      for (let k = 0; k < versions; k++) {
-        setGenProgress(`正在生成第 ${k + 1}/${versions} 个版本…`);
+      const uploaded = await ensureImageUploaded(page);
+      const content =
+        uploaded.text.trim() ||
+        (uploaded.kind === "image"
+          ? `请参考上传的原稿图重新设计这一页 PPT（原稿文件：${uploaded.sourceImagePath ?? "见上传图片"}）。`
+          : "");
+      let pid = projectId;
+      let succeeded = 0;
+      for (let k = 0; k < versionCount; k++) {
+        setGenProgress(`正在生成第 ${k + 1}/${versionCount} 个版本…`);
         const res = await generateSinglePage({
           pageId: page.pageId,
           projectId: pid ?? undefined,
@@ -322,17 +319,17 @@ export function SinglePageClient() {
           setPages((prev) =>
             prev.map((p) => {
               if (p.pageId !== page.pageId) return p;
-              const versionList = [
+              const versions = [
                 ...p.versions,
                 { versionId: res.versionId, imageUrl: res.imageUrl, createdAt: Date.now(), optimized: false },
               ];
-              return { ...p, versions: versionList, activeVersionId: res.versionId, status: "done" as const };
+              return { ...p, versions, activeVersionId: res.versionId, status: "done" as const };
             }),
           );
         } else {
           updatePage(page.pageId, {
             status: succeeded > 0 ? "done" : "error",
-            error: res.error || singlePageActionDefinition("generatePage").failure,
+            error: res.error || "生图模型繁忙，本次生图失败，不扣除星星，可重新生成。",
           });
           break;
         }
@@ -346,95 +343,107 @@ export function SinglePageClient() {
           ),
         );
       }
-      return {};
+    } catch (error) {
+      const err = error instanceof ApiClientError ? error : null;
+      if (err?.isUnauthorized) {
+        router.push("/login?next=%2Fsingle-page");
+        return;
+      }
+      if (err?.isInsufficientCredits) {
+        setInsufficient(err.message);
+      }
+      updatePage(page.pageId, {
+        status: page.versions.length > 0 ? "done" : "error",
+        error: err?.message ?? "生图模型繁忙，本次生图失败，不扣除星星，可重新生成。",
+      });
     } finally {
+      setGeneratingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(page.pageId);
+        return next;
+      });
       setGenProgress("");
     }
   };
 
-  const runRefine = async (action: SinglePageRefineAction): Promise<SinglePageActionOutcome> => {
-    const res = await refineSinglePage({ pageId: action.pageId, editInstruction: action.instruction });
-    setBalance(res.balance);
-    if (res.status === "succeeded" && res.imageUrl) {
-      setPages((prev) =>
-        prev.map((p) =>
-          p.pageId === action.pageId
-            ? {
-                ...p,
-                versions: [
-                  ...p.versions,
-                  { versionId: res.versionId, imageUrl: res.imageUrl, createdAt: Date.now(), optimized: true },
-                ],
-                activeVersionId: res.versionId,
-                status: "done",
-              }
-            : p,
-        ),
-      );
-      return {};
+  // ---------- 优化（refine，对话式改图） ----------
+  const [refiningIds, setRefiningIds] = useState<Set<string>>(new Set());
+
+  const refine = async (page: SpPage, instruction: string) => {
+    if (refiningIds.has(page.pageId)) return;
+    setRefiningIds((prev) => new Set(prev).add(page.pageId));
+    try {
+      const res = await refineSinglePage({ pageId: page.pageId, editInstruction: instruction });
+      setBalance(res.balance);
+      if (res.status === "succeeded" && res.imageUrl) {
+        setPages((prev) =>
+          prev.map((p) =>
+            p.pageId === page.pageId
+              ? {
+                  ...p,
+                  versions: [
+                    ...p.versions,
+                    { versionId: res.versionId, imageUrl: res.imageUrl, createdAt: Date.now(), optimized: true },
+                  ],
+                  activeVersionId: res.versionId,
+                  status: "done",
+                }
+              : p,
+          ),
+        );
+      } else {
+        toast(res.error || "图片优化失败，本次失败不扣除星星，可稍后重新优化。");
+      }
+    } catch (error) {
+      const err = error instanceof ApiClientError ? error : null;
+      if (err?.isUnauthorized) {
+        router.push("/login?next=%2Fsingle-page");
+        return;
+      }
+      if (err?.isInsufficientCredits) setInsufficient(err.message);
+      else toast(err?.message ?? "图片优化失败，本次失败不扣除星星，可稍后重新优化。");
+    } finally {
+      setRefiningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(page.pageId);
+        return next;
+      });
     }
-    return { failure: { message: res.error || undefined } };
   };
 
-  const runSelectVersion = async (
-    action: SinglePageSelectVersionAction,
-  ): Promise<SinglePageActionOutcome> => {
-    const res = await selectSinglePageVersion({ pageId: action.pageId, versionId: action.versionId });
-    updatePage(action.pageId, { activeVersionId: res.activeVersionId });
-    return {};
-  };
+  // ---------- 版本选择（真实调用 select-version，导出/画布均生效） ----------
+  const [switchingIds, setSwitchingIds] = useState<Set<string>>(new Set());
 
-  const dispatch = (action: SinglePageAction): Promise<SinglePageActionOutcome> => {
-    switch (action.kind) {
-      case "generatePage":
-        return runGenerate(action);
-      case "refinePage":
-        return runRefine(action);
-      case "selectVersion":
-        return runSelectVersion(action);
-    }
-  };
-
-  // 服务端/恢复现场仍在生成的页面视作「生成在飞」：切版本按目录声明被它拦住
-  const pageRunning = useCallback(
-    (pageId: string) => pages.some((p) => p.pageId === pageId && p.status === "generating"),
-    [pages],
-  );
-
-  const { run, busy, inflight } = useSinglePageActions({
-    dispatch,
-    onUnauthorized: () => router.push("/login?next=%2Fsingle-page"),
-    onInsufficientCredits: setInsufficient,
-    toast,
-    isPageRunning: pageRunning,
-  });
-
-  const generate = (page: SpPage) => {
-    if (replicateOrigin) {
-      toast("这是美化作品，请到 PPT 美化继续生成");
+  const selectVersion = async (page: SpPage, versionId: string) => {
+    if (versionId === page.activeVersionId) return;
+    // 生成/优化中的页禁止切换（后端 GENERATION_RUNNING 也会拦，前端先拦）
+    if (
+      generatingIds.has(page.pageId) ||
+      refiningIds.has(page.pageId) ||
+      page.status === "generating"
+    ) {
+      toast("页面正在生成中，请稍候再切换版本");
       return;
     }
-    if (!page.stylePackId) return;
-    void run(
-      { kind: "generatePage", pageId: page.pageId, page, versions: versionCount },
-      {
-        silent: true,
-        onFailure: (failure) =>
-          updatePage(page.pageId, {
-            status: page.versions.length > 0 ? "done" : "error",
-            error: failure.message,
-          }),
-      },
-    );
-  };
-
-  const refine = (page: SpPage, instruction: string) => {
-    void run({ kind: "refinePage", pageId: page.pageId, instruction });
-  };
-
-  const selectVersion = (page: SpPage, versionId: string) => {
-    if (versionId === page.activeVersionId) return;
-    void run({ kind: "selectVersion", pageId: page.pageId, versionId });
+    if (switchingIds.has(versionId)) return;
+    setSwitchingIds((prev) => new Set(prev).add(versionId));
+    try {
+      const res = await selectSinglePageVersion({ pageId: page.pageId, versionId });
+      updatePage(page.pageId, { activeVersionId: res.activeVersionId });
+    } catch (error) {
+      const err = error instanceof ApiClientError ? error : null;
+      if (err?.isUnauthorized) {
+        router.push("/login?next=%2Fsingle-page");
+        return;
+      }
+      toast(err?.message ?? "切换版本失败，请重新尝试");
+    } finally {
+      setSwitchingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(versionId);
+        return next;
+      });
+    }
   };
 
   // ---------- 导出图片版 PPTX ----------
@@ -510,11 +519,8 @@ export function SinglePageClient() {
     return <div className="min-h-screen bg-page" />;
   }
 
-  const generating = busy("generatePage", activePage.pageId);
-  const refining = busy("refinePage", activePage.pageId);
-  const switchingVersionId =
-    inflight.find((action) => action.kind === "selectVersion" && action.entityId === activePage.pageId)
-      ?.versionId ?? null;
+  const generating = generatingIds.has(activePage.pageId);
+  const refining = refiningIds.has(activePage.pageId);
 
   return (
     <div className="flex min-h-screen flex-col bg-page" data-state={currentStep}>
@@ -753,14 +759,8 @@ export function SinglePageClient() {
               />
               <VersionBar
                 page={activePage}
-                busy={busy("selectVersion", activePage.pageId)}
-                switchingId={switchingVersionId}
-                runningHint={
-                  pageRunning(activePage.pageId)
-                    ? singlePageActionDefinition("selectVersion").blockedNotice
-                    : null
-                }
-                onSelect={(versionId) => selectVersion(activePage, versionId)}
+                switchingId={[...switchingIds][0] ?? null}
+                onSelect={(versionId) => void selectVersion(activePage, versionId)}
               />
             </div>
           )}

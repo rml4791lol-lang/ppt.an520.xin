@@ -13,9 +13,9 @@ export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   const { params: body } = readIntentParams(await readJsonBody(request), SINGLE_PAGE_INTENT_PARAMS, 'refinePage');
   const result = await refineSinglePage(user.id, {
-    pageId: body.pageId,
-    editInstruction: body.editInstruction,
-    requestId: body.requestId || undefined,
+    pageId: String(body.pageId ?? ''),
+    editInstruction: String(body.editInstruction ?? ''),
+    requestId: body.requestId ? String(body.requestId) : undefined,
   });
   return jsonOk(
     {

@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/server/auth';
-import { startUploadedEditableExport } from '@/modules/editable-export/server/editable';
+import { editablePageCapacity, startUploadedEditableExport } from '@/modules/editable-export/server/editable';
 import { ApiError, jsonOk } from '@/lib/server/http';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { defineApiRoute } from '@/lib/server/generation/route';
@@ -7,7 +7,6 @@ import { defineApiRoute } from '@/lib/server/generation/route';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_UPLOAD_FILES = 20;
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 
 export const POST = defineApiRoute(async (request) => {
@@ -31,8 +30,9 @@ export const POST = defineApiRoute(async (request) => {
   const entries = [...form.getAll('files'), ...form.getAll('file')];
   const uniqueFiles = entries.filter((value, index) => value instanceof File && entries.indexOf(value) === index) as File[];
   if (uniqueFiles.length === 0) throw new ApiError('VALIDATION_ERROR', '请选择 PDF 或图片文件', 400, false);
-  if (uniqueFiles.length > MAX_UPLOAD_FILES) {
-    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${MAX_UPLOAD_FILES} 个图片文件`, 400, false);
+  const pageCapacity = editablePageCapacity(config);
+  if (pageCapacity > 0 && uniqueFiles.length > pageCapacity) {
+    throw new ApiError('EXPORT_TOO_MANY_PAGES', `单次最多 ${pageCapacity} 个图片文件`, 400, false);
   }
   const totalSize = uniqueFiles.reduce((sum, file) => sum + file.size, 0);
   if (totalSize > config.uploadMaxBytes) {

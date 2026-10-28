@@ -204,21 +204,16 @@ export function RefineBar({
 
 export function VersionBar({
   page,
-  busy,
   switchingId,
-  runningHint,
   onSelect,
 }: {
   page: SpPage;
-  /** 执行器派生的忙：本页切版本在飞、或本页仍在生成/优化；为真时未选中的按钮全部禁用 */
-  busy: boolean;
-  /** 正在切换的版本 id（显示「切换中…」；判重与互斥由执行器负责） */
+  /** 正在切换中的版本 id（select-version 请求在飞）；非空时整条禁用 */
   switchingId?: string | null;
-  /** 本页仍在生成时的提示（与执行器同一份文案） */
-  runningHint?: string | null;
   onSelect: (versionId: string) => void;
 }) {
   if (page.versions.length === 0) return null;
+  const busy = !!switchingId || page.status === "generating";
   return (
     <div className="flex items-center gap-2 overflow-x-auto rounded-2xl border border-line bg-card p-2">
       {page.versions.map((v, i) => {
@@ -229,7 +224,7 @@ export function VersionBar({
             key={v.versionId}
             type="button"
             disabled={busy && !active}
-            title={runningHint ?? undefined}
+            title={page.status === "generating" ? "页面正在生成中，请稍候再切换版本" : undefined}
             onClick={() => onSelect(v.versionId)}
             className={`flex shrink-0 flex-col items-center gap-1 rounded-xl border p-1.5 transition ${
               active ? "border-brand ring-1 ring-brand/30" : "border-line hover:border-brand-line"

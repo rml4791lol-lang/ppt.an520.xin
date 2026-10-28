@@ -8,7 +8,7 @@ import { getSession } from "@/lib/client/api";
 import { getExportRecord, listExportRecords, type ExportRecord } from "@/lib/client/deck-api";
 
 const ACCEPTED = ["application/pdf", "image/png", "image/jpeg"];
-const MAX_FILES = 20;
+const MAX_FILES = 50;
 
 const STAGES: Record<string, string> = {
   queued: "任务已排队",
@@ -230,7 +230,7 @@ export function EditableConverterClient() {
         <span className="inline-flex rounded-full bg-brand-soft px-3 py-1 text-xs font-medium text-brand">PDF / 图片 → 可编辑 PPTX</span>
         <h1 className="mt-4 text-3xl font-bold tracking-tight text-ink sm:text-4xl">把现有页面，重新变成可编辑元素</h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-ink-3">
-          上传 1 份 PDF，或按顺序上传最多 20 张 PNG/JPG 图片。后台完成后，文件会自动进入下载中心。
+          上传 1 份 PDF，或按顺序上传最多 50 张 PNG/JPG 图片。后台完成后，文件会自动进入下载中心。
         </p>
       </div>
 

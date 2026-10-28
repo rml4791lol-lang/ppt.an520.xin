@@ -6,13 +6,13 @@
 
 ## 边界
 
-- `server/editable.ts`：唯一服务端出口——WPS / Image2PPT / Codia 多通道（`startDeckEditableExport` / `startSinglePageEditableExport` / `startUploadedEditableExport`，20🌟/页，任务制+懒恢复+主备切换）、轻量文字档（`startDeckTextEditableExport`，VLM 覆盖层 5🌟/页，开关 `editable_text_overlay`）、导出中心查询（`listExports` / `getExport`，含进行中可编辑行的懒恢复触发）、Image2PPT webhook 验签与状态推进。
-- `server/providers/`：上游通道接口层。`types.ts` 声明 start / advance / save / cleanup 与能力声明（`maxPages` / `resumable` / `attempts` / `configured`），并持有共享文案与有限数解析；`registry.ts` 是回退顺序唯一来源（配置主通道优先 → 已配置过滤 → 按请求页数剔除，>20 页剔除 Codia）；`wps.ts` / `image2ppt.ts` / `codia.ts` 是适配器。管线与懒恢复只依赖该接口，新增第四个通道 = 新增适配器文件 + registry 登记一次。
+- `server/editable.ts`：唯一服务端出口——WPS / Image2PPT / Codia 多通道（`startDeckEditableExport` / `startSinglePageEditableExport` / `startUploadedEditableExport`，20🌟/页，任务制+懒恢复+主备切换；页数上限 = 已配置通道链能力 `editablePageCapacity`，21–50 页来源先转 JPEG 再合成 PDF）、轻量文字档（`startDeckTextEditableExport`，VLM 覆盖层 5🌟/页，产品上限 50 页，开关 `editable_text_overlay`）、导出中心查询（`listExports` / `getExport` / `quoteExport`，含进行中可编辑行的懒恢复触发）、Image2PPT webhook 验签与状态推进。
+- `server/providers/`：上游通道接口层。`types.ts` 声明 start / advance / save / cleanup 与能力声明（`maxPages` / `resumable` / `attempts` / `configured`），并持有共享文案与有限数解析；`registry.ts` 是回退顺序与页数上限唯一来源（配置主通道优先 → 已配置过滤 → 按请求页数剔除，>20 页剔除 Codia；`editablePageCapacity` = 已配置链能力上限）；`wps.ts` / `image2ppt.ts` / `codia.ts` 是适配器。管线与懒恢复只依赖该接口，新增第四个通道 = 新增适配器文件 + registry 登记一次。
 - `server/wps-aippt.ts`：WPS 网页版内部 PDF/图片转 PPT 客户端（KS3 上传 + SSE 转换 + PPTX 下载）；依赖服务端 WPS 登录 Cookie，失败由管线自动回退。
 - `server/image2ppt.ts`：Image2PPT 开放 API 客户端（multipart jobs、状态轮询、Bearer 下载、Standard Webhooks 验签，依赖注入 fetcher，含上游计量）。
 - `server/codia.ts`：Codia 开放 API 客户端（uploads/tasks，依赖注入 fetcher，含上游计量）。
 - `client/`：`use-editable-export.ts`（导出编排 hook）、`editable-converter-client.tsx`（/tools/editable-converter 工具页）。
-- 薄壳路由（只做鉴权/参数/调模块）：`/api/deck/[id]/export-editable{,-text}`、`/api/single-page/export-editable-pptx`、`/api/editable-conversions`、`/api/pptx-exports{,/[id]}`。
+- 薄壳路由（只做鉴权/参数/调模块）：`/api/deck/[id]/export-editable{,-text}`、`/api/single-page/export-editable-pptx`、`/api/editable-conversions`、`/api/pptx-exports{,/quote,/[id]}`。
 
 ## 依赖的平台件（只准用，不准在本模块改）
 
@@ -20,4 +20,4 @@
 
 ## 测试
 
-`scripts/tests/editable-export.test.mjs`（[6b]-[6e]）、`scripts/tests/image2ppt.test.mjs`（[6f]）、`scripts/tests/wps-aippt.test.mjs`（[6g]）、`scripts/tests/editable-providers.test.mjs`（[6h]：能力声明 / registry 页数过滤 / 假通道驱动管线与恢复 / 共享文案），由 test-generation.mjs 注入 ctx；开关可见性矩阵在 test-backend.mjs [11]。**禁止真实调用 WPS/Image2PPT/Codia/VLM/生图。**
+`scripts/tests/editable-export.test.mjs`（[6b]-[6e]）、`scripts/tests/image2ppt.test.mjs`（[6f]）、`scripts/tests/wps-aippt.test.mjs`（[6g]）、`scripts/tests/editable-providers.test.mjs`（[6h]：能力声明 / registry 页数过滤 / 通道能力上限与发起页数门 / JPEG 大套压缩 / 假通道驱动管线与恢复 / 共享文案），由 test-generation.mjs 注入 ctx；开关可见性矩阵在 test-backend.mjs [11]。**禁止真实调用 WPS/Image2PPT/Codia/VLM/生图。**

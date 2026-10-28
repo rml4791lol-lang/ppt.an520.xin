@@ -14,7 +14,7 @@ export const POST = defineApiRoute(async (request, ctx) => {
   const id = await paramOf(ctx, 'id');
   const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const { params: body } = readIntentParams(raw, EXPORT_INTENT_PARAMS, 'exportDeckEditable');
-  const started = await startDeckEditableExport(user.id, id, {}, { force: body.force });
+  const started = await startDeckEditableExport(user.id, id, {}, { force: body.force === true });
   return jsonOk(
     {
       exportId: started.exportId,
