@@ -1,14 +1,15 @@
 // 单页生成器（创意页面生成器）：generate / refine / 导出图片版 PPTX。
-// 与 deck 共用生图上游与扣费语义：单价在任务启动时向 pricing 插件取一次快照，失败自动退还。
+// 与 deck 共用生图上游与计费语义：claim/扣费/退款/终态顺序归 paid-run.ts（单价启动时快照一次），
+// 扣费键归 charge-keys.ts；复刻模块只提供提示词策略，钱与恢复全平台只有一份。
 import { ApiError, validationError } from '../http';
 import { withTransaction } from '../db';
-import { chargeRefundKeys, debitCredits, estimateCredits, refundCredits } from '../credits';
-import { logProblem } from '../problem-log';
+import { estimateCredits } from '../credits';
 import { findUserById } from '../auth';
 import { assertFeatureVisible } from '../feature-flags';
 import { getGenerationConfig } from './config';
 import { genId, getGenDb, nowMs } from './db';
-import { markSinglePageActive, markSinglePageDone } from './recovery';
+import { singlePageChargeKey } from './charge-keys';
+import { beginPaidRun, type BeginPaidRunResult, type PaidRunFailure, type PaidRunStore } from './paid-run';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { parseOwnedUploadRelPath, readSiteFile, saveFile } from './storage';
 import {
@@ -19,7 +20,10 @@ import {
   type SlidePromptInput,
 } from './style-packs';
 import { cleanString } from './types';
-export type SinglePageDeps = ImageDeps;
+export interface SinglePageDeps extends ImageDeps {
+  /** 测试注入时钟：claim 行时间戳按它落库，恢复判活据此算过期（崩溃测试不再改库时间戳） */
+  now?: () => number;
+}
 
 type Row = Record<string, string | number | null>;
 
@@ -241,184 +245,239 @@ export interface SingleRunResult {
   balance: number;
 }
 
-/**
- * 单页运行时的唯一执行体：事务/扣费/退款/版本/恢复都只有这一份。
- * 提示词由调用方按自己的契约算好传进来（复刻模块传结构/配色合同），本文件不认识具体功能。
- */
-export async function runSinglePageJob(
+export interface SinglePageSavedImage {
+  imagePath: string;
+  imageUrl: string;
+}
+
+export interface SinglePageVersionRow {
+  versionId: string;
+  jobId: string;
+  chargeKey: string;
+  /** claim 前的页状态：幂等重放被拒时还原，而不是把一次合法结果置 failed */
+  previousStatus: SinglePageRow['status'];
+  previousError: string;
+}
+
+/** 单页域适配器只做三件事：落 claim 行、更新本域状态、置终态；扣费/退款/在飞注册归 paid-run。 */
+function singlePageRunStore(
   page: SinglePageRow,
-  opts: {
-    kind: 'single-generate' | 'single-refine';
-    refineInstruction?: string;
-    sourceImagePath?: string;
-    requestId?: string;
-    /** 调用方自带的生图正文；缺省按风格包装配 */
-    promptOverride?: string;
-    /** 调用方自带的改图指令全文（仅生成原稿重设计分支）；缺省用平台模板 */
-    editInstruction?: string;
-  },
+  start: { jobId: string; chargeKey: string; versionKind: 'generate' | 'refine'; prompt: string },
   deps: SinglePageDeps,
-): Promise<SingleRunResult> {
-  const config = deps.config ?? getGenerationConfig();
-  const runDeps: SinglePageDeps = { ...deps, config };
+): PaidRunStore<SinglePageVersionRow, SinglePageSavedImage> {
+  const db = getGenDb();
+  const now = deps.now ?? nowMs;
+  return {
+    // 读页状态 + 落 version + 置 running 同一 BEGIN IMMEDIATE 事务：并发双击只有一路能通过，
+    // 另一路拿到 409（否则两路各插版本、各扣一次星，结果 last-writer-wins）
+    claim(chargeKey: string): SinglePageVersionRow {
+      const ts = now();
+      return withTransaction(db, () => {
+        const current = db
+          .prepare('SELECT status, error FROM single_pages WHERE id = ? AND user_id = ?')
+          .get(page.pageId, page.userId) as Row | undefined;
+        if (!current) throw new ApiError('PAGE_NOT_FOUND', '页面不存在', 404, false);
+        const previousStatus = String(current.status || 'idle') as SinglePageRow['status'];
+        if (previousStatus === 'running' || previousStatus === 'queued') {
+          throw new ApiError('GENERATION_RUNNING', '该页正在生成中，请稍候', 409, true);
+        }
+        const row: SinglePageVersionRow = {
+          versionId: genId('ver'),
+          jobId: start.jobId,
+          chargeKey,
+          previousStatus,
+          previousError: String(current.error || ''),
+        };
+        db.prepare(
+          `INSERT INTO single_page_versions
+            (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?, ?)`,
+        ).run(row.versionId, page.pageId, start.versionKind, start.prompt, row.jobId, chargeKey, ts, ts);
+        db.prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?').run('running', '', ts, page.pageId);
+        return row;
+      });
+    },
+    markSucceeded(row, saved) {
+      const ts = now();
+      db.prepare(
+        'UPDATE single_page_versions SET status = ?, image_path = ?, image_url = ?, error = ?, updated_at = ? WHERE id = ?',
+      ).run('succeeded', saved.imagePath, saved.imageUrl, '', ts, row.versionId);
+      db.prepare('UPDATE single_pages SET status = ?, error = ?, active_version_id = ?, updated_at = ? WHERE id = ?').run(
+        'succeeded',
+        '',
+        row.versionId,
+        ts,
+        page.pageId,
+      );
+    },
+    markFailed(row, failure) {
+      const ts = now();
+      if (failure.code === 'DUPLICATE_REQUEST') {
+        // 重放被拒：版本留审计行，页还原到 claim 前的状态，而不是把一次合法结果置 failed
+        db.prepare('UPDATE single_page_versions SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
+          'failed',
+          'DUPLICATE_REQUEST',
+          ts,
+          row.versionId,
+        );
+        db.prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
+          row.previousStatus,
+          row.previousError,
+          ts,
+          page.pageId,
+        );
+        return;
+      }
+      const versionText = failure.code === 'INSUFFICIENT_CREDITS' || failure.code === 'CHARGE_FAILED'
+        ? failure.code
+        : `${failure.code}: ${failure.message}`;
+      const pageText = failure.code === 'INSUFFICIENT_CREDITS'
+        ? 'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试'
+        : failure.code === 'CHARGE_FAILED' ? '扣费失败，请重试' : versionText;
+      db.prepare('UPDATE single_page_versions SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
+        'failed',
+        versionText,
+        ts,
+        row.versionId,
+      );
+      db.prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
+        'failed',
+        pageText,
+        ts,
+        page.pageId,
+      );
+    },
+  };
+}
+
+export interface SinglePageRunOptions {
+  kind: 'single-generate' | 'single-refine';
+  refineInstruction?: string;
+  sourceImagePath?: string;
+  requestId?: string;
+  /** 调用方自带的生图正文；缺省按风格包装配 */
+  promptOverride?: string;
+  /** 调用方自带的改图指令全文（仅生成原稿重设计分支）；缺省用平台模板 */
+  editInstruction?: string;
+}
+
+export interface SinglePageRunStart {
+  began: BeginPaidRunResult<SinglePageVersionRow, SinglePageSavedImage>;
+  jobId: string;
+  chargeKey: string;
+  prompt: string;
+  referencePath: string | null;
+}
+
+/**
+ * 开始一次单页计费运行（claim 行 → 注册在飞 → 幂等扣费）。
+ * 执行体与收尾在 runSinglePageJob；测试/评审用本函数直接构造「已扣费未完成」的崩溃现场。
+ */
+export function beginSinglePagePaidRun(
+  page: SinglePageRow,
+  opts: SinglePageRunOptions,
+  deps: SinglePageDeps = {},
+): SinglePageRunStart {
   // 一次任务一个单价快照：本页的扣费与失败退款都按它，不再二次读价
   const unitPrice = estimateCredits({
     action: opts.kind === 'single-refine' ? 'single_page_refine' : 'single_page_generate',
     pages: 1,
   }).unitPrice;
   const jobId = genId('job');
-  // 与 credits.cleanKey 同口径归一（trim 后截 128），保证存库的键 = 实际扣费键，崩溃恢复按它找孤儿扣费；
-  // 退款键由扣费键定长派生（后缀式退款键在超长 requestId 下会被截回扣费键，退款静默失效）
-  const { chargeKey, refundKey } = chargeRefundKeys(`single-page:${page.pageId}:${opts.requestId || jobId}`);
+  const chargeKey = singlePageChargeKey({ pageId: page.pageId, jobId, requestId: opts.requestId });
   const { prompt, referencePath } = opts.promptOverride
     ? { prompt: opts.promptOverride, referencePath: null }
     : buildPagePrompt(page, opts.refineInstruction);
+  const began = beginPaidRun<SinglePageVersionRow, SinglePageSavedImage>({
+    domain: 'single-page',
+    userId: page.userId,
+    action: opts.kind === 'single-refine' ? 'single_page_refine' : 'single_page_generate',
+    unitPrice,
+    chargeKey,
+    refType: 'single-page',
+    refId: page.pageId,
+    reason: opts.kind === 'single-refine' ? '单页改图' : '单页生成',
+    refundReason: '单页生成失败退回',
+    rejectDuplicate: true,
+    store: singlePageRunStore(
+      page,
+      { jobId, chargeKey, versionKind: opts.kind === 'single-refine' ? 'refine' : 'generate', prompt },
+      deps,
+    ),
+    now: deps.now,
+  });
+  return { began, jobId, chargeKey, prompt, referencePath };
+}
 
-  const versionId = genId('ver');
-  const ts = nowMs();
-  markSinglePageActive(page.pageId);
+function paidRunApiError(failure: PaidRunFailure): ApiError {
+  if (failure.code === 'INSUFFICIENT_CREDITS') return new ApiError('INSUFFICIENT_CREDITS', failure.message, 402, false);
+  if (failure.code === 'DUPLICATE_REQUEST') return new ApiError('DUPLICATE_REQUEST', failure.message, 409, false);
+  return new ApiError('CHARGE_FAILED', failure.message || '扣费失败，请重试', 500, false);
+}
+
+/**
+ * 单页运行时的唯一执行体：事务/扣费/退款/版本/恢复都只有这一份。
+ * 提示词由调用方按自己的契约算好传进来（复刻模块传结构/配色合同），本文件不认识具体功能。
+ */
+export async function runSinglePageJob(
+  page: SinglePageRow,
+  opts: SinglePageRunOptions,
+  deps: SinglePageDeps = {},
+): Promise<SingleRunResult> {
+  const config = deps.config ?? getGenerationConfig();
+  const runDeps: SinglePageDeps = { ...deps, config };
+  const start = beginSinglePagePaidRun(page, opts, runDeps);
+  if (!start.began.charged) throw paidRunApiError(start.began.failure);
+  const { run, balance } = start.began;
+  const versionId = run.row.versionId;
   try {
-    // 读页状态 + 落 version + 置 running 同一 BEGIN IMMEDIATE 事务：并发双击只有一路能通过，
-    // 另一路拿到 409（否则两路各插版本、各扣一次星，结果 last-writer-wins）
-    const started = withTransaction(getGenDb(), () => {
-      const current = getGenDb()
-        .prepare('SELECT status, error FROM single_pages WHERE id = ? AND user_id = ?')
-        .get(page.pageId, page.userId) as Row | undefined;
-      if (!current) throw new ApiError('PAGE_NOT_FOUND', '页面不存在', 404, false);
-      const status = String(current.status || 'idle');
-      if (status === 'running' || status === 'queued') {
-        throw new ApiError('GENERATION_RUNNING', '该页正在生成中，请稍候', 409, true);
-      }
-      getGenDb()
-        .prepare(
-          `INSERT INTO single_page_versions
-            (id, page_id, kind, prompt, status, image_path, image_url, error, job_id, charge_key, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'queued', '', '', '', ?, ?, ?, ?)`,
-        )
-        .run(versionId, page.pageId, opts.kind === 'single-refine' ? 'refine' : 'generate', prompt, jobId, chargeKey, ts, ts);
-      getGenDb()
-        .prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?')
-        .run('running', '', ts, page.pageId);
-      return { status, error: String(current.error || '') };
-    });
-
-    let debit;
-    try {
-      debit = debitCredits(page.userId, unitPrice, {
-        reason: opts.kind === 'single-refine' ? '单页改图' : '单页生成',
-        idempotencyKey: chargeKey,
-        refType: 'single-page',
-        refId: page.pageId,
-      });
-    } catch (error) {
-      getGenDb().prepare("UPDATE single_page_versions SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
-        'INSUFFICIENT_CREDITS',
-        nowMs(),
-        versionId,
+    let image: Buffer;
+    if (opts.kind === 'single-refine') {
+      const current = page.activeVersionId
+        ? getGenDb().prepare('SELECT image_path FROM single_page_versions WHERE id = ?').get(page.activeVersionId)
+        : null;
+      const source = current ? await readSiteFile(String(current.image_path || ''), config) : null;
+      if (!source) throw new Error('原图不存在，无法改图');
+      image = await editImage(
+        { image: source, instruction: opts.refineInstruction || '', userKey: page.userId },
+        runDeps,
       );
-      getGenDb().prepare("UPDATE single_pages SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
-        'INSUFFICIENT_CREDITS: 🌟 星星不足，请充值后重试',
-        nowMs(),
-        page.pageId,
-      );
-      throw error;
+    } else if (opts.sourceImagePath) {
+      const source = await readSiteFile(opts.sourceImagePath, config);
+      if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
+      const instruction = opts.editInstruction
+        ?? `${start.prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
+      image = await editImage({ image: source, instruction, userKey: page.userId }, runDeps);
+    } else {
+      const pack = resolveStylePack(page.stylePackId);
+      const referenceImages = start.referencePath
+        ? [loadStyleReferenceDataUrl(pack, start.referencePath)].filter((item): item is string => Boolean(item))
+        : [];
+      image = await generateImage({ prompt: start.prompt, referenceImages, userKey: page.userId }, runDeps);
     }
-
-    // requestId 重放命中幂等键：拒绝且不再生成（否则扣一次费可无限生图，失败分支还会误退首笔）
-    if (debit.duplicate) {
-      getGenDb().prepare("UPDATE single_page_versions SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(
-        'DUPLICATE_REQUEST',
-        nowMs(),
-        versionId,
-      );
-      getGenDb().prepare('UPDATE single_pages SET status = ?, error = ?, updated_at = ? WHERE id = ?').run(
-        started.status,
-        started.error,
-        nowMs(),
-        page.pageId,
-      );
-      throw new ApiError('DUPLICATE_REQUEST', '重复请求：请勿重复提交，刷新后可查看结果', 409, false);
-    }
-
-    const finish = (status: 'succeeded' | 'failed', imagePath: string, imageUrl: string, errorText: string) => {
-      getGenDb()
-        .prepare('UPDATE single_page_versions SET status = ?, image_path = ?, image_url = ?, error = ?, updated_at = ? WHERE id = ?')
-        .run(status, imagePath, imageUrl, errorText, nowMs(), versionId);
-      getGenDb()
-        .prepare('UPDATE single_pages SET status = ?, error = ?, active_version_id = ?, updated_at = ? WHERE id = ?')
-        .run(status, errorText, status === 'succeeded' ? versionId : page.activeVersionId, nowMs(), page.pageId);
+    const saved = await saveFile('generated', page.userId, image, { kind: 'single', ext: '.png', id: versionId }, config);
+    run.succeed({ imagePath: saved.relPath, imageUrl: saved.url });
+    return {
+      page: getOwnedPage(page.userId, page.pageId),
+      versionId,
+      jobId: start.jobId,
+      imageUrl: saved.url,
+      status: 'succeeded',
+      error: '',
+      balance,
     };
-
-    try {
-      let image: Buffer;
-      if (opts.kind === 'single-refine') {
-        const current = page.activeVersionId
-          ? getGenDb().prepare('SELECT image_path FROM single_page_versions WHERE id = ?').get(page.activeVersionId)
-          : null;
-        const source = current ? await readSiteFile(String(current.image_path || ''), config) : null;
-        if (!source) throw new Error('原图不存在，无法改图');
-        image = await editImage(
-          { image: source, instruction: opts.refineInstruction || '', userKey: page.userId },
-          runDeps,
-        );
-      } else if (opts.sourceImagePath) {
-        const source = await readSiteFile(opts.sourceImagePath, config);
-        if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
-        const instruction = opts.editInstruction
-          ?? `${prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
-        image = await editImage({ image: source, instruction, userKey: page.userId }, runDeps);
-      } else {
-        const pack = resolveStylePack(page.stylePackId);
-        const referenceImages = referencePath
-          ? [loadStyleReferenceDataUrl(pack, referencePath)].filter((item): item is string => Boolean(item))
-          : [];
-        image = await generateImage({ prompt, referenceImages, userKey: page.userId }, runDeps);
-      }
-      const saved = await saveFile('generated', page.userId, image, { kind: 'single', ext: '.png', id: versionId }, config);
-      finish('succeeded', saved.relPath, saved.url, '');
-      return {
-        page: getOwnedPage(page.userId, page.pageId),
-        versionId,
-        jobId,
-        imageUrl: saved.url,
-        status: 'succeeded',
-        error: '',
-        balance: debit.balance,
-      };
-    } catch (error) {
-      const publicError = toPublicImageError(error);
-      const errorText = `${publicError.code}: ${publicError.message}`;
-      finish('failed', '', '', errorText);
-      try {
-        refundCredits(page.userId, unitPrice, {
-          reason: '单页生成失败退回',
-          idempotencyKey: refundKey,
-          refType: 'single-page',
-          refId: page.pageId,
-        });
-      } catch (refundError) {
-        logProblem({
-          category: 'generation',
-          level: 'error',
-          message: '单页生成失败退款失败',
-          detail: refundError,
-          userId: page.userId,
-          refType: 'single-page',
-          refId: page.pageId,
-        });
-      }
-      return {
-        page: getOwnedPage(page.userId, page.pageId),
-        versionId,
-        jobId,
-        imageUrl: '',
-        status: 'failed',
-        error: errorText,
-        balance: debit.balance,
-      };
-    }
-  } finally {
-    markSinglePageDone(page.pageId);
+  } catch (error) {
+    const failure = toPublicImageError(error);
+    run.fail(failure);
+    return {
+      page: getOwnedPage(page.userId, page.pageId),
+      versionId,
+      jobId: start.jobId,
+      imageUrl: '',
+      status: 'failed',
+      error: `${failure.code}: ${failure.message}`,
+      balance,
+    };
   }
 }
 

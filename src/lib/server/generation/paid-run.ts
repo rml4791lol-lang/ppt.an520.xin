@@ -10,7 +10,7 @@
 // 单次运行在 beginPaidRun 内自动登记/释放。判活（心跳过期）仍归恢复入口。
 import { ApiError, validationError } from '../http';
 import { logProblem } from '../problem-log';
-import { debitCredits, deriveRefundKey, refundCredits } from '../credits';
+import { debitCredits, deriveRefundKey, refundCredits, type LedgerWriteResult } from '../credits';
 import { getDb } from '../db';
 
 export interface PaidRunFailure {
@@ -41,6 +41,11 @@ export interface PaidRunInput<TRow, TResult> {
   reason: string;
   refundReason: string;
   store: PaidRunStore<TRow, TResult>;
+  /**
+   * 客户端幂等键型域（单页）：扣费命中已有键 = 请求重放，拒绝且不执行、不退款。
+   * 服务端键型域（整套）缺省 false：同键重放继续执行，幂等扣费不双扣。
+   */
+  rejectDuplicate?: boolean;
   now?: () => number;
 }
 
@@ -51,7 +56,7 @@ export interface ChargedPaidRun<TRow, TResult> {
 }
 
 export type BeginPaidRunResult<TRow, TResult> =
-  | { charged: true; run: ChargedPaidRun<TRow, TResult> }
+  | { charged: true; run: ChargedPaidRun<TRow, TResult>; balance: number }
   | { charged: false; failure: PaidRunFailure };
 
 interface InFlightEntry {
@@ -139,8 +144,9 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     now: input.now,
   });
 
+  let debit: LedgerWriteResult;
   try {
-    debitCredits(input.userId, input.unitPrice, {
+    debit = debitCredits(input.userId, input.unitPrice, {
       reason: input.reason,
       idempotencyKey: chargeKey,
       refType: input.refType,
@@ -148,6 +154,18 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     });
   } catch (error) {
     const failure = chargeFailure(error);
+    try {
+      input.store.markFailed(row, failure);
+    } finally {
+      releaseInFlight(chargeKey);
+    }
+    return { charged: false, failure };
+  }
+
+  // 客户端幂等键型域：命中已有扣费键说明请求被重放——拒绝且不动已生成的结果，
+  // 也不退首笔（首笔的钱属于第一次请求）。域行在 claim 时已置运行态，由 markFailed 还原。
+  if (input.rejectDuplicate && debit.duplicate) {
+    const failure: PaidRunFailure = { code: 'DUPLICATE_REQUEST', message: '重复请求：请勿重复提交，刷新后可查看结果' };
     try {
       input.store.markFailed(row, failure);
     } finally {
@@ -178,6 +196,7 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
 
   return {
     charged: true,
+    balance: debit.balance,
     run: {
       row,
       succeed(result: TResult): void {
