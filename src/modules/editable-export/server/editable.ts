@@ -493,11 +493,16 @@ async function buildImagePdf(images: Buffer[]): Promise<Buffer> {
     addPage(size: [number, number]): {
       drawImage(image: EmbeddedImage, opts: { x: number; y: number; width: number; height: number }): void;
     };
+    setCreationDate(date: Date): void;
+    setModificationDate(date: Date): void;
     save(): Promise<Uint8Array>;
   }
   const require = createRequire(import.meta.url);
   const { PDFDocument } = require('pdf-lib') as { PDFDocument: { create(): Promise<PdfDoc> } };
   const pdf = await PDFDocument.create();
+  // 相同图片必须生成逐字节相同的 PDF：pdf-lib 默认写入当前时间，会让指纹去重跨秒失效
+  pdf.setCreationDate(new Date(0));
+  pdf.setModificationDate(new Date(0));
   const compressPages = images.length > LARGE_SOURCE_PAGES;
   for (const image of images) {
     const isJpeg = image.length >= 3 && image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff;
