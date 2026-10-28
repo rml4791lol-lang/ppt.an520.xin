@@ -1,15 +1,21 @@
 // [4j] 视觉计划（src/lib/server/generation/visual-plan.ts）契约：
 // 页型只解析一次（pageType + title + goal + role），模板映射与提示词读同一键；
-// 参考优先级 anchor > template > style 且任何分支不丢候选；改图后缀归模块；
-// 蓝图失败在接口内降级为空串。由 scripts/test-generation.mjs 汇总调用。
+// 参考优先级 anchor > template > style、读取时首个可读候选胜出（读失败顺延）；
+// 改图后缀归模块；复刻是计划的一个 mode（保壳世界）；蓝图失败在接口内降级为空串。
+// 原孤儿脚本 test-page-types/test-mapping/test-prompt 中未被门覆盖的断言并入本段。
+// 由 scripts/test-generation.mjs 汇总调用。
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
 export async function runVisualPlanTests(ctx) {
   const { check, llmConfig } = ctx;
-  console.log('\n[4j] 视觉计划：页型单源 / 参考优先级 / 改图后缀 / 蓝图降级');
+  console.log('\n[4j] 视觉计划：页型单源 / 参考优先级 / 复刻模式 / 改图后缀 / 蓝图降级');
 
   const visualPlan = await import('../../src/lib/server/generation/visual-plan.ts');
   const mapping = await import('../../src/lib/server/generation/mapping.ts');
   const pageTypes = await import('../../src/lib/server/generation/page-types.ts');
   const stylePacks = await import('../../src/lib/server/generation/style-packs.ts');
+  const templates = await import('../../src/lib/server/templates.ts');
 
   const pack = stylePacks.resolveStylePack('anppt-original-innovation-20260822');
   check('测试风格包可用', Boolean(pack));
@@ -128,6 +134,140 @@ export async function runVisualPlanTests(ctx) {
   check('无锚点无模板时回退风格样张',
     styleOnly.primaryReference?.source === 'style' && styleOnly.references.length === 1);
 
+  // 读取顺序：调用方按计划优先级取第一个可读候选；读失败顺延，不整条丢参考
+  const styleReferencePath = plan.references.find((item) => item.source === 'style')?.path;
+  const anchorBytes = Buffer.from('anchor-image');
+  const readPublic = (refPath) => (refPath === '/assets/tpl/02-pain.png'
+    ? 'data:image/png;base64,TEMPLATE'
+    : refPath === styleReferencePath ? 'data:image/png;base64,STYLE' : null);
+  check('参考图读取：锚点可读时用锚点（且按计划优先级先读锚点）',
+    await visualPlan.resolveVisualPlanReference(plan, { readAnchor: async () => anchorBytes, readPublic })
+      === `data:image/png;base64,${anchorBytes.toString('base64')}`);
+  check('参考图读取：锚点不可读时顺延到模板样张',
+    await visualPlan.resolveVisualPlanReference(plan, { readAnchor: async () => null, readPublic })
+      === 'data:image/png;base64,TEMPLATE');
+  check('参考图读取：模板样张不可读时顺延到风格样张',
+    await visualPlan.resolveVisualPlanReference(plan, {
+      readAnchor: async () => null,
+      readPublic: (refPath) => (refPath === '/assets/tpl/02-pain.png' ? null : readPublic(refPath)),
+    }) === 'data:image/png;base64,STYLE');
+  check('参考图读取：全部候选不可读时返回 null（不抛错）',
+    await visualPlan.resolveVisualPlanReference(plan, { readAnchor: async () => null, readPublic: () => null }) === null);
+
+  // 复刻是计划的一个 mode：壳页结构卡参与页型证据，世界约束进提示词，不取额外参考图
+  const shellCard = {
+    family: 'table',
+    zones: '顶栏标题，下方三行参数表',
+    slots: '1 张 5 列表格',
+    hierarchy: '标题最大',
+    world: '水彩森林中的石板路',
+    forbidden: ['旧标题'],
+  };
+  const replicateSlide = {
+    pageIndex: 2,
+    pageType: '',
+    role: 'content',
+    title: '参数明细',
+    goal: '',
+    summary: ['处理器 A', '功耗 12W'],
+    structuredContent: '',
+  };
+  const replicatePlan = visualPlan.buildVisualPlan({
+    slide: replicateSlide,
+    deckContext: { totalPages: 1, pageIndex: 2 },
+    stylePack: pack,
+    template: { pages: templatePages, mapping: mappingRows },
+    mode: 'replicate',
+    replicate: { structure: shellCard, colorMode: 'follow-shell' },
+  });
+  check('复刻模式：页型证据纳入壳页结构卡（table + 标题）',
+    replicatePlan.pageTypeKey === 'table', `实际 ${replicatePlan.pageTypeKey}`);
+  check('复刻模式不取额外参考图（壳图由调用方作为改图底图）',
+    replicatePlan.references.length === 0 && replicatePlan.primaryReference === null);
+  check('复刻模式提示词保留壳世界：保画面 + 画面世界 + 跟随底图配色',
+    replicatePlan.prompt.includes('保画面')
+      && replicatePlan.prompt.includes('水彩森林中的石板路')
+      && replicatePlan.prompt.includes('跟随底图的主辅色'));
+  check('复刻模式提示词逐字带入页面文案',
+    replicatePlan.prompt.includes('参数明细') && replicatePlan.prompt.includes('处理器 A'));
+  check('复刻模式不注入八段主题推断段（避免冲掉壳画风）',
+    !replicatePlan.prompt.includes('页型协议')
+      && !replicatePlan.prompt.includes('全套全局视觉规范')
+      && !replicatePlan.prompt.includes('专业演示 PPT'));
+  const replicateNewTheme = visualPlan.buildVisualPlan({
+    slide: replicateSlide,
+    deckContext: { totalPages: 1, pageIndex: 2 },
+    stylePack: pack,
+    template: null,
+    mode: 'replicate',
+    replicate: { structure: shellCard, colorMode: 'new-theme' },
+  });
+  check('复刻模式配色策略分叉：new-theme 只换色板',
+    replicateNewTheme.prompt.includes('只换色板') && !replicateNewTheme.prompt.includes('跟随底图的主辅色'));
+  const replicateEmptyShell = visualPlan.buildVisualPlan({
+    slide: divergentSlide,
+    deckContext: { totalPages: 1, pageIndex: 0 },
+    stylePack: null,
+    template: null,
+    mode: 'replicate',
+    replicate: { structure: null, colorMode: 'follow-shell' },
+  });
+  check('复刻模式结构卡缺失时降级为从底图归纳，页型仍按标题证据解析',
+    replicateEmptyShell.pageTypeKey === 'pain-analysis'
+      && replicateEmptyShell.prompt.includes('从底图自行归纳'));
+
+  // 真模板映射（推导型模板页）+ 双路线提示词（原 test-mapping.mjs 并入）
+  const derivedPack = templates.getTemplate('anppt-original-innovation-20260822');
+  const derivedPages = templates.getTemplatePages(derivedPack);
+  const derivedSlides = [
+    { pageIndex: 0, pageType: '封面', role: 'cover', title: '封面' },
+    { pageIndex: 1, pageType: '团队介绍', role: 'content', title: '团队' },
+    { pageIndex: 2, pageType: '项目设计', role: 'content', title: '设计' },
+    { pageIndex: 3, pageType: '工作流程', role: 'content', title: '流程' },
+    { pageIndex: 4, pageType: '技能要点', role: 'content', title: '技能' },
+    { pageIndex: 5, pageType: '项目成果', role: 'content', title: '成果' },
+    { pageIndex: 6, pageType: '创新点', role: 'content', title: '创新' },
+    { pageIndex: 7, pageType: '应用价值', role: 'content', title: '价值' },
+    { pageIndex: 8, pageType: '谢谢', role: 'ending', title: '结尾' },
+    { pageIndex: 9, pageType: '痛点分析', role: 'content', title: '痛点' },
+    { pageIndex: 10, pageType: '大数字指标', role: 'content', title: '数据' },
+  ];
+  const derivedMapping = mapping.buildOutlinePageMapping(derivedSlides, derivedPages);
+  check('推导型真模板映射无 -1（每页都有载体）',
+    derivedMapping.every((row) => row.templatePageIndex >= 0));
+  check('推导型真模板：封面命中 cover 桶、数据页命中 data 桶',
+    derivedPages[derivedMapping[0].templatePageIndex]?.pageType === 'cover'
+      && derivedPages[derivedMapping[10].templatePageIndex]?.pageType === 'data');
+  check('空映射取模板参考图为 null', mapping.resolveTemplateReferenceImage(derivedPages, [], 0) === null);
+  const derivedStylePack = stylePacks.resolveStylePack(derivedPack.id);
+  const dualSlide = {
+    role: 'content',
+    pageType: '工作流程',
+    title: 'T',
+    goal: '',
+    copyLines: ['一步', '二步'],
+    visualNote: '',
+  };
+  const templateRoutePrompt = stylePacks.buildSlideImagePrompt(dualSlide, derivedStylePack, {
+    withStyleReferenceHint: true,
+    referenceMode: 'template',
+  });
+  const styleRoutePrompt = stylePacks.buildSlideImagePrompt(dualSlide, derivedStylePack, {
+    withStyleReferenceHint: true,
+    referenceMode: 'style',
+  });
+  check('template 路线提示=复刻版式骨架灌内容',
+    templateRoutePrompt.includes('真模板参考页')
+      && templateRoutePrompt.includes('复刻它的版式骨架')
+      && templateRoutePrompt.includes('把本页文案准确填入'));
+  check('style 路线提示=只借风格，两条路线提示不同',
+    styleRoutePrompt.includes('同风格参考样张')
+      && styleRoutePrompt.includes('只提取它的色板')
+      && templateRoutePrompt !== styleRoutePrompt);
+  check('kind 判断：模板包 vs 风格包',
+    templates.resolveTemplateKind(derivedPack) === 'template'
+      && templates.resolveTemplateKind('cmrk8asi10033v7fx2zbu1y2o') === 'style');
+
   // 改图后缀归模块
   const refined = visualPlan.buildVisualPlan({
     slide: divergentSlide,
@@ -145,6 +285,42 @@ export async function runVisualPlanTests(ctx) {
   check('两种模式共用同一页型键与参考优先级',
     refined.pageTypeKey === plan.pageTypeKey
       && refined.references.map((item) => item.source).join(',') === 'anchor,template,style');
+
+  // 八段提示词契约补强（原 test-prompt.mjs 中未被门覆盖的断言并入）
+  const contractSlide = {
+    role: 'content',
+    pageType: '痛点分析',
+    title: '传统种植决策依赖经验，损失率高',
+    goal: '建立问题链',
+    copyLines: ['经验判断导致灌溉时机误差大', '病虫害发现滞后，扩散快'],
+    visualNote: '',
+  };
+  const blueprintText = '一、画面氛围：冷峻科技感。\n二、色彩与材质：深海蓝底、琥珀橙强调。';
+  const contractPrompt = stylePacks.buildSlideImagePrompt(contractSlide, pack, {
+    withStyleReferenceHint: true,
+    deckContext: { totalPages: 9, pageIndex: 2, blueprint: blueprintText, deckTitle: '智慧农业' },
+  });
+  check('提示词含全局视觉规范段并完整注入蓝图正文',
+    contractPrompt.includes('全套全局视觉规范') && contractPrompt.includes(blueprintText));
+  check('页型协议五层（文字忠实/信息任务/构图/配图基因/禁忌）与防幻觉约束齐全',
+    ['1. 文字忠实', '2. 信息任务', '3. 构图与版式', '4. 配图基因', '5. 禁忌']
+      .every((layer) => contractPrompt.includes(layer))
+      && contractPrompt.includes('防幻觉约束'));
+  check('旧版式拼接已移除', !contractPrompt.includes('版式要求：'));
+  const noBlueprintPrompt = stylePacks.buildSlideImagePrompt(contractSlide, pack, {
+    deckContext: { totalPages: 9, pageIndex: 2 },
+  });
+  check('无蓝图时不出现规范段', !noBlueprintPrompt.includes('全套全局视觉规范'));
+  const coverContractPrompt = stylePacks.buildSlideImagePrompt(
+    { role: 'cover', pageType: '封面', title: '智慧农业', goal: '', copyLines: ['智慧农业'], visualNote: '' },
+    pack,
+    { deckContext: { totalPages: 9, pageIndex: 0 } },
+  );
+  check('封面协议与正文协议分层不同',
+    coverContractPrompt.includes('页型协议 · 封面页') && coverContractPrompt.includes('严禁出现数据图表'));
+  const competitorFingerprints = ['花卷', '抖研', 'MANDATORY TEXT CONTENT', 'PPT COVER MASTER', 'SMART TEMPLATE', 'flash-lite', 'gemini-3'];
+  check('提示词无竞品原文案残留',
+    competitorFingerprints.every((fingerprint) => !contractPrompt.includes(fingerprint) && !coverContractPrompt.includes(fingerprint)));
 
   // 蓝图：成功透出、失败在接口内降级为空串（调用方不再 catch）
   const bpDeck = { id: 'deck-visual-plan-bp', title: '蓝图接口测试', stylePackId: pack.id, sourceText: '素材' };
@@ -169,4 +345,30 @@ export async function runVisualPlanTests(ctx) {
     mode: 'generate',
   });
   check('空蓝图不留下空规范段', !emptyBlueprintPrompt.prompt.includes('全套全局视觉规范'));
+
+  // 蓝图缓存与指纹（原 test-prompt.mjs 并入）：同输入不重复调 LLM，大纲变化才重算
+  let bpFetchCount = 0;
+  const bpCachedFetch = async () => {
+    bpFetchCount += 1;
+    return new Response(JSON.stringify({ choices: [{ message: { content: '一、画面氛围：缓存命中。' } }] }), { status: 200 });
+  };
+  const cacheDeck = { id: 'deck-visual-plan-bp-cache', title: '蓝图缓存测试', stylePackId: pack.id, sourceText: '素材' };
+  const cachedFirst = await visualPlan.ensureVisualPlanBlueprint(cacheDeck, bpSlides, {
+    config: llmConfig,
+    fetchImpl: bpCachedFetch,
+  });
+  check('蓝图生成后落盘缓存',
+    cachedFirst.includes('缓存命中')
+      && existsSync(path.join(llmConfig.dataDir, 'blueprints', 'deck-visual-plan-bp-cache.json')));
+  const cachedSecond = await visualPlan.ensureVisualPlanBlueprint(cacheDeck, bpSlides, {
+    config: llmConfig,
+    fetchImpl: bpCachedFetch,
+  });
+  check('蓝图缓存命中不再调 LLM', cachedSecond === cachedFirst && bpFetchCount === 1);
+  const cacheInvalidated = await visualPlan.ensureVisualPlanBlueprint(
+    cacheDeck,
+    [{ pageType: 'cover', role: 'cover', title: '改了标题' }],
+    { config: llmConfig, fetchImpl: bpCachedFetch },
+  );
+  check('蓝图指纹随大纲变化失效重算', bpFetchCount === 2 && cacheInvalidated === cachedFirst);
 }
