@@ -118,7 +118,7 @@ NODE
 npm run gate         # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build（全 mock，零真实付费调用）
 npm run gate:fast    # 快集：跳过 build 与两套测试
 npm run test:guardrails  # 护栏自检：用坏夹具证明门/钩子/工作树/发布脚本会红
-# 单跑某一层（排查用）：node scripts/test-generation.mjs（707 断言）/ node scripts/test-backend.mjs（171 断言）
+# 单跑某一层（排查用）：node scripts/test-generation.mjs（708 断言）/ node scripts/test-backend.mjs（171 断言）
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）
 BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实生图扣费（约 $0.08），慎用
 ```
@@ -368,7 +368,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 页数上限与大套压缩（2026-10-28，T01）：页数上限从全局 20 改为「已配置通道链的能力上限」——`providers/registry.ts` 的 `editablePageCapacity(config)` = max(已配置通道的 `maxPages`)，`editable.ts` 的 `assertEditablePageCount` 是四个发起入口唯一判定处（deck / single-page / upload 图片数 / upload 页数）；只有全部已配置通道都接不住才 400 `EXPORT_TOO_MANY_PAGES`，文案给能力数字、不暴露供应商名（Codia-only = 20，配置 WPS/Image2PPT = 50）。文字可编辑档独立用产品上限 50，不继承 Codia 的 20。21–50 页来源在 `buildImagePdf` 合成前经 `compressPageImage` 转 JPEG（≤1920×1080、q88、白底；≥21 页触发，≤20 页仍原图直嵌），避开 Image2PPT 单文件上限。上传路由 `/api/editable-conversions` 删掉本地 `MAX_UPLOAD_FILES=20`，文件数上限读 `editablePageCapacity(config)`。对外文案（`/help`、`/about`、首页 FAQ、`/legal/terms`、`/tools/editable-converter`）统一为 50 页 + 「取决于当前可用转换通道」；整套目标页数上限 40，所以首页上传卡不再提示「超过 20 页不可转可编辑」。
 - 回调：`POST /api/webhooks/image2ppt` 只做验签和状态推进，最终下载仍走同一条管线；`saveEditableResult` 按 exportId 去重，避免 webhook 与 4s 轮询同时写文件。`PUBLIC_BASE_URL` 非 HTTPS 公网时自动省略 callback。
 - 监控：`/api/health` 新增 `editable.provider/providers/image2ppt/wps/queue`；`deploy/anppt-health-monitor.py` 在 Image2PPT/WPS 主通道未配置、Image2PPT 剩余额度 <20、Image2PPT/WPS 登录态失效（401/403）、在途 >45 分钟、或一小时内 ≥3 次失败且 0 成功时发邮件告警。改脚本后先 `python3 -m py_compile` 再手动跑一次。
-- 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/tests/editable-providers.test.mjs`（[6h]）覆盖能力声明（maxPages/resumable）、registry 回退顺序与页数过滤（20/21/51 边界、报价同口径）、通道能力上限 `editablePageCapacity`（0/20/50）、发起入口页数门（Codia-only 20/21、Image2PPT 50/51、文案不暴露通道名）、21–50 页来源 JPEG 压缩（1920×1080 / 21 段 JPEG 流 / 白底与红块保留 / 2 页控制组不压缩 / 20 页边界不压缩 / 上传来源同压缩）、假通道驱动管线（start→advance→save→cleanup、统一进度落库、attempts 重建、回退、同步通道）、恢复只走接口（未知通道 id / 不可恢复通道重跑）、共享文案与有限数解析；`scripts/test-generation.mjs` 当前 707 断言，全部 mock，禁止真实付费调用。
+- 测试：`scripts/tests/image2ppt.test.mjs`（[6f]）覆盖提交/鉴权/回读/签名/非法签名/完成回调/终态不降级/主备切换/仅 Image2PPT 报价；`scripts/tests/wps-aippt.test.mjs`（[6g]）覆盖 WPS 上传凭证/SSE 进度/真实 PPTX 字节校验/WPS 主通道落盘与 provider 记录/WPS 失效回退 Codia/provider 顺序；`scripts/tests/editable-providers.test.mjs`（[6h]）覆盖能力声明（maxPages/resumable）、registry 回退顺序与页数过滤（20/21/51 边界、报价同口径）、通道能力上限 `editablePageCapacity`（0/20/50）、发起入口页数门（Codia-only 20/21、Image2PPT/WPS 50/51、文案不暴露通道名）、21–50 页来源 JPEG 压缩（1920×1080 / 21 段 JPEG 流 / 白底与红块保留 / 2 页控制组不压缩 / 20 页边界不压缩 / 上传来源同压缩）、假通道驱动管线（start→advance→save→cleanup、统一进度落库、attempts 重建、回退、同步通道）、恢复只走接口（未知通道 id / 不可恢复通道重跑）、共享文案与有限数解析；`scripts/test-generation.mjs` 当前 708 断言，全部 mock，禁止真实付费调用。
 - 真机验收：2026-10-20 用非敏感单页 PDF 跑通 `startUploadedEditableExport → Image2PPT → 下载 → 落盘 → getExport`，输出 54,085 bytes PPTX；账户扣 1 credit。WPS 另用真实登录态跑通 `convertPdfWithWpsAippt`：1 页 PDF → 10,591 bytes PPTX，`slides/slide1.xml` 含可编辑 `<a:t>` 文本节点且无整页媒体图片；该验收命令不进测试套件。
 
 ## 29. deck 意图通道、动作前置与可用集合（2026-10-27；2026-10-28 升级 kind → 解析器）

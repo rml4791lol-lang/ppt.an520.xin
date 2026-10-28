@@ -185,6 +185,24 @@ export async function runEditableProviderTests(ctx) {
       `${accepted50.pageCount} ${accepted50.status} ${accepted50.credits}`);
     await accepted50.done;
 
+    const wpsConfigured = {
+      ...baseConfig,
+      codiaApiKey: '',
+      image2pptApiKey: '',
+      wpsAipptCookie: 'wps_sid=capacity',
+      editableProvider: 'wps',
+    };
+    const accepted50Wps = await exportsLib.startDeckEditableExport(
+      uid,
+      d50.id,
+      { config: wpsConfigured, providers: [capturingProvider().provider], pollIntervalMs: 1 },
+      { force: true },
+    );
+    check('配置 WPS：50 页整套也可发起（能力同样 50）',
+      accepted50Wps.pageCount === 50 && accepted50Wps.status === 'processing' && accepted50Wps.credits === 1000,
+      `${accepted50Wps.pageCount} ${accepted50Wps.status} ${accepted50Wps.credits}`);
+    await accepted50Wps.done;
+
     const d51 = makePagedDeck(51, sharedImage);
     const rejected51 = await startError(() => exportsLib.startDeckEditableExport(
       uid,
