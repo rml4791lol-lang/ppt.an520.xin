@@ -6,11 +6,12 @@
 //
 // 扣费键由域键模块产出（整套见 charge-keys.ts，前缀是历史账本契约），本模块只消费键：
 // claim 时把键写进域行，恢复优先读存储键，退款键统一由 credits.deriveRefundKey 定长派生。
+// 同一扣费键重放（客户端 requestId 场景）也在本模块识别：本次不扣也不退，钱归第一笔运行所有。
 // 在飞注册表也在本模块：域代码不再手调 mark 函数，批次作用域用 withInFlightRun，
 // 单次运行在 beginPaidRun 内自动登记/释放。判活（心跳过期）仍归恢复入口。
 import { ApiError, validationError } from '../http';
 import { logProblem } from '../problem-log';
-import { debitCredits, deriveRefundKey, refundCredits, type LedgerWriteResult } from '../credits';
+import { debitCredits, deriveRefundKey, refundCredits } from '../credits';
 import { getDb } from '../db';
 
 export interface PaidRunFailure {
@@ -41,11 +42,6 @@ export interface PaidRunInput<TRow, TResult> {
   reason: string;
   refundReason: string;
   store: PaidRunStore<TRow, TResult>;
-  /**
-   * 客户端幂等键型域（单页）：扣费命中已有键 = 请求重放，拒绝且不执行、不退款。
-   * 服务端键型域（整套）缺省 false：同键重放继续执行，幂等扣费不双扣。
-   */
-  rejectDuplicate?: boolean;
   now?: () => number;
 }
 
@@ -56,8 +52,8 @@ export interface ChargedPaidRun<TRow, TResult> {
 }
 
 export type BeginPaidRunResult<TRow, TResult> =
-  | { charged: true; run: ChargedPaidRun<TRow, TResult>; balance: number }
-  | { charged: false; failure: PaidRunFailure };
+  | { charged: true; balance: number; run: ChargedPaidRun<TRow, TResult> }
+  | { charged: false; duplicate: boolean; failure: PaidRunFailure };
 
 interface InFlightEntry {
   runId: string;
@@ -128,7 +124,10 @@ export async function withInFlightRun<T>(scope: InFlightScope, execute: () => Pr
 }
 
 /**
- * 开始一次计费运行。返回 charged=false 表示未扣费（行已置 failed，无需退款）。
+ * 开始一次计费运行。返回 charged=false 表示本次没有扣费（行已置 failed），无需退款：
+ * - 扣费失败（余额不足等）：duplicate=false；
+ * - 同一扣费键已有扣费（客户端 requestId 重放）：duplicate=true。钱归第一笔运行所有，
+ *   重放既不重复扣也不退款——在这里退会把上一笔的钱退掉。
  * 扣费成功即自动登记在飞；调用方只能用返回的 succeed/fail 收尾。
  */
 export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>): BeginPaidRunResult<TRow, TResult> {
@@ -144,7 +143,7 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     now: input.now,
   });
 
-  let debit: LedgerWriteResult;
+  let debit;
   try {
     debit = debitCredits(input.userId, input.unitPrice, {
       reason: input.reason,
@@ -159,19 +158,16 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     } finally {
       releaseInFlight(chargeKey);
     }
-    return { charged: false, failure };
+    return { charged: false, duplicate: false, failure };
   }
-
-  // 客户端幂等键型域：命中已有扣费键说明请求被重放——拒绝且不动已生成的结果，
-  // 也不退首笔（首笔的钱属于第一次请求）。域行在 claim 时已置运行态，由 markFailed 还原。
-  if (input.rejectDuplicate && debit.duplicate) {
-    const failure: PaidRunFailure = { code: 'DUPLICATE_REQUEST', message: '重复请求：请勿重复提交，刷新后可查看结果' };
+  if (debit.duplicate) {
+    const failure: PaidRunFailure = { code: 'DUPLICATE_CHARGE', message: '该扣费键已有扣费，本次未重复扣费' };
     try {
       input.store.markFailed(row, failure);
     } finally {
       releaseInFlight(chargeKey);
     }
-    return { charged: false, failure };
+    return { charged: false, duplicate: true, failure };
   }
 
   try {
@@ -191,7 +187,7 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
     } finally {
       releaseInFlight(chargeKey);
     }
-    return { charged: false, failure };
+    return { charged: false, duplicate: false, failure };
   }
 
   return {

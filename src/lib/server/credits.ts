@@ -37,14 +37,6 @@ function cleanKey(key: unknown): string {
 }
 
 /**
- * 扣费键归一（trim + 128 上限）：域键模块与扣费/退款必须同一口径，
- * 否则键模块产出的键写进行、扣费时却被截断，恢复按存储键拼出的退款键会找不到扣费行。
- */
-export function normalizeChargeKey(rawChargeKey: unknown): string {
-  return cleanKey(rawChargeKey);
-}
-
-/**
  * 扣费键 + 与之配对的退款幂等键（两者都按 cleanKey 归一）。
  * 退款键必须是定长派生值：写成 `${chargeKey}:refund` 时，超长 chargeKey 先被截成 128 字符、
  * 拼后缀后又截回同一个键，退款会命中扣费行被当作 duplicate 静默吞掉（不退星、无日志）。

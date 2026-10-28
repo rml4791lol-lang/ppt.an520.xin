@@ -160,15 +160,9 @@ export async function runPptReplicateTests(ctx) {
     const rp1 = await replicatePages.generateReplicatePage(uid, {
       pageId: 'rpok1', title: '新指标', content: '完成率 86%', imagePath: shell.relPath,
       colorMode: 'new-theme',
-      requestId: 'rp-paid-run',
       structureProvided: true,
       structure: { family: 'metric', zones: '左侧大数字', slots: '1 个指标', hierarchy: '数字最大', forbidden: ['旧营收数字'] },
     }, { fetchImpl: okFetcher, config: llmConfig });
-    const rpLedger = (await import('../../src/lib/server/db.ts')).getDb()
-      .prepare('SELECT idempotency_key FROM credit_ledger WHERE user_id = ? AND idempotency_key = ?')
-      .all(uid, 'single-page:rpok1:rp-paid-run');
-    check('复刻生成接入单页计费运行：扣费键由模块产出（写入即可按同键找账）',
-      rpLedger.length === 1, JSON.stringify(rpLedger));
     const editForm = okFetcher.calls.find((c) => c.url.includes('/images/edits'))?.init?.body;
     const rpPrompt = editForm instanceof FormData ? String(editForm.get('prompt') || '') : '';
     check('复刻走 edits 且扣 10🌟', rp1.status === 'succeeded' && beforeRp - rp1.balance === 10);
