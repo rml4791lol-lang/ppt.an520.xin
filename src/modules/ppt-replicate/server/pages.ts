@@ -1,5 +1,5 @@
-// 复刻的项目/页实体与生成入口：草稿写入、结构/配色合同与提示词归本模块；
-// 扣费/退款/版本/懒恢复仍只有平台单页运行时一份，这里只给它一个提示词策略。
+// 复刻的项目/页实体与生成入口：草稿写入与结构/配色合同归本模块；
+// 逐页提示词装配走视觉计划的 replicate 模式（保壳世界），扣费/退款/版本/懒恢复仍只有平台单页运行时一份。
 import { ApiError, validationError } from '@/lib/server/http';
 import { withTransaction } from '@/lib/server/db';
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
@@ -14,9 +14,8 @@ import {
 } from '@/lib/server/generation/single-pages';
 import { parseOwnedUploadRelPath } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
+import { buildVisualPlan } from '@/lib/server/generation/visual-plan';
 import {
-  buildReplicateCopyPrompt,
-  buildReplicateInstruction,
   parseIncomingStructure,
   resolveReplicateColorMode,
 } from './replicate';
@@ -115,18 +114,33 @@ export async function generateReplicatePage(
     projectSource: 'replicate',
     shellPath,
   });
-  const prompt = buildReplicateCopyPrompt({ title: page.title, content: page.content });
+  const plan = buildVisualPlan({
+    slide: {
+      pageIndex: page.pageIndex,
+      pageType: '',
+      role: 'content',
+      title: page.title,
+      goal: '',
+      summary: page.content.split(/\n+/).map((line) => line.trim()).filter(Boolean),
+    },
+    deckContext: { totalPages: 1, pageIndex: page.pageIndex },
+    // 壳图就是复刻的画面世界：不叠加风格/模板参考图
+    stylePack: null,
+    template: null,
+    mode: 'replicate',
+    replicate: {
+      structure: input.structureProvided ? parseIncomingStructure(input.structure) : null,
+      colorMode: resolveReplicateColorMode(input.colorMode),
+    },
+  });
   return runSinglePageJob(
     page,
     {
       kind: 'single-generate',
       requestId: input.requestId,
       sourceImagePath: shellPath,
-      promptOverride: prompt,
-      editInstruction: `${prompt}\n\n${buildReplicateInstruction({
-        structure: input.structureProvided ? parseIncomingStructure(input.structure) : null,
-        colorMode: resolveReplicateColorMode(input.colorMode),
-      })}`,
+      plan,
+      editInstruction: plan.prompt,
     },
     deps,
   );

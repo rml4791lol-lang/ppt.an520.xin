@@ -1,6 +1,7 @@
 // 单页生成器（创意页面生成器）：generate / refine / 导出图片版 PPTX。
-// 与 deck 共用生图上游与计费语义：claim/扣费/退款/终态顺序归 paid-run.ts（单价启动时快照一次），
-// 扣费键归 charge-keys.ts；复刻模块只提供提示词策略，钱与恢复全平台只有一份。
+// 与 deck 共用同一份视觉计划（页型证据、参考优先级、改图后缀）与生图上游；
+// 计费语义归 paid-run.ts（单价启动时快照一次），扣费键归 charge-keys.ts；
+// 复刻模块只提供 replicate 模式的计划输入，钱与恢复全平台只有一份。
 import { ApiError, validationError } from '../http';
 import { withTransaction } from '../db';
 import { estimateCredits } from '../credits';
@@ -12,14 +13,20 @@ import { singlePageChargeKey } from './charge-keys';
 import { beginPaidRun, type BeginPaidRunResult, type PaidRunFailure, type PaidRunStore } from './paid-run';
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { parseOwnedUploadRelPath, readSiteFile, saveFile } from './storage';
-import {
-  buildSlideImagePrompt,
-  loadStyleReferenceDataUrl,
-  resolveStylePack,
-  selectStyleReferencePath,
-  type SlidePromptInput,
-} from './style-packs';
+import { loadStyleReferenceDataUrl, resolveStylePack, type ResolvedStylePack } from './style-packs';
+import { getTemplate, getTemplatePages, resolveTemplateKind } from '../templates';
+import { buildOutlinePageMapping, type TemplateRouteContext } from './mapping';
+import type { PageTypeSpec } from './page-types';
 import { cleanString } from './types';
+import {
+  buildVisualPlan,
+  resolveVisualPlanPageTypes,
+  resolveVisualPlanReference,
+  type VisualPlan,
+  type VisualPlanMode,
+  type VisualPlanSlideInput,
+} from './visual-plan';
+
 export interface SinglePageDeps extends ImageDeps {
   /** 测试注入时钟：claim 行时间戳按它落库，恢复判活据此算过期（崩溃测试不再改库时间戳） */
   now?: () => number;
@@ -187,32 +194,50 @@ export function upsertPage(
   return getOwnedPage(userId, input.pageId);
 }
 
-function buildPagePrompt(
+/** 单页的视觉计划：与整套同一份页型证据与参考优先级（模板包按真模板路线取样张）。 */
+function buildSinglePageVisualPlan(
   page: SinglePageRow,
+  mode: VisualPlanMode,
   refineInstruction?: string,
-): { prompt: string; referencePath: string | null } {
+): VisualPlan {
   const pack = resolveStylePack(page.stylePackId);
-  const slideInput: SlidePromptInput = {
-    role: 'content',
+  const slide: VisualPlanSlideInput = {
+    pageIndex: page.pageIndex,
     pageType: '',
+    role: 'content',
     title: page.title,
     goal: '',
-    copyLines: page.content.split(/\n+/).map((line) => line.trim()).filter(Boolean),
-    visualNote: '',
+    summary: page.content.split(/\n+/).map((line) => line.trim()).filter(Boolean),
   };
-  const deckContext = { totalPages: 1, pageIndex: page.pageIndex, chapter: '' };
-  const referencePath = selectStyleReferencePath(slideInput, pack, deckContext);
-  const base = buildSlideImagePrompt(slideInput, pack, {
-    withStyleReferenceHint: Boolean(referencePath),
-    deckContext,
+  // 页型只解析一次：模板映射与提示词都读这里的键
+  const [pageType] = resolveVisualPlanPageTypes([slide]);
+  return buildVisualPlan({
+    slide,
+    deckContext: { totalPages: 1, pageIndex: page.pageIndex },
+    stylePack: pack,
+    template: singlePageTemplateRoute(pack, slide, pageType),
+    mode,
+    refineInstruction,
+    pageType,
   });
-  return {
-    prompt: refineInstruction
-      ? `${base}
+}
 
-改图要求（保持整体风格与版式）：${cleanString(refineInstruction, 1000)}`
-      : base,
-    referencePath,
+function singlePageTemplateRoute(
+  pack: ResolvedStylePack | null,
+  slide: VisualPlanSlideInput,
+  pageType: PageTypeSpec,
+): TemplateRouteContext | null {
+  const record = pack ? getTemplate(pack.id) : null;
+  if (!record || resolveTemplateKind(record) !== 'template') return null;
+  const pages = getTemplatePages(record);
+  if (pages.length === 0) return null;
+  return {
+    pages,
+    mapping: buildOutlinePageMapping(
+      [{ pageIndex: slide.pageIndex, pageType: slide.pageType, role: slide.role, title: slide.title, goal: slide.goal }],
+      pages,
+      [pageType],
+    ),
   };
 }
 
@@ -356,9 +381,9 @@ export interface SinglePageRunOptions {
   refineInstruction?: string;
   sourceImagePath?: string;
   requestId?: string;
-  /** 调用方自带的生图正文；缺省按风格包装配 */
-  promptOverride?: string;
-  /** 调用方自带的改图指令全文（仅生成原稿重设计分支）；缺省用平台模板 */
+  /** 调用方自带的视觉计划（复刻的 replicate 模式）；缺省按单页配方生成。 */
+  plan?: VisualPlan;
+  /** 原稿重设计分支的上游指令全文；缺省用平台模板 */
   editInstruction?: string;
 }
 
@@ -366,8 +391,7 @@ export interface SinglePageRunStart {
   began: BeginPaidRunResult<SinglePageVersionRow, SinglePageSavedImage>;
   jobId: string;
   chargeKey: string;
-  prompt: string;
-  referencePath: string | null;
+  plan: VisualPlan;
 }
 
 /**
@@ -386,9 +410,12 @@ export function beginSinglePagePaidRun(
   }).unitPrice;
   const jobId = genId('job');
   const chargeKey = singlePageChargeKey({ pageId: page.pageId, jobId, requestId: opts.requestId });
-  const { prompt, referencePath } = opts.promptOverride
-    ? { prompt: opts.promptOverride, referencePath: null }
-    : buildPagePrompt(page, opts.refineInstruction);
+  const plan = opts.plan
+    ?? buildSinglePageVisualPlan(
+      page,
+      opts.kind === 'single-refine' ? 'refine' : 'generate',
+      opts.refineInstruction,
+    );
   const began = beginPaidRun<SinglePageVersionRow, SinglePageSavedImage>({
     domain: 'single-page',
     userId: page.userId,
@@ -401,12 +428,12 @@ export function beginSinglePagePaidRun(
     refundReason: '单页生成失败退回',
     store: singlePageRunStore(
       page,
-      { jobId, chargeKey, versionKind: opts.kind === 'single-refine' ? 'refine' : 'generate', prompt },
+      { jobId, chargeKey, versionKind: opts.kind === 'single-refine' ? 'refine' : 'generate', prompt: plan.prompt },
       deps,
     ),
     now: deps.now,
   });
-  return { began, jobId, chargeKey, prompt, referencePath };
+  return { began, jobId, chargeKey, plan };
 }
 
 function paidRunApiError(failure: PaidRunFailure, duplicate: boolean): ApiError {
@@ -446,14 +473,17 @@ export async function runSinglePageJob(
       const source = await readSiteFile(opts.sourceImagePath, config);
       if (!source) throw new Error('原稿图不存在或已过期，请重新上传');
       const instruction = opts.editInstruction
-        ?? `${start.prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
+        ?? `${start.plan.prompt}\n\n参考上传的原稿图：保留其核心信息、层级与大致版式，按以上需求全面重新设计为精致的一页 16:9 演示页。`;
       image = await editImage({ image: source, instruction, userKey: page.userId }, runDeps);
     } else {
       const pack = resolveStylePack(page.stylePackId);
-      const referenceImages = start.referencePath
-        ? [loadStyleReferenceDataUrl(pack, start.referencePath)].filter((item): item is string => Boolean(item))
-        : [];
-      image = await generateImage({ prompt: start.prompt, referenceImages, userKey: page.userId }, runDeps);
+      // 参考图按计划优先级读取；某个候选读失败就顺延，不再整条丢弃参考
+      const reference = await resolveVisualPlanReference(start.plan, {
+        readAnchor: (anchorPath) => readSiteFile(anchorPath, config),
+        readPublic: (publicPath) => loadStyleReferenceDataUrl(pack, publicPath),
+      });
+      const referenceImages = reference ? [reference] : [];
+      image = await generateImage({ prompt: start.plan.prompt, referenceImages, userKey: page.userId }, runDeps);
     }
     const saved = await saveFile('generated', page.userId, image, { kind: 'single', ext: '.png', id: versionId }, config);
     run.succeed({ imagePath: saved.relPath, imageUrl: saved.url });

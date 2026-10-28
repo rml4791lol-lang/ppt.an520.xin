@@ -3,7 +3,7 @@
 import { ApiError } from '../http';
 import { logProblem } from '../problem-log';
 import { estimateCredits, getBalance } from '../credits';
-import { getGenerationConfig, type GenerationConfig } from './config';
+import { getGenerationConfig } from './config';
 import { deckChargeKey } from './charge-keys';
 import { getGenDb } from './db';
 import {
@@ -26,7 +26,6 @@ import {
   loadStyleReferenceDataUrl,
   resolveStylePack,
   type DeckContext,
-  type ResolvedStylePack,
 } from './style-packs';
 import { beginPaidRun, withInFlightRun, type PaidRunStore } from './paid-run';
 import { deckGateFacts, generationPrecondition } from '../../deck-gates';
@@ -35,7 +34,7 @@ import {
   buildVisualPlan,
   ensureVisualPlanBlueprint,
   resolveVisualPlanPageTypes,
-  type VisualPlanReference,
+  resolveVisualPlanReference,
 } from './visual-plan';
 import { getTemplate, getTemplatePages, resolveTemplateKind } from '../templates';
 import { cleanString, type JobKind } from './types';
@@ -49,19 +48,6 @@ export interface StartedJob {
   total: number;
   /** 测试用：等待整批结束。路由默认后台执行（void）。 */
   done: Promise<void>;
-}
-
-async function loadPlannedReference(
-  reference: VisualPlanReference,
-  pack: ResolvedStylePack | null,
-  config: GenerationConfig,
-): Promise<string | null> {
-  if (reference.source === 'anchor') {
-    // 锚点存站点存储（非 public 样张）；读失败返回 null，调用方顺延到下一候选
-    const anchor = await readSiteFile(reference.path, config);
-    return anchor ? `data:image/png;base64,${anchor.toString('base64')}` : null;
-  }
-  return loadStyleReferenceDataUrl(pack, reference.path);
 }
 
 async function runSlideGeneration(
@@ -183,14 +169,12 @@ async function runSlideGeneration(
       );
     } else {
       // 参考图按计划优先级读取；某个候选读失败就顺延，不再整条丢弃参考
-      let referenceImages: string[] = [];
-      for (const reference of plan.references) {
-        const dataUrl = await loadPlannedReference(reference, pack, config);
-        if (dataUrl) {
-          referenceImages = [dataUrl];
-          break;
-        }
-      }
+      const referenceImages: string[] = [];
+      const primary = await resolveVisualPlanReference(plan, {
+        readAnchor: (anchorPath) => readSiteFile(anchorPath, config),
+        readPublic: (publicPath) => loadStyleReferenceDataUrl(pack, publicPath),
+      });
+      if (primary) referenceImages.push(primary);
       image = await generateImage({ prompt: plan.prompt, referenceImages, userKey: deck.userId }, deps);
     }
     saved = await saveFile(
