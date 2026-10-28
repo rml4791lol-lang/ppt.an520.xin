@@ -11,7 +11,7 @@ import {
   type StyleReferenceKind,
 } from '../../../data/style-design-dna'
 import { ALL_STYLE_PACKS, STYLE_PACKS, type StylePack } from '../../../data/style-packs'
-import { resolvePageType, type PageTypeSpec } from './page-types'
+import { resolveSlidePageType, type PageTypeSpec } from './page-types'
 import { getPageProtocol } from './protocols'
 import { cleanString } from './types'
 
@@ -325,7 +325,7 @@ export function inferPresentationContext(
 }
 
 function pageSpecForSlide(slide: SlidePromptInput): PageTypeSpec {
-  return resolvePageType([slide.pageType, slide.title, slide.goal].filter(Boolean).join(' / '), slide.role)
+  return resolveSlidePageType(slide)
 }
 
 function referenceCandidates(dna: StyleDesignDNA, kind: StyleReferenceKind): number[] {
@@ -352,9 +352,11 @@ export function selectStyleReferencePath(
   slide: SlidePromptInput,
   pack: ResolvedStylePack | null,
   deck?: DeckContext,
+  /** 已解析页型（视觉计划一次解析后复用）；缺省按 slide 证据解析。 */
+  pageSpec?: PageTypeSpec,
 ): string | null {
   if (!pack || pack.previewPaths.length === 0) return null
-  const spec = pageSpecForSlide(slide)
+  const spec = pageSpec ?? pageSpecForSlide(slide)
   const candidates = referenceCandidates(pack.designDna, spec.referenceKind)
     .filter((index) => Number.isInteger(index) && index >= 0 && Boolean(pack.previewPaths[index]))
   if (candidates.length === 0) return pack.firstPreviewPath || pack.previewPaths[0] || null
@@ -428,6 +430,8 @@ export interface SlidePromptOptions {
   withStyleReferenceHint?: boolean
   deckContext?: DeckContext
   referenceMode?: 'style' | 'template'
+  /** 已解析页型（视觉计划一次解析后复用）；缺省按 slide 证据解析。 */
+  pageSpec?: PageTypeSpec
 }
 
 /** 按八段式契约组装生图提示词（段序即拼接序，空段跳过）。 */
@@ -437,7 +441,7 @@ export function buildSlideImagePromptStages(
   opts: SlidePromptOptions = {},
 ): SlidePromptStage[] {
   const copy = slide.copyLines.map((line) => cleanString(line, 1000)).filter(Boolean)
-  const pageSpec = pageSpecForSlide(slide)
+  const pageSpec = opts.pageSpec ?? pageSpecForSlide(slide)
   const deck = opts.deckContext
   const context = inferPresentationContext(slide, pack, deck)
   const texts: Record<SlidePromptStageKey, string> = {

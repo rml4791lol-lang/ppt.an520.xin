@@ -2,7 +2,6 @@
 // 由 scripts/test-generation.mjs 注入 ctx 调用；exportsLib 指向模块服务端出口。
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { startEditableWithDone } from './editable-start-helpers.mjs';
 
 export async function runEditableExportTests(ctx) {
   const {
@@ -10,11 +9,6 @@ export async function runEditableExportTests(ctx) {
     decks, singlePages, makeMockFetcher, editsOkHandler, PNG_1X1_B64, deck, actions, STYLE_PACKS, engineConfig, engineHandlers, imageConfig, jsonResponse,
   } = ctx;
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
-  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
-  const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
-  const startDeckTextEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    startEditableWithDone(exportsLib, exportsLib.deckTextEditableSource(userId, deckId), 'editable_text', deps, options);
   console.log('\n[6b] 可编辑导出（Codia 链全 mock，零真实调用）');
   {
     const codiaDeps = (fetchImpl) => ({ fetchImpl, config: baseConfig, pollIntervalMs: 1 });
@@ -72,7 +66,8 @@ export async function runEditableExportTests(ctx) {
         throw new Error(`snapshot fetch 未命中: ${href}`);
       };
       try {
-        const started = await startDeckEditableFor(uid, deck.id, { fetchImpl: fetcher, pollIntervalMs: 1, retryDelayMs: 0 }, { force: true },
+        const started = await exportsLib.startDeckEditableExport(
+          uid, deck.id, { fetchImpl: fetcher, pollIntervalMs: 1, retryDelayMs: 0 }, { force: true },
         );
         await started.done;
         const codiaCalls = upstreamCalls.filter((call) => call.href.includes('/v2/open/'));
@@ -108,7 +103,7 @@ export async function runEditableExportTests(ctx) {
         { match: 'r1.pptx', payload: new Response(Buffer.from('mock-pptx-binary')) },
       ]);
       const before = credits.getBalance(uid);
-      const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
+      const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
       check('可编辑导出发起：processing + 40🌟（20×2页）',
         started.status === 'processing' && started.credits === 40 && started.pageCount === 2);
       await started.done;
@@ -127,7 +122,7 @@ export async function runEditableExportTests(ctx) {
           && createBody.input.upload_id === 'upl_1'
           && JSON.stringify(createBody.input.page_no) === '[0,1]'
           && createInits[0].headers['Idempotency-Key'] === `anppt-editable-${started.exportId}`);
-      const reused = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher));
+      const reused = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
       check('同源成功结果默认复用：同 exportId、0 扣星、无新上游请求',
         reused.exportId === started.exportId && reused.reused && reused.credits === 0 && createInits.length === 1);
     }
@@ -151,7 +146,7 @@ export async function runEditableExportTests(ctx) {
         { match: 'r2.pptx', payload: new Response(Buffer.from('mock-pptx-binary-2')) },
       ]);
       const before = credits.getBalance(uid);
-      const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
+      const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
       await started.done;
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('首次失败自动重试后成功', exp.status === 'succeeded', `实际 ${exp.status} ${exp.error}`);
@@ -173,7 +168,7 @@ export async function runEditableExportTests(ctx) {
         { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_f' } } },
       ]);
       const before = credits.getBalance(uid);
-      const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
+      const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
       await started.done;
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('两次失败 → status=failed 且 error 非空', exp.status === 'failed' && exp.error.length > 0, `实际 ${exp.status}`);
@@ -194,7 +189,7 @@ export async function runEditableExportTests(ctx) {
         { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_402' } } },
       ]);
       const before = credits.getBalance(uid);
-      const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
+      const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
       await started.done;
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('上游 402 → failed + error 含「暂时不可用」', exp.status === 'failed' && exp.error.includes('暂时不可用'), `实际 ${exp.error}`);
@@ -224,7 +219,7 @@ export async function runEditableExportTests(ctx) {
       credits.debitCredits(poorE.user.id, 50, { reason: '测试花掉', idempotencyKey: 'test-drain-6b' });
       // 100（注册） - 20（生成 2 页） - 50 = 30 < 40（可编辑需 20×2）
       await expectThrows('余额 30 < 40 → 402 INSUFFICIENT_CREDITS', () =>
-        startDeckEditableFor(poorE.user.id, pd.id, codiaDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
+        exportsLib.startDeckEditableExport(poorE.user.id, pd.id, codiaDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
       const editableRows = Number(
         genDb.prepare("SELECT COUNT(*) AS c FROM export_jobs WHERE ref_id = ? AND kind = 'editable'").get(pd.id)?.c || 0,
       );
@@ -241,7 +236,7 @@ export async function runEditableExportTests(ctx) {
       const ins = genDb.prepare('INSERT INTO deck_slides (id, deck_id, page_index, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
       for (let i = 0; i < 21; i += 1) ins.run(`s21_${i}`, d21.id, i, Date.now(), Date.now());
       await expectThrows('21 页 → 400 EXPORT_TOO_MANY_PAGES', () =>
-        startDeckEditableFor(uid, d21.id, codiaDeps(makeMockFetcher([]))), 'EXPORT_TOO_MANY_PAGES');
+        exportsLib.startDeckEditableExport(uid, d21.id, codiaDeps(makeMockFetcher([]))), 'EXPORT_TOO_MANY_PAGES');
     }
 
     // ---- 并发：processing 中再次 start → 409 EXPORT_RUNNING ----
@@ -254,8 +249,8 @@ export async function runEditableExportTests(ctx) {
         { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_c', status: 'pending' } } },
         { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_c' } } },
       ]);
-      const started = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher), { force: true });
-      const reused = await startDeckEditableFor(uid, deck.id, codiaDeps(fetcher));
+      const started = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher), { force: true });
+      const reused = await exportsLib.startDeckEditableExport(uid, deck.id, codiaDeps(fetcher));
       check('processing 中再次 start → 复用同一任务且不扣星', reused.exportId === started.exportId && reused.reused && reused.credits === 0);
       release = true;
       await started.done;
@@ -315,7 +310,7 @@ export async function runEditableExportTests(ctx) {
         durationMinutes: 5, targetPageCount: 1, qualityTier: 'standard', stylePackId: '',
       });
       await expectThrows('未 generated deck → 409 EXPORT_NOT_READY', () =>
-        startDeckEditableFor(uid, dNg.id, codiaDeps(makeMockFetcher([]))), 'EXPORT_NOT_READY');
+        exportsLib.startDeckEditableExport(uid, dNg.id, codiaDeps(makeMockFetcher([]))), 'EXPORT_NOT_READY');
     }
 
     // ---- 路由层：缺 CSRF 403 / 未登录 401（均不触达上游）----
@@ -688,7 +683,7 @@ export async function runEditableExportTests(ctx) {
     {
       const fetcher = makeMockFetcher([{ match: '/chat/completions', payload: vlmOkPayload }]);
       const before = credits.getBalance(uid);
-      const started = await startDeckTextEditableFor(uid, deck.id, textDeps(fetcher), { force: true });
+      const started = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher), { force: true });
       check('文字可编辑发起：processing + 10🌟（5×2页）',
         started.status === 'processing' && started.credits === 10 && started.pageCount === 2);
       await started.done;
@@ -709,7 +704,7 @@ export async function runEditableExportTests(ctx) {
       check('slide1 XML 含 VLM 提取的文字（可编辑文本框）', slide1.includes('年度销售汇报') && slide1.includes('销售额 1200 万元'));
       check('slide1 XML 含覆盖底色块与提取色值', slide1.includes('solidFill') && slide1.includes('1A2B3C'));
 
-      const reused = await startDeckTextEditableFor(uid, deck.id, textDeps(fetcher));
+      const reused = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher));
       check('同源成功结果默认复用：同 exportId、0 扣星',
         reused.exportId === started.exportId && reused.reused && reused.credits === 0);
       const listText = exportsLib.listExports(uid, { refType: 'deck', refId: deck.id, kind: 'editable_text' });
@@ -727,7 +722,7 @@ export async function runEditableExportTests(ctx) {
         if (n <= 3) throw new Error('mock VLM 抖动');
         return vlmOkPayload;
       } }]);
-      const started = await startDeckTextEditableFor(uid, deck.id, textDeps(fetcher), { force: true });
+      const started = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher), { force: true });
       await started.done;
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('单页 VLM 失败降级为纯图片页，整体仍成功', exp.status === 'succeeded', `实际 ${exp.status} ${exp.error || ''}`);
@@ -737,7 +732,7 @@ export async function runEditableExportTests(ctx) {
     {
       const fetcher = makeMockFetcher([]);
       const before = credits.getBalance(uid);
-      const started = await startDeckTextEditableFor(uid, deck.id, textDeps(fetcher), { force: true });
+      const started = await exportsLib.startDeckTextEditableExport(uid, deck.id, textDeps(fetcher), { force: true });
       await started.done;
       const exp = await exportsLib.getExport(uid, started.exportId);
       check('全部页 VLM 失败 → failed + 全额退星',
@@ -790,7 +785,7 @@ export async function runEditableExportTests(ctx) {
 
       credits.refundCredits(uid, 400, { reason: '文字档上限测试补贴', idempotencyKey: 'test-topup-text-page-cap' });
       const d50 = makeTextDeck(50);
-      const started50 = await startDeckTextEditableFor(uid, d50.id, textDeps(makeMockFetcher([])), { force: true });
+      const started50 = await exportsLib.startDeckTextEditableExport(uid, d50.id, textDeps(makeMockFetcher([])), { force: true });
       check('文字可编辑档 50 页可发起（Codia-only 配置也不因 20 被拒）',
         started50.pageCount === 50 && started50.credits === 250 && started50.status === 'processing',
         `${started50.pageCount} ${started50.status} ${started50.credits}`);
@@ -799,7 +794,7 @@ export async function runEditableExportTests(ctx) {
       const d51 = makeTextDeck(51);
       let rejected = null;
       try {
-        await startDeckTextEditableFor(uid, d51.id, textDeps(makeMockFetcher([])), { force: true });
+        await exportsLib.startDeckTextEditableExport(uid, d51.id, textDeps(makeMockFetcher([])), { force: true });
       } catch (error) {
         rejected = error;
       }
@@ -831,7 +826,7 @@ export async function runEditableExportTests(ctx) {
       credits.debitCredits(poorT.user.id, 75, { reason: '测试花掉', idempotencyKey: 'test-drain-6e' });
       // 100（注册） - 20（生成 2 页） - 75 = 5 < 10（文字可编辑需 5×2）
       await expectThrows('余额 5 < 10 → 402 INSUFFICIENT_CREDITS', () =>
-        startDeckTextEditableFor(poorT.user.id, pd.id, textDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
+        exportsLib.startDeckTextEditableExport(poorT.user.id, pd.id, textDeps(makeMockFetcher([]))), 'INSUFFICIENT_CREDITS');
       const textRows = Number(
         genDb.prepare("SELECT COUNT(*) AS c FROM export_jobs WHERE ref_id = ? AND kind = 'editable_text'").get(pd.id)?.c || 0,
       );
@@ -867,143 +862,6 @@ export async function runEditableExportTests(ctx) {
       const passedJson = await passedGate.json();
       check('测试用户过开关门 → 落到 DECK_NOT_FOUND（证明门已过）',
         passedGate.status === 404 && passedJson?.error?.code === 'DECK_NOT_FOUND', `实际 ${passedGate.status} ${passedJson?.error?.code}`);
-    }
-  }
-
-  console.log('\n[6i] 可编辑导出单一起入口（source 适配器 + 可序列化共享 view，T10）');
-  {
-    const genDb = (await import('../../src/lib/server/generation/db.ts')).getGenDb();
-    const ledgerKeys = () =>
-      genDb.prepare('SELECT idempotency_key FROM credit_ledger WHERE user_id = ?').all(uid).map((r) => String(r.idempotency_key));
-    const START_VIEW_KEYS = 'completedPages,credits,exportId,pageCount,progress,reused,stage,status,totalPages,url';
-    const codiaDeps = (fetchImpl) => ({ fetchImpl, config: baseConfig, pollIntervalMs: 1, retryDelayMs: 0 });
-    const codiaOkFetcher = () => makeMockFetcher([
-      { match: '/v2/open/tasks/', payload: { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/t10.pptx', page_count: 2 } } } },
-      { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_t10', status: 'pending' } } },
-      { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_t10' } } },
-      { match: 't10.pptx', payload: new Response(Buffer.from('t10-pptx')) },
-    ]);
-    const textConfig = { ...llmConfig, llmModel: 'vlm-t10', llmFallbackModels: ['vlm-t10-fb'] };
-    const textFetcher = () => makeMockFetcher([{ match: '/chat/completions', payload: {
-      choices: [{ message: { content: JSON.stringify([{ text: '单入口文字层', box: [0.1, 0.1, 0.5, 0.2], fontSize: 0.05, color: '112233', bold: false, align: 'left' }]) } }],
-      usage: { prompt_tokens: 100, completion_tokens: 20 },
-    } }]);
-    credits.refundCredits(uid, 500, { reason: '单入口测试补贴', idempotencyKey: 'test-topup-t10' });
-
-    // ---- 两个 kind 同形共享 view：无 done、可 JSON 往返、经注入 deps 等管线 ----
-    {
-      const before = credits.getBalance(uid);
-      const pipelines = [];
-      const view = await exportsLib.startEditableExport(
-        exportsLib.deckEditableSource(uid, deck.id),
-        'editable',
-        { force: true, deps: { ...codiaDeps(codiaOkFetcher()), onPipelineDone: (done) => pipelines.push(done) } },
-      );
-      check('单入口：deck 返回恰好 10 个字段的共享 view',
-        Object.keys(view).sort().join(',') === START_VIEW_KEYS, Object.keys(view).join(','));
-      check('单入口：共享 view 不含 done（生产接口移除测试专用 promise）', !('done' in view));
-      check('单入口：共享 view 可序列化（JSON 往返不变）',
-        JSON.stringify(JSON.parse(JSON.stringify(view))) === JSON.stringify(view));
-      check('单入口：测试经 deps.onPipelineDone 拿到完成信号', pipelines.length === 1, String(pipelines.length));
-      await Promise.all(pipelines);
-      const exp = await exportsLib.getExport(uid, view.exportId);
-      check('单入口：deck 管线落盘 succeeded', exp.status === 'succeeded' && exp.url.startsWith('/api/files/exports/'));
-      check('单入口：20🌟/页 净扣 40', before - credits.getBalance(uid) === 40, `${before} → ${credits.getBalance(uid)}`);
-      check('单入口：ledger 键 export-editable:<deckId>:<exportId> 唯一',
-        ledgerKeys().filter((key) => key === `export-editable:${deck.id}:${view.exportId}`).length === 1);
-
-      const textBefore = credits.getBalance(uid);
-      const textPipelines = [];
-      const textView = await exportsLib.startEditableExport(
-        exportsLib.deckTextEditableSource(uid, deck.id),
-        'editable_text',
-        { force: true, deps: { config: textConfig, fetchImpl: textFetcher(), onPipelineDone: (done) => textPipelines.push(done) } },
-      );
-      check('单入口：文字版走同一入口且同形 10 字段 / 无 done',
-        Object.keys(textView).sort().join(',') === START_VIEW_KEYS && !('done' in textView));
-      check('单入口：文字版 5🌟/页 净扣 10', textBefore - credits.getBalance(uid) === 10, `${textBefore} → ${credits.getBalance(uid)}`);
-      await Promise.all(textPipelines);
-      const textExp = await exportsLib.getExport(uid, textView.exportId);
-      check('单入口：文字版管线落盘 + kind=editable_text',
-        textExp.status === 'succeeded' && textExp.kind === 'editable_text');
-      check('单入口：文字版 ledger 键前缀独立',
-        ledgerKeys().filter((key) => key === `export-editable-text:${deck.id}:${textView.exportId}`).length === 1);
-    }
-
-    // ---- 页数上限来自来源适配器的共享策略，不是 starter 里的字面量 ----
-    {
-      const codiaOnly = { ...baseConfig, codiaApiKey: 'sk-t10', image2pptApiKey: '', wpsAipptCookie: '' };
-      const withImage2Ppt = { ...codiaOnly, image2pptApiKey: 'i2p-t10' };
-      const imageSource = exportsLib.deckEditableSource(uid, deck.id);
-      const textSource = exportsLib.deckTextEditableSource(uid, deck.id);
-      check('单入口：图片版页数上限读通道能力（Codia-only 20 / 加 Image2PPT 50）',
-        imageSource.pageCap(codiaOnly).capacity === 20 && imageSource.pageCap(withImage2Ppt).capacity === 50,
-        `${imageSource.pageCap(codiaOnly).capacity} / ${imageSource.pageCap(withImage2Ppt).capacity}`);
-      check('单入口：文字版页数上限取产品口径 50，不随通道配置变化',
-        textSource.pageCap(codiaOnly).capacity === 50 && textSource.pageCap(withImage2Ppt).capacity === 50);
-      check('单入口：拒绝文案量词由来源声明（整套 = 单套）',
-        imageSource.pageCap(codiaOnly).scope === '单套' && textSource.pageCap(codiaOnly).scope === '单套');
-    }
-
-    // ---- 复用 / force 语义保持不变 ----
-    {
-      const source = exportsLib.deckEditableSource(uid, deck.id);
-      const succeeded = genDb.prepare(
-        "SELECT id FROM export_jobs WHERE user_id = ? AND ref_type = 'deck' AND ref_id = ? AND kind = 'editable' AND status = 'succeeded' ORDER BY created_at DESC LIMIT 1",
-      ).get(uid, deck.id);
-      const reused = await exportsLib.startEditableExport(source, 'editable', { deps: codiaDeps(codiaOkFetcher()) });
-      check('单入口：同源成功结果默认复用（同 exportId / 0 扣星）',
-        reused.exportId === String(succeeded?.id) && reused.reused && reused.credits === 0,
-        `${reused.exportId} ${reused.reused} ${reused.credits}`);
-      const forcedBefore = credits.getBalance(uid);
-      const forcedPipelines = [];
-      const forced = await exportsLib.startEditableExport(source, 'editable', {
-        force: true,
-        deps: { ...codiaDeps(codiaOkFetcher()), onPipelineDone: (done) => forcedPipelines.push(done) },
-      });
-      check('单入口：force 重新建行并按页扣星',
-        forced.exportId !== String(succeeded?.id) && !forced.reused && forced.credits === 40
-          && forcedBefore - credits.getBalance(uid) === 40);
-      await Promise.all(forcedPipelines);
-    }
-
-    // ---- 失败退星语义保持不变 ----
-    {
-      const failingFetcher = () => makeMockFetcher([
-        { match: '/v2/open/tasks/', payload: { code: 0, message: 'ok', data: { status: 'failed', error: 't10 mock failed' } } },
-        { match: '/v2/open/tasks', payload: { code: 0, message: 'ok', data: { task_id: 'task_t10f', status: 'pending' } } },
-        { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_t10f' } } },
-      ]);
-      const before = credits.getBalance(uid);
-      const pipelines = [];
-      const view = await exportsLib.startEditableExport(
-        exportsLib.deckEditableSource(uid, deck.id),
-        'editable',
-        { force: true, deps: { ...codiaDeps(failingFetcher()), onPipelineDone: (done) => pipelines.push(done) } },
-      );
-      await Promise.all(pipelines);
-      const exp = await exportsLib.getExport(uid, view.exportId);
-      check('单入口：失败 → failed + 全额退星', exp.status === 'failed' && credits.getBalance(uid) === before,
-        `${exp.status} ${before} → ${credits.getBalance(uid)}`);
-      check('单入口：退款键唯一（export-editable 前缀派生）',
-        ledgerKeys().filter((key) => key === credits.deriveRefundKey(`export-editable:${deck.id}:${view.exportId}`)).length === 1);
-    }
-
-    // ---- 路由只做鉴权/参数/调用/序列化：两个路由同一个单入口，响应体就是共享 view ----
-    {
-      const routeSource = readFileSync(new URL('../../src/app/api/deck/[id]/export-editable/route.ts', import.meta.url), 'utf8');
-      const textRouteSource = readFileSync(new URL('../../src/app/api/deck/[id]/export-editable-text/route.ts', import.meta.url), 'utf8');
-      const moduleSource = readFileSync(new URL('../../src/modules/editable-export/server/editable.ts', import.meta.url), 'utf8');
-      check('deck 路由：调用单入口并直接序列化共享 view（不再手抄 10 字段）',
-        routeSource.includes('deckEditableSource') && routeSource.includes('startEditableExport')
-          && /jsonOk\(\s*started\b/.test(routeSource) && !routeSource.includes('startDeckEditableExport')
-          && !routeSource.includes('started.exportId'));
-      check('文字版路由：调用单入口并直接序列化共享 view（不再手抄 10 字段）',
-        textRouteSource.includes('deckTextEditableSource') && textRouteSource.includes('startEditableExport')
-          && /jsonOk\(\s*started\b/.test(textRouteSource) && !textRouteSource.includes('startDeckTextEditableExport')
-          && !textRouteSource.includes('started.exportId'));
-      check('单入口：旧 deck/text starter 已从模块出口删除',
-        !/export async function startDeck(Text)?EditableExport/.test(moduleSource));
     }
   }
 

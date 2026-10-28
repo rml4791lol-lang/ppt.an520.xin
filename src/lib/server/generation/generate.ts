@@ -3,7 +3,7 @@
 import { ApiError } from '../http';
 import { logProblem } from '../problem-log';
 import { estimateCredits, getBalance } from '../credits';
-import { getGenerationConfig } from './config';
+import { getGenerationConfig, type GenerationConfig } from './config';
 import { deckChargeKey } from './charge-keys';
 import { getGenDb } from './db';
 import {
@@ -23,20 +23,23 @@ import {
 import { editImage, generateImage, toPublicImageError, type ImageDeps } from './images';
 import { readSiteFile, saveFile } from './storage';
 import {
-  buildSlideImagePrompt,
   loadStyleReferenceDataUrl,
   resolveStylePack,
-  selectStyleReferencePath,
   type DeckContext,
-  type SlidePromptInput,
+  type ResolvedStylePack,
 } from './style-packs';
 import { beginPaidRun, withInFlightRun, type PaidRunStore } from './paid-run';
 import { deckGateFacts, generationPrecondition } from '../../deck-gates';
-import { ensureDeckBlueprint } from './blueprint';
-import { buildOutlinePageMapping, resolveTemplateReferenceImage, type TemplateRouteContext } from './mapping';
+import { buildOutlinePageMapping, type TemplateRouteContext } from './mapping';
+import {
+  buildVisualPlan,
+  ensureVisualPlanBlueprint,
+  resolveVisualPlanPageTypes,
+  type VisualPlanReference,
+} from './visual-plan';
 import { getTemplate, getTemplatePages, resolveTemplateKind } from '../templates';
-import { extractCopyFromDsl } from './dsl';
 import { cleanString, type JobKind } from './types';
+import type { PageTypeSpec } from './page-types';
 
 export type GenerateDeps = ImageDeps;
 
@@ -48,56 +51,17 @@ export interface StartedJob {
   done: Promise<void>;
 }
 
-function promptForSlide(
-  slide: DeckSlideRow,
-  stylePackId: string,
-  refineInstruction?: string,
-  deckContext?: DeckContext,
-  template?: TemplateRouteContext | null,
-  anchorImagePath?: string,
-): { prompt: string; referencePath: string | null; anchorReference: boolean } {
-  const pack = resolveStylePack(stylePackId);
-  const copy = extractCopyFromDsl(slide.structuredContent);
-  const copyLines = copy.lines.length > 0 ? copy.lines : slide.summary;
-  const slideInput: SlidePromptInput = {
-    role: slide.role,
-    pageType: slide.pageType,
-    title: copy.title || slide.title,
-    goal: slide.goal,
-    copyLines,
-    visualNote: slide.visualNote,
-  };
-  const resolvedDeckContext = deckContext ?? {
-    totalPages: 1,
-    pageIndex: slide.pageIndex,
-    chapter: slide.chapter,
-  };
-  // 双路线分流：真模板按 outline_page_mapping 取对应模板页参考图（版式高保真灌内容）；
-  // 风格包走 design-dna 参考样张（只借风格）。模板未命中页回退风格参考。
-  // 用户显式「设为参考图」的风格锚点优先于两条路线。
-  let referencePath: string | null = anchorImagePath || null;
-  let referenceMode: 'style' | 'template' = 'style';
-  if (!referencePath && template && template.mapping.length > 0) {
-    referencePath = resolveTemplateReferenceImage(template.pages, template.mapping, slide.pageIndex);
-    if (referencePath) referenceMode = 'template';
+async function loadPlannedReference(
+  reference: VisualPlanReference,
+  pack: ResolvedStylePack | null,
+  config: GenerationConfig,
+): Promise<string | null> {
+  if (reference.source === 'anchor') {
+    // 锚点存站点存储（非 public 样张）；读失败返回 null，调用方顺延到下一候选
+    const anchor = await readSiteFile(reference.path, config);
+    return anchor ? `data:image/png;base64,${anchor.toString('base64')}` : null;
   }
-  if (!referencePath) {
-    referencePath = selectStyleReferencePath(slideInput, pack, resolvedDeckContext);
-  }
-  const anchorReference = Boolean(anchorImagePath) && referencePath === anchorImagePath;
-  const prompt = buildSlideImagePrompt(slideInput, pack, {
-    withStyleReferenceHint: Boolean(referencePath),
-    deckContext: resolvedDeckContext,
-    referenceMode,
-  });
-  if (!refineInstruction) return { prompt, referencePath, anchorReference };
-  return {
-    prompt: `${prompt}
-
-改图要求（在保持整体风格与版式的前提下执行）：${cleanString(refineInstruction, 1000)}`,
-    referencePath,
-    anchorReference,
-  };
+  return loadStyleReferenceDataUrl(pack, reference.path);
 }
 
 async function runSlideGeneration(
@@ -111,6 +75,8 @@ async function runSlideGeneration(
     refineExtraNote?: string;
     deckContext?: DeckContext;
     template?: TemplateRouteContext | null;
+    /** 整套路径已解析页型（映射与提示词读同一键）；单页路径缺省。 */
+    pageType?: PageTypeSpec;
     /** 任务启动时估价的单价快照：逐页扣费与退款都按它，不重新读价 */
     unitPrice: number;
   },
@@ -120,18 +86,25 @@ async function runSlideGeneration(
   const { unitPrice } = opts;
   // 扣费键形状归 charge-keys（前缀是历史账本契约）；claim/扣费/退款/终态顺序归 paid-run
   const chargeKey = deckChargeKey({ deckId: deck.id, jobId, slideId: slide.slideId });
-  const { prompt, referencePath, anchorReference } = promptForSlide(
+  const pack = resolveStylePack(deck.stylePackId);
+  const plan = buildVisualPlan({
     slide,
-    deck.stylePackId,
-    opts.refineInstruction,
-    opts.deckContext,
-    opts.template,
-    deck.anchorImagePath || undefined,
-  );
+    deckContext: opts.deckContext ?? {
+      totalPages: 1,
+      pageIndex: slide.pageIndex,
+      chapter: slide.chapter,
+    },
+    stylePack: pack,
+    template: opts.template,
+    anchorImagePath: deck.anchorImagePath || undefined,
+    mode: kind === 'deck-refine' ? 'refine' : 'generate',
+    refineInstruction: opts.refineInstruction,
+    pageType: opts.pageType,
+  });
   const store: PaidRunStore<SlideVersionRow, { imagePath: string; imageUrl: string }> = {
     claim: (key) => createSlideVersion(slide, {
       kind: kind === 'deck-refine' ? 'refine' : 'generate',
-      prompt,
+      prompt: plan.prompt,
       jobId,
       chargeKey: key,
     }),
@@ -209,18 +182,16 @@ async function runSlideGeneration(
         deps,
       );
     } else {
-      const pack = resolveStylePack(deck.stylePackId);
+      // 参考图按计划优先级读取；某个候选读失败就顺延，不再整条丢弃参考
       let referenceImages: string[] = [];
-      if (referencePath) {
-        if (anchorReference) {
-          // 锚点存站点存储（非 public 样张），读取失败降级为无参考，不阻塞生成
-          const anchor = await readSiteFile(referencePath, config);
-          if (anchor) referenceImages = [`data:image/png;base64,${anchor.toString('base64')}`];
-        } else {
-          referenceImages = [loadStyleReferenceDataUrl(pack, referencePath)].filter((item): item is string => Boolean(item));
+      for (const reference of plan.references) {
+        const dataUrl = await loadPlannedReference(reference, pack, config);
+        if (dataUrl) {
+          referenceImages = [dataUrl];
+          break;
         }
       }
-      image = await generateImage({ prompt, referenceImages, userKey: deck.userId }, deps);
+      image = await generateImage({ prompt: plan.prompt, referenceImages, userKey: deck.userId }, deps);
     }
     saved = await saveFile(
       'generated',
@@ -313,24 +284,21 @@ export async function startDeckGeneration(
 
   const done = withInFlightRun({ runId: job.jobId, domain: 'deck', userId, action: kind }, async () => {
     try {
-      // 全局视觉规范：每套一次 LLM（平台吸收），缓存命中则零成本；失败降级为空串不阻塞生成
-      const blueprint = await ensureDeckBlueprint(deck, allSlides, runDeps).catch((error: unknown) => {
-        console.warn(
-          '[anppt-v2][generation] 全局视觉规范生成失败，本次不带规范继续:',
-          error instanceof Error ? error.message : error,
-        );
-        return '';
-      });
+      // 全局视觉规范：每套一次 LLM（平台吸收），缓存命中则零成本；失败在视觉计划接口内降级为空串
+      const blueprint = await ensureVisualPlanBlueprint(deck, allSlides, runDeps);
       // 双路线分流：真模板（kind=template）先算 outline_page_mapping，整批复用
       const stylePackRecord = getTemplate(deck.stylePackId);
       const templatePages =
         stylePackRecord && resolveTemplateKind(stylePackRecord) === 'template'
           ? getTemplatePages(stylePackRecord)
           : [];
+      // 页型只解析一次：映射与逐页提示词都读这里的键
+      const pageTypes = resolveVisualPlanPageTypes(allSlides);
       const template: TemplateRouteContext | null =
         templatePages.length > 0
-          ? { pages: templatePages, mapping: buildOutlinePageMapping(allSlides, templatePages) }
+          ? { pages: templatePages, mapping: buildOutlinePageMapping(allSlides, templatePages, pageTypes) }
           : null;
+      const pageTypeByPageIndex = new Map(allSlides.map((item, index) => [item.pageIndex, pageTypes[index]]));
       let succeeded = 0;
       let failed = 0;
       // 逐页并发，上限 config.generateConcurrency（默认 6）
@@ -345,6 +313,7 @@ export async function startDeckGeneration(
             refineExtraImages: options.refineExtraImages,
             refineExtraNote: options.refineExtraNote,
             template,
+            pageType: pageTypeByPageIndex.get(slide.pageIndex),
             deckContext: {
               totalPages: allSlides.length,
               pageIndex: slide.pageIndex,

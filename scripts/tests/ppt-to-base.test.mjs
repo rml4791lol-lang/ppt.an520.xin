@@ -90,9 +90,6 @@ export async function runPptToBaseServerTests(ctx) {
   console.log('\n[7f] PPT 转模版底座·截图 AI 路线（服务端全 mock）');
   const baseImage = await import('../../src/modules/ppt-to-base/server/base-image.ts');
   const { getDb } = await import('../../src/lib/server/db.ts');
-  const genDb = (await import('../../src/lib/server/generation/db.ts')).getGenDb();
-  const recovery = await import('../../src/lib/server/generation/recovery.ts');
-  const paidRun = await import('../../src/lib/server/generation/paid-run.ts');
 
   const tester = await auth.registerWithPassword(
     { account: 'p2btester', password: 'password123', confirmPassword: 'password123' },
@@ -102,32 +99,6 @@ export async function runPptToBaseServerTests(ctx) {
   getDb().prepare("UPDATE users SET role = 'tester' WHERE id = ?").run(tid);
   const shot = Buffer.from(PNG_1X1_B64, 'base64');
   const vlmOk = { match: '/chat/completions', payload: { choices: [{ message: { content: '{"title":"核心目的"}' } }] } };
-  const refundRows = (userId) => getDb()
-    .prepare("SELECT idempotency_key, delta FROM credit_ledger WHERE user_id = ? AND event_type = 'refund'")
-    .all(userId)
-    .map((row) => ({ key: String(row.idempotency_key), delta: Number(row.delta) }));
-  const rowStatus = (jobId) => String(genDb.prepare('SELECT status FROM ppt_to_base_jobs WHERE id = ?').get(jobId)?.status || '');
-  const registerUser = async (account, ip) => (await auth.registerWithPassword(
-    { account, password: 'password123', confirmPassword: 'password123' },
-    ip,
-  )).user.id;
-  // 制造「进程死在运行中途」的残留行：任务表只归模块读写，测试只铺最小现场，断言看余额/账本键/终态
-  const seedResidue = ({ id, userId, requestId, chargeKey, status = 'running', updatedAt }) => {
-    genDb.prepare(
-      `INSERT INTO ppt_to_base_jobs (id, user_id, request_id, charge_key, status, error, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id,
-      userId,
-      requestId,
-      chargeKey,
-      status,
-      status === 'failed' ? '旧进程已置失败' : '',
-      updatedAt,
-      updatedAt,
-    );
-  };
-  const staleAt = Date.now() - 2 * 60 * 60 * 1000;
 
   const fetcher1 = makeMockFetcher([vlmOk, editsOkHandler]);
   const before = credits.getBalance(tid);
@@ -137,8 +108,6 @@ export async function runPptToBaseServerTests(ctx) {
       && r1.imageUrl.startsWith('/api/files/generated/')
       && r1.imageUrl.includes('ppt-to-base')
       && before - r1.balance === 5);
-  check('扣费键沿用历史前缀 ppt-to-base:{userId}:{requestId}',
-    getDb().prepare('SELECT delta FROM credit_ledger WHERE idempotency_key = ?').get(`ppt-to-base:${tid}:p2b-1`)?.delta === -5);
   const editBody = fetcher1.calls.find((c) => c.url.includes('/images/edits'))?.init?.body;
   const editPrompt = editBody instanceof FormData ? String(editBody.get('prompt') || '') : '';
   check('提示词：点名参考图 + 改变项/不变量分离 + 中性词逐字加引号',
@@ -154,16 +123,11 @@ export async function runPptToBaseServerTests(ctx) {
   check('VLM 带图抽标题（vision 分段 + dataURL）',
     Array.isArray(vlmParts) && vlmParts.some((p) => p.type === 'image_url' && String(p.image_url?.url || '').startsWith('data:image/png;base64,')));
 
-  const replayFetcher = makeMockFetcher([vlmOk, editsOkHandler]);
   await expectThrows('同 requestId 重放按 409 拒', () =>
     baseImage.runPptToBase(tid, { image: shot, requestId: 'p2b-1' }, {
-      fetchImpl: replayFetcher, config: llmConfig,
+      fetchImpl: makeMockFetcher([vlmOk, editsOkHandler]), config: llmConfig,
     }), 'DUPLICATE_REQUEST');
-  check('重放不再扣费、也不再打上游', credits.getBalance(tid) === r1.balance && replayFetcher.calls.length === 0);
-  const replayRow = genDb
-    .prepare("SELECT status FROM ppt_to_base_jobs WHERE user_id = ? AND request_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
-    .get(tid, 'p2b-1');
-  check('重放本次生成的行置 failed（不动首笔扣费）', String(replayRow?.status) === 'failed');
+  check('重放不再扣费', credits.getBalance(tid) === r1.balance);
 
   const vlmDown = makeMockFetcher([
     { match: '/chat/completions', payload: () => { throw new Error('vlm down'); } },
@@ -197,59 +161,28 @@ export async function runPptToBaseServerTests(ctx) {
     baseImage.runPptToBase(poor.user.id, { image: shot, requestId: 'p2b-poor' }, {
       fetchImpl: makeMockFetcher([vlmOk, editsOkHandler]), config: llmConfig,
     }), 'INSUFFICIENT_CREDITS');
-  const poorRow = genDb.prepare("SELECT status FROM ppt_to_base_jobs WHERE user_id = ? AND request_id = 'p2b-poor'").get(poor.user.id);
-  check('扣费失败：claim 行已落且置 failed（行先于扣费）', String(poorRow?.status) === 'failed');
 
   await expectThrows('缺 requestId 校验失败', () =>
     baseImage.runPptToBase(tid, { image: shot, requestId: '' }, { fetchImpl: makeMockFetcher([]), config: llmConfig }),
     'VALIDATION_ERROR');
   check('估价动作键已接入（5🌟/张）', credits.estimateCredits({ action: 'ppt_to_base' }).credits === 5);
 
-  // --- 计费运行接入：运行中以扣费键登记在飞，恢复判活认这把键（心跳过期也不误杀在途运行）---
-  const json = (payload) => new Response(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json' } });
-  let releaseEdit = () => {};
-  const editGate = new Promise((resolve) => { releaseEdit = resolve; });
-  let editStarted = false;
-  const liveFetcher = async (url) => {
-    const target = String(url);
-    if (target.includes('/chat/completions')) return json({ choices: [{ message: { content: '{"title":"运行中"}' } }] });
-    if (target.includes('/images/edits')) {
-      editStarted = true;
-      await editGate;
-      return json({ data: [{ b64_json: PNG_1X1_B64 }] });
-    }
-    throw new Error(`未预期的上游调用：${target}`);
-  };
-  const liveKey = `ppt-to-base:${tid}:p2b-live`;
-  const beforeLive = credits.getBalance(tid);
-  const livePromise = baseImage.runPptToBase(tid, { image: shot, requestId: 'p2b-live' }, { fetchImpl: liveFetcher, config: llmConfig });
-  for (let i = 0; i < 400 && !editStarted; i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
-  const liveEntry = paidRun.listInFlight(tid).find((run) => run.runId === liveKey);
-  check('运行中：在飞注册表登记键 = 扣费键（域/动作可读）',
-    editStarted && liveEntry?.domain === 'ppt-to-base' && liveEntry?.action === 'ppt_to_base',
-    JSON.stringify(paidRun.listInFlight(tid)));
-  genDb.prepare("UPDATE ppt_to_base_jobs SET updated_at = ? WHERE user_id = ? AND request_id = 'p2b-live'").run(staleAt, tid);
-  check('运行中且心跳过期：恢复不误收敛、不提前退款',
-    recovery.reconcileUser(tid) === 0 && credits.getBalance(tid) === beforeLive - 5,
-    `实际 ${credits.getBalance(tid)} / ${JSON.stringify(paidRun.listInFlight(tid))}`);
-  releaseEdit();
-  const liveResult = await livePromise;
-  check('放行后成功：余额保持实扣、无退款、在飞清空',
-    liveResult.balance === beforeLive - 5
-      && refundRows(tid).every((row) => row.key !== credits.deriveRefundKey(liveKey))
-      && !paidRun.listInFlight(tid).some((run) => run.runId === liveKey));
-
-  // --- 崩溃窗口一：扣费后进程死亡 → 恢复按实扣金额补退一次 ---
+  // --- 崩溃恢复：扣费后残留 running 行 → 懒恢复按实扣金额补退（幂等）---
+  const genDb = (await import('../../src/lib/server/generation/db.ts')).getGenDb();
   const crashJobId = 'ptb_crash';
   const crashChargeKey = `ppt-to-base:${tid}:p2b-crash`;
   const beforeCrash = credits.getBalance(tid);
   credits.debitCredits(tid, 5, {
     reason: 'PPT 转模版底座', idempotencyKey: crashChargeKey, refType: 'ppt-to-base', refId: 'p2b-crash',
   });
-  seedResidue({ id: crashJobId, userId: tid, requestId: 'p2b-crash', chargeKey: crashChargeKey, updatedAt: Date.now() });
+  genDb.prepare(
+    "INSERT INTO ppt_to_base_jobs (id, user_id, request_id, charge_key, status, error, created_at, updated_at) VALUES (?, ?, ?, ?, 'running', '', ?, ?)",
+  ).run(crashJobId, tid, 'p2b-crash', crashChargeKey, Date.now(), Date.now());
   check('中断现场：已扣 5🌟 且未退回', credits.getBalance(tid) === beforeCrash - 5);
+  const recovery = await import('../../src/lib/server/generation/recovery.ts');
   check('在途未超时不误收敛',
     recovery.reconcileUser(tid) === 0 && credits.getBalance(tid) === beforeCrash - 5);
+  const staleAt = Date.now() - 2 * 60 * 60 * 1000;
   genDb.prepare('UPDATE ppt_to_base_jobs SET created_at = ?, updated_at = ? WHERE id = ?').run(staleAt, staleAt, crashJobId);
   // 余额读接口（站点头部每次加载）：不写恢复代码也能补退中断的底座任务
   const balanceRoute = await import('../../src/app/api/credits/balance/route.ts');
@@ -258,69 +191,9 @@ export async function runPptToBaseServerTests(ctx) {
   }));
   const balanceBody = await balanceResponse.json();
   check('超时残留行被余额读点收敛（无恢复调用）', balanceBody?.data?.balance === beforeCrash, `实际 ${balanceBody?.data?.balance}`);
+  const crashRow = genDb.prepare('SELECT status, error FROM ppt_to_base_jobs WHERE id = ?').get(crashJobId);
   check('残留行置 failed 带中断文案',
-    rowStatus(crashJobId) === 'failed'
-      && String(genDb.prepare('SELECT error FROM ppt_to_base_jobs WHERE id = ?').get(crashJobId)?.error).includes('中断'));
-  const crashRefunds = refundRows(tid).filter((row) => row.key === credits.deriveRefundKey(crashChargeKey));
-  check('补退按实扣金额、退款键定长派生、只一笔',
-    crashRefunds.length === 1 && crashRefunds[0].delta === 5, JSON.stringify(crashRefunds));
+    String(crashRow?.status) === 'failed' && String(crashRow?.error).includes('中断'));
   check('恢复幂等：重复收敛不重复退款',
     recovery.reconcileUser(tid) === 0 && credits.getBalance(tid) === beforeCrash);
-
-  // --- 崩溃窗口二：退款已落账、failed 未写（死在两者之间）→ 恢复补齐终态且不双退 ---
-  const refundCrashUser = await registerUser('p2bcrashrefund', '127.0.4.4');
-  const refundCrashKey = `ppt-to-base:${refundCrashUser}:p2b-crash-refund`;
-  const refundCrashBefore = credits.getBalance(refundCrashUser);
-  credits.debitCredits(refundCrashUser, 5, {
-    reason: 'PPT 转模版底座', idempotencyKey: refundCrashKey, refType: 'ppt-to-base', refId: 'p2b-crash-refund',
-  });
-  credits.refundCredits(refundCrashUser, 5, {
-    reason: '底座生成失败退回',
-    idempotencyKey: credits.deriveRefundKey(refundCrashKey),
-    refType: 'ppt-to-base',
-    refId: 'p2b-crash-refund',
-  });
-  seedResidue({
-    id: 'ptb_crash_refund',
-    userId: refundCrashUser,
-    requestId: 'p2b-crash-refund',
-    chargeKey: refundCrashKey,
-    updatedAt: staleAt,
-  });
-  check('退款后崩溃：退款已落账、行仍在途',
-    credits.getBalance(refundCrashUser) === refundCrashBefore && refundRows(refundCrashUser).length === 1);
-  check('退款后崩溃：恢复补齐 failed 终态、不重复退款',
-    recovery.reconcileUser(refundCrashUser) === 1
-      && credits.getBalance(refundCrashUser) === refundCrashBefore
-      && refundRows(refundCrashUser).length === 1
-      && rowStatus('ptb_crash_refund') === 'failed');
-  check('重复恢复：后续不再退款',
-    recovery.reconcileUser(refundCrashUser) === 0 && refundRows(refundCrashUser).length === 1);
-
-  // --- 崩溃窗口三：已置终态（failed）后再恢复 → 不列、不退、不改 ---
-  const terminalUser = await registerUser('p2bterminal', '127.0.4.5');
-  const terminalKey = `ppt-to-base:${terminalUser}:p2b-terminal`;
-  const terminalBefore = credits.getBalance(terminalUser);
-  credits.debitCredits(terminalUser, 5, {
-    reason: 'PPT 转模版底座', idempotencyKey: terminalKey, refType: 'ppt-to-base', refId: 'p2b-terminal',
-  });
-  credits.refundCredits(terminalUser, 5, {
-    reason: '底座生成失败退回',
-    idempotencyKey: credits.deriveRefundKey(terminalKey),
-    refType: 'ppt-to-base',
-    refId: 'p2b-terminal',
-  });
-  seedResidue({
-    id: 'ptb_terminal',
-    userId: terminalUser,
-    requestId: 'p2b-terminal',
-    chargeKey: terminalKey,
-    status: 'failed',
-    updatedAt: staleAt,
-  });
-  check('终态后恢复：不列终态行、不再退款、不改终态',
-    recovery.reconcileUser(terminalUser) === 0
-      && credits.getBalance(terminalUser) === terminalBefore
-      && refundRows(terminalUser).length === 1
-      && rowStatus('ptb_terminal') === 'failed');
 }

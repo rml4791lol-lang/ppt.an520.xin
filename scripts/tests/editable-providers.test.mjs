@@ -1,16 +1,11 @@
 // 上游通道接口（Provider）测试：能力声明 / registry 回退顺序与页数过滤 / 假通道驱动管线与恢复。
 // 全部 mock，禁止真实调用 WPS / Image2PPT / Codia。
-import { startEditableWithDone } from './editable-start-helpers.mjs';
-
 export async function runEditableProviderTests(ctx) {
   const {
     check, baseConfig, credits, uid, deck,
   } = ctx;
   const providersLib = await import('../../src/modules/editable-export/server/providers/index.ts');
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
-  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
-  const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
   const { getGenDb } = await import('../../src/lib/server/generation/db.ts');
   const { ApiError } = await import('../../src/lib/server/http.ts');
 
@@ -153,7 +148,10 @@ export async function runEditableProviderTests(ctx) {
     credits.refundCredits(uid, 3000, { reason: '页数上限测试补贴', idempotencyKey: 'test-topup-page-capacity' });
 
     const d20 = makePagedDeck(20, sharedImage);
-    const accepted20 = await startDeckEditableFor(uid, d20.id, { config: codiaOnly, providers: [capturingProvider().provider], pollIntervalMs: 1 },
+    const accepted20 = await exportsLib.startDeckEditableExport(
+      uid,
+      d20.id,
+      { config: codiaOnly, providers: [capturingProvider().provider], pollIntervalMs: 1 },
       { force: true },
     );
     check('只配置 Codia：20 页整套可发起',
@@ -162,7 +160,10 @@ export async function runEditableProviderTests(ctx) {
     await accepted20.done;
 
     const d21 = makePagedDeck(21, sharedImage);
-    const rejected21 = await startError(() => startDeckEditableFor(uid, d21.id, { config: codiaOnly, providers: [capturingProvider().provider] },
+    const rejected21 = await startError(() => exportsLib.startDeckEditableExport(
+      uid,
+      d21.id,
+      { config: codiaOnly, providers: [capturingProvider().provider] },
       { force: true },
     ));
     check('只配置 Codia：21 页被拒（能力 20）',
@@ -173,7 +174,10 @@ export async function runEditableProviderTests(ctx) {
       String(rejected21?.message));
 
     const d50 = makePagedDeck(50, sharedImage);
-    const accepted50 = await startDeckEditableFor(uid, d50.id, { config: i2pConfigured, providers: [capturingProvider().provider], pollIntervalMs: 1 },
+    const accepted50 = await exportsLib.startDeckEditableExport(
+      uid,
+      d50.id,
+      { config: i2pConfigured, providers: [capturingProvider().provider], pollIntervalMs: 1 },
       { force: true },
     );
     check('配置 Image2PPT：50 页整套可发起（不被 Codia 的 20 拒绝）',
@@ -188,7 +192,10 @@ export async function runEditableProviderTests(ctx) {
       wpsAipptCookie: 'wps_sid=capacity',
       editableProvider: 'wps',
     };
-    const accepted50Wps = await startDeckEditableFor(uid, d50.id, { config: wpsConfigured, providers: [capturingProvider().provider], pollIntervalMs: 1 },
+    const accepted50Wps = await exportsLib.startDeckEditableExport(
+      uid,
+      d50.id,
+      { config: wpsConfigured, providers: [capturingProvider().provider], pollIntervalMs: 1 },
       { force: true },
     );
     check('配置 WPS：50 页整套也可发起（能力同样 50）',
@@ -197,7 +204,10 @@ export async function runEditableProviderTests(ctx) {
     await accepted50Wps.done;
 
     const d51 = makePagedDeck(51, sharedImage);
-    const rejected51 = await startError(() => startDeckEditableFor(uid, d51.id, { config: i2pConfigured, providers: [capturingProvider().provider] },
+    const rejected51 = await startError(() => exportsLib.startDeckEditableExport(
+      uid,
+      d51.id,
+      { config: i2pConfigured, providers: [capturingProvider().provider] },
       { force: true },
     ));
     check('配置 Image2PPT：51 页被拒（能力 50）',
@@ -243,7 +253,10 @@ export async function runEditableProviderTests(ctx) {
     {
       const { provider, captured } = capturingProvider();
       const control = makePagedDeck(2, fixture.relPath);
-      const started = await startDeckEditableFor(uid, control.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
+      const started = await exportsLib.startDeckEditableExport(
+        uid,
+        control.id,
+        { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
         { force: true },
       );
       await started.done;
@@ -255,7 +268,10 @@ export async function runEditableProviderTests(ctx) {
     {
       const { provider, captured } = capturingProvider();
       const boundary = makePagedDeck(20, fixture.relPath);
-      const started = await startDeckEditableFor(uid, boundary.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
+      const started = await exportsLib.startDeckEditableExport(
+        uid,
+        boundary.id,
+        { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
         { force: true },
       );
       await started.done;
@@ -268,7 +284,10 @@ export async function runEditableProviderTests(ctx) {
     {
       const { provider, captured } = capturingProvider();
       const many = makePagedDeck(21, fixture.relPath);
-      const started = await startDeckEditableFor(uid, many.id, { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
+      const started = await exportsLib.startDeckEditableExport(
+        uid,
+        many.id,
+        { config: i2pConfigured, providers: [provider], pollIntervalMs: 1 },
         { force: true },
       );
       await started.done;
@@ -386,7 +405,7 @@ export async function runEditableProviderTests(ctx) {
       },
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
-    const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, deps, { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     const row = getGenDb()
@@ -422,7 +441,7 @@ export async function runEditableProviderTests(ctx) {
       },
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
-    const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, deps, { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     check('能力声明的 attempts=2：首次提交失败后用第 2 次提交成功',
@@ -443,7 +462,7 @@ export async function runEditableProviderTests(ctx) {
       providers: [busy.provider, ok.provider],
       pollIntervalMs: 1,
     };
-    const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, deps, { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     const row = getGenDb().prepare('SELECT upstream_provider FROM export_jobs WHERE id = ?').get(started.exportId);
@@ -465,7 +484,7 @@ export async function runEditableProviderTests(ctx) {
       }),
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
-    const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, deps, { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     check('同步通道：start 带回产物即落盘，advance 一次都不调用',
@@ -596,7 +615,7 @@ export async function runEditableProviderTests(ctx) {
 
     const gateErrors = {};
     for (const [name, run] of Object.entries({
-      deck: () => startDeckEditableFor(uid, deck.id, { config: unconfigured }),
+      deck: () => exportsLib.startDeckEditableExport(uid, deck.id, { config: unconfigured }),
       singlePage: () => exportsLib.startSinglePageEditableExport(uid, 'proj_any', { config: unconfigured }),
       upload: () => exportsLib.startUploadedEditableExport(uid, [], { config: unconfigured }),
     })) {
@@ -634,7 +653,7 @@ export async function runEditableProviderTests(ctx) {
       },
     });
     const deps = { config: { ...baseConfig, codiaApiKey: 'sk-fake-pipeline' }, providers: [provider], pollIntervalMs: 1 };
-    const started = await startDeckEditableFor(uid, deck.id, deps, { force: true });
+    const started = await exportsLib.startDeckEditableExport(uid, deck.id, deps, { force: true });
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId, deps);
     check('上游轮询抖动：继续等同一任务而不重建（start 只提交 1 次）',

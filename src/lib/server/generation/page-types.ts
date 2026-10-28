@@ -427,8 +427,28 @@ export const PAGE_TYPES: readonly PageTypeSpec[] = [
 const GENERIC = PAGE_TYPES[PAGE_TYPES.length - 1]
 const BY_KEY = new Map(PAGE_TYPES.map((spec) => [spec.key, spec]))
 
+/** 页型解析证据：整套页型只认这四项，映射与提示词不得各自挑字段。 */
+export interface PageTypeEvidence {
+  pageType?: string
+  title?: string
+  goal?: string
+  role?: string
+}
+
 function normalize(value: string): string {
   return cleanString(value, 240).toLowerCase().replace(/[\s_\-/]+/g, '')
+}
+
+/**
+ * 整套路径的页型唯一入口：证据固定为 pageType + title + goal + role。
+ * 空 pageType 时标题/表达目标仍能命中页型；模板映射与提示词装配都读这里的结论。
+ */
+export function resolveSlidePageType(slide: PageTypeEvidence): PageTypeSpec {
+  const evidence = [slide.pageType, slide.title, slide.goal]
+    .map((part) => (typeof part === 'string' ? part : ''))
+    .filter(Boolean)
+    .join(' / ')
+  return resolvePageType(evidence, typeof slide.role === 'string' ? slide.role : '')
 }
 
 /**

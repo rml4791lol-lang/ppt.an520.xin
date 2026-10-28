@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { ApiError, validationError } from '@/lib/server/http';
 import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '@/lib/server/credits';
 import { verifyImage2PptWebhook } from './image2ppt';
-import { editableChargeKey, type EditableExportKind } from './charge-keys';
+import { editableChargeKey } from './charge-keys';
 import { codiaProvider } from './providers/codia';
 import {
   LEGACY_EDITABLE_PROVIDER_ID,
@@ -62,16 +62,13 @@ export interface EditableExportDeps {
   retryDelayMs?: number;
   /** 测试用：覆盖 registry 的通道列表（假通道驱动管线与恢复）。 */
   providers?: readonly EditableProvider[];
-  /** 测试用：订阅后台管线的完成信号；生产 view 不再携带 done。 */
-  onPipelineDone?: (done: Promise<void>) => void;
 }
 
 function snapshotEditableDeps(deps: EditableExportDeps): EditableExportDeps & { config: GenerationConfig } {
   return { ...deps, config: deps.config ?? getGenerationConfig() };
 }
 
-/** 单入口返回的共享 view：10 个可序列化字段，路由直接作为响应体。 */
-export interface EditableExportView {
+export interface StartedEditableExport {
   exportId: string;
   status: 'processing' | 'succeeded';
   credits: number;
@@ -83,50 +80,12 @@ export interface EditableExportView {
   url: string;
   /** true = 复用同一来源的进行中/成功任务，本次未再次扣星。 */
   reused: boolean;
-}
-
-/** 旧单页/上传 starter 的兼容句柄（T11 迁移后随旧 starter 一起删除）。 */
-export interface StartedEditableExport extends EditableExportView {
   /** 测试用：等待管线结束。路由默认后台执行（void）。 */
   done: Promise<void>;
 }
 
 type ExportRow = Record<string, string | number | null>;
 type EditableRefType = 'deck' | 'single-page' | 'upload';
-
-/** 来源声明的计费动作：决定单价（20🌟/页 或 5🌟/页）。 */
-export type EditableExportChargeAction = 'export_editable' | 'export_editable_text';
-
-/** 来源页：指纹取自生效版本 id；缺版本由入口在页数上限之后判定。 */
-export interface EditableExportPage {
-  versionId: string;
-}
-
-/** 页数上限策略：capacity 来自共享策略，scope 是拒绝文案里的量词。 */
-export interface EditableExportPageCap {
-  capacity: number;
-  scope: string;
-}
-
-/**
- * 可编辑导出来源适配器：一个来源只声明取页、页数上限、来源指纹、计费动作与引用。
- * 复用/建行/扣费/共享 view 收在唯一入口里；新增来源 = 新增一个适配器。
- */
-export interface EditableExportSource {
-  userId: string;
-  refType: EditableRefType;
-  refId: string;
-  chargeAction: EditableExportChargeAction;
-  /** 就绪校验（归属、状态、空集）在这里：不可导出时抛本域错误（403/404/409）。 */
-  readPages(): EditableExportPage[];
-  /** 页数上限之后补齐「缺生效版本」的未就绪文案（上限判定必须先于就绪判定）。 */
-  notReadyMessage: string;
-  pageCap(config: GenerationConfig): EditableExportPageCap;
-  /** 同源成功结果复用的判据。 */
-  fingerprint(pages: readonly EditableExportPage[]): string;
-  /** 上传来源落库的展示字段（站内来源为空）。 */
-  meta?: EditableSourceMeta;
-}
 
 /** 已配置的可编辑转换通道，按主通道优先级排序（回退顺序唯一来源在 providers/registry）。 */
 export function configuredEditableProviders(config: GenerationConfig): EditableProviderId[] {
@@ -177,53 +136,6 @@ exportGlobal.__anpptEditableFinalizations = editableFinalizations;
 
 function fingerprintSource(refType: 'deck' | 'single-page', versionIds: string[]): string {
   return createHash('sha256').update(`${refType}\n${versionIds.join('\n')}`).digest('hex');
-}
-
-function chargeActionForKind(kind: EditableExportKind): EditableExportChargeAction {
-  return kind === 'editable_text' ? 'export_editable_text' : 'export_editable';
-}
-
-/** 整套来源：图片版与文字版共用取页与指纹，只有页数上限与计费动作不同。 */
-function deckSource(
-  userId: string,
-  deckId: string,
-  kind: EditableExportKind,
-  notReadyMessage: string,
-): EditableExportSource {
-  const id = cleanString(deckId, 80);
-  return {
-    userId,
-    refType: 'deck',
-    refId: id,
-    chargeAction: chargeActionForKind(kind),
-    readPages: () => {
-      const deck = getOwnedDeck(userId, id);
-      if (deck.status !== 'generated') {
-        throw new ApiError('EXPORT_NOT_READY', notReadyMessage, 409, false);
-      }
-      const slides = listSlides(deck.id);
-      if (slides.length === 0) {
-        throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
-      }
-      return slides.map((slide) => ({ versionId: cleanString(slide.activeVersionId, 100) }));
-    },
-    notReadyMessage,
-    pageCap: (config) => ({
-      capacity: kind === 'editable_text' ? TEXT_EDITABLE_MAX_PAGES : pageCapacity(config),
-      scope: '单套',
-    }),
-    fingerprint: (pages) => fingerprintSource('deck', pages.map((page) => page.versionId)),
-  };
-}
-
-/** 整套可编辑导出（图片版，20🌟/页）：页数上限取已配置通道链能力。 */
-export function deckEditableSource(userId: string, deckId: string): EditableExportSource {
-  return deckSource(userId, deckId, 'editable', '还有页面未生成成功，完成整套生成后才能转可编辑');
-}
-
-/** 整套轻量文字可编辑导出（5🌟/页）：产品上限 50，不走上游通道。 */
-export function deckTextEditableSource(userId: string, deckId: string): EditableExportSource {
-  return deckSource(userId, deckId, 'editable_text', '还有页面未生成成功，完成整套生成后才能转文字可编辑');
 }
 
 function ensureEditablePipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
@@ -738,54 +650,40 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
   }
 }
 
-/**
- * 可编辑导出唯一发起入口：就绪校验、页数上限、指纹、同源复用/建行/扣费与后台管线全在这里。
- * 返回可序列化的共享 view（无 done）；测试等待管线结束用 deps.onPipelineDone。
- */
-export async function startEditableExport(
-  source: EditableExportSource,
-  kind: EditableExportKind,
-  options: { force?: boolean; deps?: EditableExportDeps } = {},
-): Promise<EditableExportView> {
-  const { view } = await startEditableExportRun(source, kind, options);
-  return view;
-}
-
-async function startEditableExportRun(
-  source: EditableExportSource,
-  kind: EditableExportKind,
-  options: { force?: boolean; deps?: EditableExportDeps } = {},
-): Promise<{ view: EditableExportView; done: Promise<void> }> {
-  if (source.chargeAction !== chargeActionForKind(kind)) {
-    throw new Error(`可编辑导出来源的计费动作与 kind 不一致：${source.chargeAction} / ${kind}`);
-  }
-  const runDeps = snapshotEditableDeps(options.deps ?? {});
+/** 发起整套可编辑导出：校验 → 同源任务复用 / 建行扣费 → 后台管线。 */
+export async function startDeckEditableExport(
+  userId: string,
+  deckId: string,
+  deps: EditableExportDeps = {},
+  options: { force?: boolean } = {},
+): Promise<StartedEditableExport> {
+  const runDeps = snapshotEditableDeps(deps);
   const config = runDeps.config;
-  // 文字版不走上游通道：没有通道配置也要能发起（与旧 starter 一致）。
-  if (kind === 'editable' && !isEditableExportConfigured(config)) {
+  if (!isEditableExportConfigured(config)) {
     throw notConfiguredError();
   }
-  const pages = source.readPages();
-  const cap = source.pageCap(config);
-  assertEditablePageCount(pages.length, cap.capacity, cap.scope);
-  // 上限判定先于就绪判定：超限来源先看到页数错误（与历史行为一致）。
-  if (pages.some((page) => !page.versionId)) {
-    throw new ApiError('EXPORT_NOT_READY', source.notReadyMessage, 409, false);
+  const deck = getOwnedDeck(userId, deckId);
+  if (deck.status !== 'generated') {
+    throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转可编辑', 409, false);
   }
-  const launched = await launchEditableExport(
-    source.userId,
-    source.refType,
-    source.refId,
-    pages.length,
-    source.fingerprint(pages),
+  const slides = listSlides(deck.id);
+  if (slides.length === 0) {
+    throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
+  }
+  assertEditablePageCount(slides.length, pageCapacity(config), '单套');
+  const versionIds = slides.map((slide) => cleanString(slide.activeVersionId, 100));
+  if (versionIds.some((id) => !id)) {
+    throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转可编辑', 409, false);
+  }
+  return launchEditableExport(
+    userId,
+    'deck',
+    deck.id,
+    slides.length,
+    fingerprintSource('deck', versionIds),
     runDeps,
-    { force: options.force },
-    source.meta,
-    kind,
-    source.chargeAction,
+    options,
   );
-  runDeps.onPipelineDone?.(launched.done);
-  return launched;
 }
 
 type LaunchDecision = { row: ExportRow; created: boolean };
@@ -806,12 +704,14 @@ async function launchEditableExport(
   deps: EditableExportDeps,
   options: { force?: boolean },
   source: EditableSourceMeta = {},
-  kind: EditableExportKind = 'editable',
-  chargeAction: EditableExportChargeAction = chargeActionForKind(kind),
-): Promise<{ view: EditableExportView; done: Promise<void> }> {
+  kind: 'editable' | 'editable_text' = 'editable',
+): Promise<StartedEditableExport> {
   const runDeps = snapshotEditableDeps(deps);
   const db = getGenDb();
-  const estimate = estimateCredits({ action: chargeAction, pages: pageCount });
+  const estimate = estimateCredits({
+    action: kind === 'editable_text' ? 'export_editable_text' : 'export_editable',
+    pages: pageCount,
+  });
   const decision = withTransaction(db, (): LaunchDecision => {
     const running = db
       .prepare(
@@ -890,18 +790,16 @@ async function launchEditableExport(
   }
   const view = toExportView(row, sourceFingerprint);
   return {
-    view: {
-      exportId: view.exportId,
-      status: view.status === 'succeeded' ? 'succeeded' : 'processing',
-      credits: decision.created ? estimate.credits : 0,
-      pageCount: view.pageCount,
-      progress: view.progress,
-      completedPages: view.completedPages,
-      totalPages: view.totalPages,
-      stage: view.stage,
-      url: view.url,
-      reused: !decision.created,
-    },
+    exportId: view.exportId,
+    status: view.status === 'succeeded' ? 'succeeded' : 'processing',
+    credits: decision.created ? estimate.credits : 0,
+    pageCount: view.pageCount,
+    progress: view.progress,
+    completedPages: view.completedPages,
+    totalPages: view.totalPages,
+    stage: view.stage,
+    url: view.url,
+    reused: !decision.created,
     done,
   };
 }
@@ -925,7 +823,7 @@ export async function startSinglePageEditableExport(
   }
   assertEditablePageCount(pages.length, pageCapacity(config), '单套');
   const versionIds = pages.map((page) => cleanString(page.activeVersionId, 100));
-  const { view, done } = await launchEditableExport(
+  return launchEditableExport(
     userId,
     'single-page',
     cleanId,
@@ -934,7 +832,6 @@ export async function startSinglePageEditableExport(
     runDeps,
     options,
   );
-  return { ...view, done };
 }
 
 /** 上传 PDF 或有序图片 → 可编辑 PPTX。图片会先合成为 image-only PDF，再复用同一 Codia 管线。 */
@@ -989,7 +886,7 @@ export async function startUploadedEditableExport(
   const saved = await saveFile('uploads', userId, pdf, { kind: 'editable-sources', ext: '.pdf', id: sourceId }, config);
   const sourceRow: ExportRow = { ref_type: 'upload', user_id: userId, source_path: saved.relPath };
   try {
-    const { view, done } = await launchEditableExport(
+    const started = await launchEditableExport(
       userId,
       'upload',
       sourceId,
@@ -999,10 +896,10 @@ export async function startUploadedEditableExport(
       options,
       { path: saved.relPath, name: sourceName, mime: 'application/pdf' },
     );
-    if (view.reused && view.status === 'succeeded') {
+    if (started.reused && started.status === 'succeeded') {
       await cleanupUploadedEditableSource(sourceRow, config);
     }
-    return { ...view, done };
+    return started;
   } catch (error) {
     await cleanupUploadedEditableSource(sourceRow, config);
     throw error;
@@ -1380,6 +1277,40 @@ async function runTextEditablePipeline(row: ExportRow, deps: EditableExportDeps)
       error: '文字层提取服务暂时不可用，星星已退回；稍后可重新转换。',
     });
   }
+}
+
+/** 发起整套轻量文字可编辑导出（5🌟/页，VLM 覆盖层链）：校验 → 复用/建行扣费 → 后台管线。 */
+export async function startDeckTextEditableExport(
+  userId: string,
+  deckId: string,
+  deps: EditableExportDeps = {},
+  options: { force?: boolean } = {},
+): Promise<StartedEditableExport> {
+  const runDeps = snapshotEditableDeps(deps);
+  const deck = getOwnedDeck(userId, deckId);
+  if (deck.status !== 'generated') {
+    throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转文字可编辑', 409, false);
+  }
+  const slides = listSlides(deck.id);
+  if (slides.length === 0) {
+    throw new ApiError('NOTHING_TO_EXPORT', '还没有已生成的页面，无法导出', 409, false);
+  }
+  assertEditablePageCount(slides.length, TEXT_EDITABLE_MAX_PAGES, '单套');
+  const versionIds = slides.map((slide) => cleanString(slide.activeVersionId, 100));
+  if (versionIds.some((id) => !id)) {
+    throw new ApiError('EXPORT_NOT_READY', '还有页面未生成成功，完成整套生成后才能转文字可编辑', 409, false);
+  }
+  return launchEditableExport(
+    userId,
+    'deck',
+    deck.id,
+    slides.length,
+    fingerprintSource('deck', versionIds),
+    runDeps,
+    options,
+    {},
+    'editable_text',
+  );
 }
 
 // ---------- 导出中心 ----------

@@ -2,8 +2,7 @@
 // 对齐优先级：逻辑页型精确命中 → 参考桶名直接命中 → 模板页解析后的参考桶命中
 // → 内容桶兜底 → 首页兜底。 mapping 在每次生成任务开始时算一次，整批复用。
 import type { StylePackTemplatePage } from '../../../data/style-packs'
-import type { DeckSlideRow } from './decks'
-import { resolvePageType, type PageTypeSpec } from './page-types'
+import { resolveSlidePageType, type PageTypeSpec } from './page-types'
 import { cleanString } from './types'
 
 export interface OutlinePageMapping {
@@ -14,6 +13,15 @@ export interface OutlinePageMapping {
   logicalPageType: string
   /** 命中的模板页下标；-1 表示模板无页可用。 */
   templatePageIndex: number
+}
+
+/** 映射输入：整套路径可传入已解析页型，避免与提示词各解析一次。 */
+export interface OutlineSlideIdentity {
+  pageIndex: number
+  pageType: string
+  role: string
+  title: string
+  goal?: string
 }
 
 /** 真模板路线的 deck 级上下文：模板页序列 + 大纲↔模板映射，每次生成任务算一次。 */
@@ -28,7 +36,7 @@ const REFERENCE_BUCKETS = new Set(['cover', 'toc', 'section', 'data', 'process',
 function templatePageBucket(pageType: string): string {
   const clean = cleanString(pageType, 60)
   if (REFERENCE_BUCKETS.has(clean)) return clean
-  return resolvePageType(clean, '').referenceKind
+  return resolveSlidePageType({ pageType: clean }).referenceKind
 }
 
 function pickTemplateIndex(templatePages: StylePackTemplatePage[], spec: PageTypeSpec): number {
@@ -52,11 +60,13 @@ function pickTemplateIndex(templatePages: StylePackTemplatePage[], spec: PageTyp
 
 /** 大纲页 ↔ 模板页映射：输入大纲页序列与模板页序列，产出逐页对齐结果。 */
 export function buildOutlinePageMapping(
-  slides: Array<Pick<DeckSlideRow, 'pageIndex' | 'pageType' | 'role' | 'title'>>,
+  slides: OutlineSlideIdentity[],
   templatePages: StylePackTemplatePage[],
+  /** 整套路径已解析的页型（与 slides 同序）；缺省按单源证据解析。 */
+  pageTypes?: readonly PageTypeSpec[],
 ): OutlinePageMapping[] {
-  return slides.map((slide) => {
-    const spec = resolvePageType(slide.pageType, slide.role)
+  return slides.map((slide, index) => {
+    const spec = pageTypes?.[index] ?? resolveSlidePageType(slide)
     return {
       outlinePageNumber: slide.pageIndex + 1,
       title: cleanString(slide.title, 200),

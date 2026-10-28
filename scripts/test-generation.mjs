@@ -21,6 +21,7 @@ import { runDeckActionTests } from './tests/deck-actions.test.mjs';
 import { runSinglePageActionTests } from './tests/single-page-actions.test.mjs';
 import { runSurfaceIntentTests } from './tests/surface-intents.test.mjs';
 import { runPaidRunTests } from './tests/paid-run.test.mjs';
+import { runVisualPlanTests } from './tests/visual-plan.test.mjs';
 import { runSurfaceIntentParserTests } from './tests/surface-intent-parsers.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
@@ -907,6 +908,20 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
     !paidRun.isInFlight(pageChargeKey) && !paidRun.isInFlight(rg.job.jobId));
   check('整套四类动作收尾后无在飞残留', paidRun.listInFlight(uid).length === 0, JSON.stringify(paidRun.listInFlight(uid)));
 
+  // 锚点文件不可读：计划里排后的模板/风格候选顺延接管，不静默丢参考
+  decks.setDeckAnchor(deck.id, s7.slides[0].slideId, '/generated/missing-anchor.png');
+  const fallbackFetcher = makeMockFetcher([...engineHandlers, { match: '/images/generations', payload: { data: [{ b64_json: PNG_1X1_B64 }] } }, editsOkHandler]);
+  const fb = await actions.dispatchDeckIntent(
+    uid, deck.id, { kind: 'generateSlide', params: { slideId: s7.slides[0].slideId } },
+    { fetchImpl: fallbackFetcher, config: engineConfig },
+  );
+  await fb.job.done;
+  const fallbackBody = JSON.parse(fallbackFetcher.calls.find((c) => c.url.includes('/images/generations')).init.body);
+  check('锚点文件不可读时参考图顺延到下一候选（override 不丢参考）',
+    Array.isArray(fallbackBody.reference_images) && fallbackBody.reference_images.length === 1
+      && String(fallbackBody.reference_images[0]?.url || '').startsWith('data:image/'));
+  decks.setDeckAnchor(deck.id, '', '');
+
   // unlock-structure：作废已生成页
   const r8 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'unlockStructure', params: {} }, fullDeps);
   check('unlock 后 status=structured 且页变 stale', r8.state.deck.status === 'structured' && r8.state.slides.every((s) => s.genStatus === 'stale'));
@@ -1099,6 +1114,7 @@ await runSurfaceIntentParserTests({ check });
 await runDeckWorkbenchTests({ check });
 await runDeckActionTests({ check });
 await runPaidRunTests({ check, auth, credits });
+await runVisualPlanTests({ check, llmConfig });
 await runSinglePageActionTests({ check });
 await runSurfaceIntentTests({ check, expectThrows, auth, singlePages, credits, uid, makeMockFetcher, editsOkHandler, PNG_1X1_B64, imageConfig, deck });
 

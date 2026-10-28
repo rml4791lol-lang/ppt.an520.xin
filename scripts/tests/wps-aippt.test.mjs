@@ -1,12 +1,7 @@
 // WPS AIPPT 可编辑转换通道：内部上传 + SSE 转换 + provider 优先级/回退，全 mock。
-import { startEditableWithDone } from './editable-start-helpers.mjs';
-
 export async function runWpsAipptTests(ctx) {
   const { check, baseConfig, credits, uid, deck, jsonResponse } = ctx;
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
-  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
-  const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
   const wps = await import('../../src/modules/editable-export/server/wps-aippt.ts');
   const { getGenDb } = await import('../../src/lib/server/generation/db.ts');
 
@@ -91,7 +86,10 @@ export async function runWpsAipptTests(ctx) {
     credits.refundCredits(uid, 200, { reason: 'WPS 测试补贴', idempotencyKey: 'test-topup-wps' });
     const before = credits.getBalance(uid);
     const calls = [];
-    const started = await startDeckEditableFor(uid, deck.id, { fetchImpl: makeWpsFetcher(calls), config: wpsConfig, pollIntervalMs: 1 },
+    const started = await exportsLib.startDeckEditableExport(
+      uid,
+      deck.id,
+      { fetchImpl: makeWpsFetcher(calls), config: wpsConfig, pollIntervalMs: 1 },
       { force: true },
     );
     await started.done;
@@ -130,12 +128,17 @@ export async function runWpsAipptTests(ctx) {
       if (href === 'https://mock-codia.test/fallback.pptx') return new Response(Buffer.from('PK-codia-pptx'));
       throw new Error(`fallback mock 未命中: ${href}`);
     };
-    const started = await startDeckEditableFor(uid, deck.id, {
-      fetchImpl: fetcher,
-      config: { ...wpsConfig, codiaApiKey: 'sk-codia-test', codiaBaseUrl: 'https://mock-codia.test' },
-      pollIntervalMs: 1,
-      retryDelayMs: 0,
-    }, { force: true });
+    const started = await exportsLib.startDeckEditableExport(
+      uid,
+      deck.id,
+      {
+        fetchImpl: fetcher,
+        config: { ...wpsConfig, codiaApiKey: 'sk-codia-test', codiaBaseUrl: 'https://mock-codia.test' },
+        pollIntervalMs: 1,
+        retryDelayMs: 0,
+      },
+      { force: true },
+    );
     await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     const row = getGenDb().prepare('SELECT upstream_provider FROM export_jobs WHERE id = ?').get(started.exportId);
