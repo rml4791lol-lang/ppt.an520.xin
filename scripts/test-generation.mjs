@@ -15,7 +15,9 @@ import { runEditableProviderTests } from './tests/editable-providers.test.mjs';
 import { runPluginRuntimeTests } from './tests/plugin-runtime.test.mjs';
 import { runPptToBaseTests, runPptToBaseServerTests } from './tests/ppt-to-base.test.mjs';
 import { runDeckIntentTests } from './tests/deck-intents.test.mjs';
+import { runDeckIntentParserTests } from './tests/deck-intent-parsers.test.mjs';
 import { runDeckWorkbenchTests } from './tests/deck-workbench.test.mjs';
+import { runDeckActionTests } from './tests/deck-actions.test.mjs';
 import { runSurfaceIntentTests } from './tests/surface-intents.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
@@ -1055,7 +1057,9 @@ console.log('\n[4c] update-slide / select-slide-version');
 }
 
 await runDeckIntentTests({ check, expectThrows, auth, decks, fullDeps });
+await runDeckIntentParserTests({ check });
 await runDeckWorkbenchTests({ check });
+await runDeckActionTests({ check });
 await runSurfaceIntentTests({ check, expectThrows, auth, singlePages, credits, uid, makeMockFetcher, editsOkHandler, PNG_1X1_B64, imageConfig, deck });
 
 console.log('\n[5] 余额不足整单 402');

@@ -4,7 +4,7 @@
 import { ApiError, validationError } from '../http';
 import type { EngineDeps } from '../engine';
 import { generateOutline, splitSlide, structureSlides, structureOneSlide } from '../engine';
-import { cleanString, type OutlineSlide } from './types';
+import type { OutlineSlide } from './types';
 import { validateTaggedDsl } from './dsl';
 import {
   buildDeckFacts,
@@ -85,10 +85,10 @@ const ERASE_INSTRUCTION =
 const ERASE_DEGRADE_NOTE =
   '（附加的红色涂抹标记图未能传递到生图服务：请依据常识判断图上最可能被用户要求移除的多余元素并移除，用与周围一致的底色/留白自然填充，其余元素、文字、版式、配色全部保持不变。）';
 
-/** base64 dataURL → Buffer；标记图 ≤2MB（前端导出 1536x864 涂抹层），融合样张 ≤8MB（对齐样张读取上限）。 */
-function dataUrlToBuffer(value: unknown, label: string, maxBytes: number): Buffer {
-  const clean = cleanString(value, maxBytes * 2);
-  const match = /^data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/=\s]+)$/i.exec(clean);
+/** base64 dataURL → Buffer；标记图 ≤2MB（前端导出 1536x864 涂抹层），融合样张 ≤8MB（对齐样张读取上限）。
+ *  请求里的 dataURL 形状已由意图解析器回答，这里只解码字节（并防住直调与服务端自读样张）。 */
+function dataUrlToBuffer(value: string, label: string, maxBytes: number): Buffer {
+  const match = /^data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/=\s]+)$/i.exec(value);
   if (!match) throw validationError(`${label} 必须是图片 base64 dataURL`);
   const buffer = Buffer.from(match[1].replace(/\s+/g, ''), 'base64');
   if (buffer.length === 0) throw validationError(`${label} 内容为空`);
@@ -120,11 +120,6 @@ function toOutlineSlide(slide: ReturnType<typeof getSlide>): OutlineSlide {
     summary: slide.summary,
     visualNote: slide.visualNote,
   };
-}
-
-function cleanIdList(value: unknown, label: string): string[] {
-  if (!Array.isArray(value)) throw validationError(`${label} 必须是数组`);
-  return value.map((item) => cleanString(item, 80)).filter(Boolean);
 }
 
 /**
@@ -182,10 +177,8 @@ async function dispatchByKind(
     case 'addSlide': {
       const deck = getOwnedDeck(userId, deckId);
       assertDeckIntent('addSlide', factsOf(deck));
-      const atIndex = Number.isInteger(Number(intent.params.atIndex))
-        ? Number(intent.params.atIndex)
-        : listSlides(deck.id).length;
-      insertSlide(deck.id, atIndex, (intent.params.slide || {}) as Partial<OutlineSlide>);
+      const atIndex = intent.params.atIndex ?? listSlides(deck.id).length;
+      insertSlide(deck.id, atIndex, intent.params.slide);
       touchDeck(deck.id, { status: 'outlined' });
       return reply<'addSlide'>(getDeckState(userId, deck.id), {}, 200);
     }
@@ -193,8 +186,7 @@ async function dispatchByKind(
     case 'removeSlide': {
       const deck = getOwnedDeck(userId, deckId);
       assertDeckIntent('removeSlide', factsOf(deck));
-      const slideId = cleanString(intent.params.slideId, 80);
-      if (!slideId) throw validationError('缺少 slideId');
+      const { slideId } = intent.params;
       if (listSlides(deck.id).length <= 1) throw validationError('至少保留一页');
       deleteSlide(deck.id, slideId);
       touchDeck(deck.id, { status: 'outlined' });
@@ -204,15 +196,15 @@ async function dispatchByKind(
     case 'reorderSlides': {
       const deck = getOwnedDeck(userId, deckId);
       assertDeckIntent('reorderSlides', factsOf(deck));
-      reorderSlides(deck.id, cleanIdList(intent.params.order, 'order'));
+      reorderSlides(deck.id, intent.params.order);
       return reply<'reorderSlides'>(getDeckState(userId, deck.id), {}, 200);
     }
 
     case 'splitSlide': {
       const deck = getOwnedDeck(userId, deckId);
       assertDeckIntent('splitSlide', factsOf(deck));
-      const slide = getSlide(deck.id, cleanString(intent.params.slideId, 80));
-      const into = Math.min(5, Math.max(2, Math.floor(Number(intent.params.into)) || 2));
+      const slide = getSlide(deck.id, intent.params.slideId);
+      const into = intent.params.into ?? 2;
       assertFreeLlmRate(userId);
       const split = await splitSlide(toOutlineSlide(slide), into, deps);
       replaceSlideWithMany(deck.id, slide.slideId, split.slides);
@@ -228,13 +220,9 @@ async function dispatchByKind(
       const deck = getOwnedDeck(userId, deckId);
       assertDeckIntent('updateSlide', factsOf(deck));
       const params = intent.params;
-      const slideId = cleanString(params.slideId, 80);
-      if (!slideId) throw validationError('缺少 slideId');
-      const structuredContent = params.structuredContent === undefined
-        ? undefined
-        : cleanString(params.structuredContent, 12000);
+      const { slideId, structuredContent } = params;
+      // 形状与上限由解析器回答；DSL 语法与内容保真属于动作自己的业务校验
       if (structuredContent !== undefined) {
-        if (!structuredContent) throw validationError('梳理内容不能为空');
         const validation = validateTaggedDsl(structuredContent);
         if (!validation.ok) throw validationError(validation.errors[0] || '梳理内容格式不正确');
       }
@@ -261,9 +249,7 @@ async function dispatchByKind(
     case 'commitVersion': {
       const deck = getOwnedDeck(userId, deckId);
       assertDeckIntent('commitVersion', factsOf(deck));
-      const slideId = cleanString(intent.params.slideId, 80);
-      const versionId = cleanString(intent.params.versionId, 80);
-      if (!slideId || !versionId) throw validationError('缺少 slideId 或 versionId');
+      const { slideId, versionId } = intent.params;
       setActiveVersion(deck.id, slideId, versionId);
       // 若此前有失败页，版本回退把它救活了：全部成功则整单转 generated
       const slides = listSlides(deck.id);
@@ -280,7 +266,7 @@ async function dispatchByKind(
       assertDeckIntent(intent.kind, factsOf(deck, () => slides));
       let targets: ReturnType<typeof listSlides>;
       if (intent.kind === 'structureSlide') {
-        targets = [getSlide(deck.id, cleanString(intent.params.slideId, 80))];
+        targets = [getSlide(deck.id, intent.params.slideId)];
       } else {
         const force = intent.params.force === true;
         targets = slides.filter((slide) => force || slide.structureStatus !== 'ok');
@@ -336,7 +322,7 @@ async function dispatchByKind(
     case 'setStyle': {
       const deck = getOwnedDeck(userId, deckId);
       assertDeckIntent('setStyle', factsOf(deck));
-      const stylePackId = cleanString(intent.params.stylePackId, 80);
+      const { stylePackId } = intent.params;
       const pack = resolveStylePack(stylePackId);
       if (!pack) throw validationError('风格包不存在');
       // 门控测试包硬门：不可见用户按 404 处理
@@ -355,7 +341,7 @@ async function dispatchByKind(
     case 'setReferenceImage': {
       // 设为参考图：不生图不扣费，把某页已生成图记为全套风格锚点；slideId 为空即取消
       const deck = getOwnedDeck(userId, deckId);
-      const slideId = cleanString(intent.params.slideId, 80);
+      const slideId = intent.params.slideId ?? '';
       if (!slideId) {
         setDeckAnchor(deck.id, '', '');
         return reply<'setReferenceImage'>(getDeckState(userId, deck.id), { anchorCleared: true }, 200);
@@ -398,21 +384,16 @@ async function dispatchByKind(
           .map((slide) => slide.slideId);
         options = { slideIds: failedIds, kind: 'deck-generate' };
       } else if (intent.kind === 'generateSlide') {
-        const slideId = cleanString(intent.params.slideId, 80);
-        if (!slideId) throw validationError('缺少 slideId');
-        options = { slideIds: [slideId], kind: 'deck-slide' };
+        options = { slideIds: [intent.params.slideId], kind: 'deck-slide' };
       } else {
         // 改图类动作共用前置：必须有已生成图；均按 deck-refine 计 deck_page_refine
-        const slideId = cleanString(intent.params.slideId, 80);
-        if (!slideId) throw validationError('缺少 slideId');
+        const { slideId } = intent.params;
         const slide = getSlide(deck.id, slideId);
         if (slide.genStatus !== 'succeeded' || !slide.activeVersionId) {
           throw new ApiError('REFINE_NEEDS_IMAGE', '该页还没有生成图，无法改图', 409, false);
         }
         if (intent.kind === 'refineSlide') {
-          const editInstruction = cleanString(intent.params.editInstruction, 1000);
-          if (!editInstruction) throw validationError('缺少 editInstruction');
-          options = { slideIds: [slideId], kind: 'deck-refine', refineInstruction: editInstruction };
+          options = { slideIds: [slideId], kind: 'deck-refine', refineInstruction: intent.params.editInstruction };
         } else if (intent.kind === 'eraseSlide') {
           const markImage = dataUrlToBuffer(intent.params.markImageDataUrl, '涂抹标记图', 2 * 1024 * 1024);
           options = {
@@ -423,17 +404,14 @@ async function dispatchByKind(
             refineExtraNote: ERASE_DEGRADE_NOTE,
           };
         } else if (intent.kind === 'editSlideText') {
-          const editInstruction = cleanString(intent.params.editInstruction, 1000);
-          if (!editInstruction) throw validationError('缺少 editInstruction');
           options = {
             slideIds: [slideId],
             kind: 'deck-refine',
-            refineInstruction: `图上改字：${editInstruction}。只改指定文字，其余元素、版式、配色全部保持不变。`,
+            refineInstruction: `图上改字：${intent.params.editInstruction}。只改指定文字，其余元素、版式、配色全部保持不变。`,
           };
         } else {
           // fuseSlide：取融合包同页型样张作第二参考图，无同页型时按 mapping 兜底链（末位首页）
-          const fusionPackId = cleanString(intent.params.fusionPackId, 120);
-          if (!fusionPackId) throw validationError('缺少 fusionPackId');
+          const { fusionPackId } = intent.params;
           const fusionPack = getTemplate(fusionPackId);
           if (!fusionPack || resolveTemplateKind(fusionPack) !== 'template') {
             throw validationError('融合模板不存在');
@@ -446,13 +424,13 @@ async function dispatchByKind(
             || '';
           const sampleDataUrl = loadStyleReferenceDataUrl(resolveStylePack(fusionPack.id), samplePath);
           if (!sampleDataUrl) throw validationError('融合模板没有可用样张');
-          const extra = cleanString(intent.params.editInstruction, 1000);
+          const extra = intent.params.editInstruction ?? '';
           options = {
             slideIds: [slideId],
             kind: 'deck-refine',
             refineInstruction: `把第一张图的版式骨架保留，视觉风格向第二张参考图靠拢融合，文字内容保持不变。${extra ? `补充要求：${extra}` : ''}`,
             refineExtraImages: [dataUrlToBuffer(sampleDataUrl, '融合样张', 8 * 1024 * 1024)],
-            refineExtraNote: `（本次未附带融合参考图：请把本页视觉风格向「${cleanString(fusionPack.name, 40)}」靠拢——${
+            refineExtraNote: `（本次未附带融合参考图：请把本页视觉风格向「${fusionPack.name.slice(0, 40)}」靠拢——${
               fusionPack.visualKeywords.slice(0, 8).join('、') || '同色系商务模板'
             }——版式骨架与文字内容保持不变。）`,
           };
