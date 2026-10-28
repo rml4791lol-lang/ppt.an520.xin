@@ -19,6 +19,7 @@ import { runDeckIntentParserTests } from './tests/deck-intent-parsers.test.mjs';
 import { runDeckWorkbenchTests } from './tests/deck-workbench.test.mjs';
 import { runDeckActionTests } from './tests/deck-actions.test.mjs';
 import { runSurfaceIntentTests } from './tests/surface-intents.test.mjs';
+import { runPaidRunTests } from './tests/paid-run.test.mjs';
 import { runSurfaceIntentParserTests } from './tests/surface-intent-parsers.test.mjs';
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'anppt-v2-gen-test-'));
@@ -238,6 +239,7 @@ const exportsLib = await import('../src/lib/server/exports.ts');
 const editableExportLib = await import('../src/modules/editable-export/server/editable.ts');
 const singlePages = await import('../src/lib/server/generation/single-pages.ts');
 const projects = await import('../src/lib/server/generation/projects.ts');
+const paidRun = await import('../src/lib/server/generation/paid-run.ts');
 const { STYLE_PACKS } = await import('../src/data/style-packs.ts');
 
 const baseConfig = configMod.getGenerationConfig();
@@ -877,6 +879,33 @@ const fullDeps = { fetchImpl: fullFetcher, config: engineConfig };
     refinedVersion?.chargeKey === `deck-generate:${deck.id}:${r7.job.jobId}:${s7.slides[0].slideId}`,
     `实际 ${refinedVersion?.chargeKey || ''}`);
 
+  // 逐页重生成也走计费运行模块：执行中在飞清单可见本页扣费键与 job，收尾两者都释放
+  let releaseGate;
+  let gateReached;
+  const gate = new Promise((resolve) => { releaseGate = resolve; });
+  const gateReachedPromise = new Promise((resolve) => { gateReached = resolve; });
+  const gatedFetcher = async (url, init = {}) => {
+    if (String(url).includes('/images/generations')) {
+      gateReached();
+      await gate;
+    }
+    return retryFetcher(url, init);
+  };
+  const rg = await actions.dispatchDeckIntent(
+    uid, deck.id, { kind: 'generateSlide', params: { slideId: s7.slides[0].slideId } },
+    { fetchImpl: gatedFetcher, config: engineConfig },
+  );
+  await gateReachedPromise;
+  const pageChargeKey = `deck-generate:${deck.id}:${rg.job.jobId}:${s7.slides[0].slideId}`;
+  check('逐页重生成在飞：模块清单透出页扣费键与 job',
+    paidRun.isInFlight(pageChargeKey) && paidRun.isInFlight(rg.job.jobId),
+    JSON.stringify(paidRun.listInFlight(uid)));
+  releaseGate();
+  await rg.job.done;
+  check('逐页重生成收尾：页与 job 的在飞登记都释放',
+    !paidRun.isInFlight(pageChargeKey) && !paidRun.isInFlight(rg.job.jobId));
+  check('整套四类动作收尾后无在飞残留', paidRun.listInFlight(uid).length === 0, JSON.stringify(paidRun.listInFlight(uid)));
+
   // unlock-structure：作废已生成页
   const r8 = await actions.dispatchDeckIntent(uid, deck.id, { kind: 'unlockStructure', params: {} }, fullDeps);
   check('unlock 后 status=structured 且页变 stale', r8.state.deck.status === 'structured' && r8.state.slides.every((s) => s.genStatus === 'stale'));
@@ -927,7 +956,13 @@ console.log('\n[4a] 已启动整套生成固定运行时配置快照');
     const started = await actions.dispatchDeckIntent(
       snapshotUser.user.id, snapshotDeck.id, { kind: 'generateSlides', params: {} }, { fetchImpl: snapshotFetcher },
     );
+    check('整套生成在飞登记由计费运行模块维护',
+      paidRun.isInFlight(started.job.jobId)
+        && paidRun.listInFlight(snapshotUser.user.id).some((run) => run.runId === started.job.jobId));
     await started.job.done;
+    check('整套生成结束释放模块在飞登记',
+      !paidRun.isInFlight(started.job.jobId)
+        && paidRun.listInFlight(snapshotUser.user.id).length === 0);
     check('管理员中途改配置不影响已启动整套生成',
       requestModels.length === 2
         && requestModels.every((model) => model === 'snapshot-model-a')
@@ -1062,6 +1097,7 @@ await runDeckIntentParserTests({ check });
 await runSurfaceIntentParserTests({ check });
 await runDeckWorkbenchTests({ check });
 await runDeckActionTests({ check });
+await runPaidRunTests({ check, auth, credits });
 await runSurfaceIntentTests({ check, expectThrows, auth, singlePages, credits, uid, makeMockFetcher, editsOkHandler, PNG_1X1_B64, imageConfig, deck });
 
 console.log('\n[5] 余额不足整单 402');
@@ -1437,6 +1473,42 @@ console.log('\n[9] 生成中断恢复（重启死锁收敛 + 孤儿扣费补退�
     check('老行空键：回退键模块函数，退款键与正常失败退款一致',
       credits.getBalance(crash.uid) === 100 && refundLedgerKeys(crash.uid).includes(credits.deriveRefundKey(chargedKey)),
       `实际 ${credits.getBalance(crash.uid)}`);
+  }
+
+  {
+    // 退款后崩溃（失败收敛改为「先退款再置 failed」后的崩溃窗口）：钱已退、行仍是在途态。
+    // 恢复必须置 failed 且不重复退款——重复退款会把「已退过」的行退第二遍。
+    const crash = await buildCrashDeck('deckkeyrefund', '127.0.0.14');
+    const chargedKey = `deck-generate:${crash.deckId}:${crash.jobId}:${crash.slide.slideId}`;
+    decks.createSlideVersion(crash.slide, { kind: 'generate', prompt: 'p', jobId: crash.jobId, chargeKey: chargedKey });
+    decks.updateSlideGen(crash.deckId, crash.slide.slideId, { genStatus: 'queued' });
+    credits.debitCredits(crash.uid, 10, { reason: '生成第 1 页', idempotencyKey: chargedKey, refType: 'deck', refId: crash.deckId });
+    credits.refundCredits(crash.uid, 10, {
+      reason: '第 1 页生成失败退回', idempotencyKey: credits.deriveRefundKey(chargedKey), refType: 'deck', refId: crash.deckId,
+    });
+    const healedRefunded = await crash.readDeck();
+    check('退款后崩溃：恢复置 failed 且不重复退款',
+      healedRefunded.slides[0].genStatus === 'failed' && credits.getBalance(crash.uid) === 100
+        && refundLedgerKeys(crash.uid).filter((key) => key === credits.deriveRefundKey(chargedKey)).length === 1,
+      `实际 ${healedRefunded.slides[0].genStatus} / ${credits.getBalance(crash.uid)}`);
+  }
+
+  {
+    // 置终态后崩溃：页已 failed 终态、退款已完成；恢复不再把终态行当在途，不双退。
+    const crash = await buildCrashDeck('deckkeyterminal', '127.0.0.15');
+    const chargedKey = `deck-generate:${crash.deckId}:${crash.jobId}:${crash.slide.slideId}`;
+    const failedVersion = decks.createSlideVersion(crash.slide, { kind: 'generate', prompt: 'p', jobId: crash.jobId, chargeKey: chargedKey });
+    decks.updateSlideVersion(failedVersion.versionId, { status: 'failed', error: 'IMAGE_FAILED: x' });
+    decks.updateSlideGen(crash.deckId, crash.slide.slideId, { genStatus: 'failed', genError: 'IMAGE_FAILED: x' });
+    credits.debitCredits(crash.uid, 10, { reason: '生成第 1 页', idempotencyKey: chargedKey, refType: 'deck', refId: crash.deckId });
+    credits.refundCredits(crash.uid, 10, {
+      reason: '第 1 页生成失败退回', idempotencyKey: credits.deriveRefundKey(chargedKey), refType: 'deck', refId: crash.deckId,
+    });
+    const healedTerminal = await crash.readDeck();
+    check('置终态后崩溃：终态行不再被收敛、不重复退款',
+      healedTerminal.slides[0].genStatus === 'failed' && credits.getBalance(crash.uid) === 100
+        && refundLedgerKeys(crash.uid).filter((key) => key === credits.deriveRefundKey(chargedKey)).length === 1,
+      `实际 ${healedTerminal.slides[0].genStatus} / ${credits.getBalance(crash.uid)}`);
   }
 
   // --- 单页：模拟中断（页 running + 在途 version + 已扣费）---
