@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """AnPPT 健康监控：服务/API 检查，失败连续 2 次后 SMTP 告警，恢复后通知。"""
-import json, smtplib, ssl, subprocess, urllib.error, urllib.request, os, time
+import json, glob, smtplib, ssl, subprocess, urllib.error, urllib.request, os, time
 from email.mime.text import MIMEText
 from email.utils import formataddr
 
@@ -10,6 +10,10 @@ HEALTH_URL = 'https://ppt.an520.xin/api/health'
 ALERT_AFTER = 2  # 连续失败次数达到后告警
 ALERT_REPEAT_SEC = 3600  # 持续异常时最多每小时再提醒一次，避免刷邮箱
 LOG_ALERT_BYTES = 80 * 1024 * 1024  # 应用侧总量上限 100MiB，80MiB 提前告警
+PROBLEM_LOG_DIR = os.environ.get('ANPPT_PROBLEM_LOG_DIR') or '/opt/anppt-v2/shared/data/logs'
+UPSTREAM_ERROR_WINDOW_SEC = 30 * 60  # 生图上游错误观察窗口
+UPSTREAM_LOG_TAIL_BYTES = 256 * 1024  # 只读问题日志尾部，避免每分钟扫大文件
+UPSTREAM_TRANSIENT_ALERT = 5  # 非欠费类上游错误，窗口内达到这个次数才报，避免瞬态误报
 
 
 def read_env(key):
@@ -21,6 +25,48 @@ def read_env(key):
     except OSError:
         return ''
     return ''
+
+
+def check_image_upstream_errors():
+    """最近窗口内的生图上游错误：(余额不足次数, 其他错误次数, 样例消息)。
+
+    2026-10-26 事故：主站与灾备账户同时欠费，20 次 402，10 页生成失败。
+    问题日志里 category=image-upstream 是唯一不依赖上游 API 形状的证据面，
+    所以用日志而不是余额接口做告警，任何供应商都适用。
+    """
+    cutoff_ms = int((time.time() - UPSTREAM_ERROR_WINDOW_SEC) * 1000)
+    balance_errors = 0
+    other_errors = 0
+    sample = ''
+    for day_offset in (0, 1):  # 窗口跨零点时也要看昨天
+        day = time.strftime('%Y-%m-%d', time.localtime(time.time() - day_offset * 86400))
+        for path in glob.glob(os.path.join(PROBLEM_LOG_DIR, 'problems-%s*.jsonl' % day)):
+            try:
+                size = os.path.getsize(path)
+                with open(path, 'rb') as f:
+                    if size > UPSTREAM_LOG_TAIL_BYTES:
+                        f.seek(size - UPSTREAM_LOG_TAIL_BYTES)
+                        f.readline()  # 丢掉被截断的半行
+                    for raw in f:
+                        try:
+                            record = json.loads(raw)
+                        except Exception:
+                            continue
+                        if record.get('category') != 'image-upstream':
+                            continue
+                        if int(record.get('ts') or 0) < cutoff_ms:
+                            continue
+                        message = str(record.get('message') or '')
+                        detail = str(record.get('detail') or '')
+                        if '402' in message or 'insufficient balance' in detail:
+                            balance_errors += 1
+                        else:
+                            other_errors += 1
+                        if not sample:
+                            sample = (message or detail)[:80]
+            except OSError:
+                continue
+    return balance_errors, other_errors, sample
 
 
 def check_image2ppt_credits():
@@ -139,6 +185,18 @@ def checks():
             problems.append('anppt-v2 备份超过 26 小时未更新')
     except Exception as e:
         problems.append('anppt-v2 备份检查失败: ' + str(e)[:60])
+    # 5. 生图上游错误（2026-10-26 欠费事故的回归闸）：窗口内出现 402 立即报；其他错误攒够次数再报。
+    balance_errors, other_errors, sample = check_image_upstream_errors()
+    if balance_errors:
+        problems.append(
+            '生图上游余额不足（402）最近 %d 分钟出现 %d 次，用户页面会生成失败，请给主站/灾备账户充值'
+            % (UPSTREAM_ERROR_WINDOW_SEC // 60, balance_errors)
+        )
+    elif other_errors >= UPSTREAM_TRANSIENT_ALERT:
+        problems.append(
+            '生图上游最近 %d 分钟错误 %d 次（%s），请检查上游状态'
+            % (UPSTREAM_ERROR_WINDOW_SEC // 60, other_errors, sample or '无详情')
+        )
     return problems
 
 

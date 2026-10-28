@@ -43,7 +43,7 @@ NODE
 ## 3. 监控告警（邮件来源）
 
 - root cron 每 5 分钟：`/usr/local/sbin/anppt-health-monitor.py`（仓库副本 `deploy/anppt-health-monitor.py`；日志 `/var/log/anppt-monitor.log`，状态 `/var/lib/anppt-monitor/state.json`）。SMTP 读 **`/opt/anppt-v2/shared/.env`**，不要读 slideflow 的 `.env`。
-- 检查项：`anppt-v2.service` + `caddy.service` 存活 + `https://ppt.an520.xin/api/health`（含 `release`）+ 问题日志落盘/体积 + 磁盘 + **anppt-v2 备份新鲜度（26h 无新备份即告警）**。
+- 检查项：`anppt-v2.service` + `caddy.service` 存活 + `https://ppt.an520.xin/api/health`（含 `release`）+ 问题日志落盘/体积 + 磁盘 + **anppt-v2 备份新鲜度（26h 无新备份即告警）** + **生图上游 402（2026-10-26 欠费导致 10 页生成失败的回归闸；30 分钟内出现 402 即告警，非 402 错误 30 分钟内 ≥5 次也报）**。
 - **不要**把 `slideflow-studio.service` 列为存活条件：老站已 disable、Caddy 不再代理 3300。禁区仍是不杀、不重新代理；监控盯它会导致每 5 分钟刷邮箱（2026-09-07 修：`fail_count` 曾卡在 33）。img2pptx-v4-node 已于 2026-08-22 退役，见 §17。
 - **health 契约**：顶层 `ok`、`db`、`llm.configured`、`image.configured`、`editable.configured`、`plugins` 装配清单（装配失败降级为 `plugins.error`），以及 `logging.ok` / `writable` / `recentFailure` / `totalBytes`。发布验证额外要求 `plugins` 存在且无 `error`、`release` 等于本次 commit；监控对 `plugins.error` 告警（缺字段视为回滚到旧版，不告警）。连续失败 2 次起发一封到 366150820@qq.com；持续异常最多每小时再提醒一次；恢复后发一封恢复通知。
 - **QQ From**：告警信 `From` 必须是 SMTP 登录邮箱；中文显示名走 `email.utils.formataddr`（RFC2047）。不要把 `.env` 里带中文、未编码的 `SMTP_FROM` 原文塞进邮件头——QQ 会 550 拒信，监控看起来像“发了”其实没发出去。用户 OTP 走 nodemailer，一般会自动编码，不受这条影响。

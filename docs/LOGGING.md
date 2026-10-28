@@ -81,7 +81,7 @@ ts level category message detail userId refType refId eventId requestId method r
 健康契约的消费方（改 `/api/health` 字段必须同时核对这三处，缺一处就是发布门与线上告警的认知分叉）：
 
 - `scripts/verify-health.mjs`：发布门。显式 `error` 必失败、缺字段按回滚场景区分（新 release 缺字段照样失败）、`release` 必须与本次部署 commit 一致。
-- `deploy/anppt-health-monitor.py`：root cron 每 5 分钟告警（服务存活、`logging.ok`、`plugins.error`、磁盘、备份新鲜度）。
+- `deploy/anppt-health-monitor.py`：root cron 每 5 分钟告警（服务存活、`logging.ok`、`plugins.error`、磁盘、备份新鲜度、生图上游 402/连续错误）。
 - `.agents/skills/anppt-deploy`：部署技能的执行流程（部署 → 健康校验 → 失败回滚），与上面两处共用同一契约。
 
 ## 3. 多人并行修改规则
