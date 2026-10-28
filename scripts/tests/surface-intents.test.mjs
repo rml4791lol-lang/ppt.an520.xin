@@ -37,30 +37,30 @@ export async function runSurfaceIntentTests(ctx) {
     { kind: 'exportDeckImage', params: { deckId: 'deck/1' } },
     { kind: 'exportDeckEditable', params: { deckId: 'deck/1', force: true } },
     { kind: 'exportDeckTextEditable', params: { deckId: 'deck/1' } },
-    { kind: 'quoteExport', params: { deckId: 'deck/1' } },
   ].map((intent) => ex.toExportActionCall(intent));
-  check('导出 4 个意图：deck 三条导出 + 报价，路径互不重复',
-    new Set(exCalls.map((call) => call.path)).size === 4
-      && exCalls[3].path === '/api/pptx-exports/quote');
+  check('导出 3 个意图：deck 三条导出，路径互不重复（报价意图已删除）',
+    new Set(exCalls.map((call) => call.path)).size === 3
+      && exCalls.every((call) => call.path.startsWith('/api/deck/')));
   check('导出意图把 deckId 编码进路径（斜杠不逃逸出路由段）',
     exCalls[0].path === '/api/deck/deck%2F1/export-image'
       && exCalls[1].path === '/api/deck/deck%2F1/export-editable'
       && exCalls[2].path === '/api/deck/deck%2F1/export-editable-text',
     exCalls[0].path);
 
-  check('单页解析：合法意图 / 缺省 params / 未知 kind / 非对象参数',
+  check('单页解析：合法意图 / 可选参数缺省 / 必填缺失拒绝 / 未知 kind / 非对象参数',
     envelope.parseIntent({ kind: 'selectVersion', params: { pageId: 'p', versionId: 'v' } }, sp.SINGLE_PAGE_INTENT_PARAMS)?.kind === 'selectVersion'
-      && JSON.stringify(envelope.parseIntent({ kind: 'selectVersion' }, sp.SINGLE_PAGE_INTENT_PARAMS)?.params) === '{}'
+      && envelope.parseIntent({ kind: 'exportImagePptx', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === true
+      && envelope.parseIntent({ kind: 'selectVersion' }, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === false
       && envelope.parseIntent({ kind: 'drop-database', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === false
       && envelope.parseIntent({ kind: 'selectVersion', params: [] }, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === false
       && envelope.parseIntent(null, sp.SINGLE_PAGE_INTENT_PARAMS)?.ok === false);
   check('导出解析：合法意图 / 未知 kind / 数组参数拒绝',
-    envelope.parseIntent({ kind: 'quoteExport', params: { projectId: 'p' } }, ex.EXPORT_INTENT_PARAMS)?.kind === 'quoteExport'
+    envelope.parseIntent({ kind: 'exportDeckEditable', params: { deckId: 'd' } }, ex.EXPORT_INTENT_PARAMS)?.kind === 'exportDeckEditable'
       && envelope.parseIntent({ kind: 'exportDeckImage', params: [] }, ex.EXPORT_INTENT_PARAMS)?.ok === false
       && envelope.parseIntent({ kind: 'nope' }, ex.EXPORT_INTENT_PARAMS)?.ok === false);
   check('路由侧 expected kind 拒绝错配（不把别的动作参数当自己的）',
     envelope.parseIntent({ kind: 'selectVersion', params: {} }, sp.SINGLE_PAGE_INTENT_PARAMS, 'generatePage')?.ok === false
-      && envelope.parseIntent({ kind: 'exportDeckImage', params: { deckId: 'd' } }, ex.EXPORT_INTENT_PARAMS, 'quoteExport')?.ok === false);
+      && envelope.parseIntent({ kind: 'exportDeckImage', params: { deckId: 'd' } }, ex.EXPORT_INTENT_PARAMS, 'exportDeckEditable')?.ok === false);
 
   await expectThrows('服务器适配器：无 intent 信封一律 400（旧 body 直通已删除）', () =>
     server.readIntentParams({ pageId: 'legacy-page' }, sp.SINGLE_PAGE_INTENT_PARAMS, 'selectVersion'), 'VALIDATION_ERROR');
@@ -139,23 +139,32 @@ export async function runSurfaceIntentTests(ctx) {
   check('单页路由拒绝错配意图：400 且不落旧通道',
     mismatched.status === 400 && mismatchedJson?.error?.code === 'VALIDATION_ERROR');
 
-  // ---------- 端到端：导出报价经意图通道 ----------
-  const editableExport = await import('../../src/modules/editable-export/server/editable.ts');
-  const quoteRoute = await import('../../src/app/api/pptx-exports/quote/route.ts');
-  const legacyQuote = editableExport.quoteExport(uid, { deckId: deck.id });
-  const quoteResponse = await quoteRoute.POST(post('http://localhost/api/pptx-exports/quote', {
-    intent: { kind: 'quoteExport', params: { deckId: deck.id } },
+  const missingVersion = await selectRoute.POST(post('http://localhost/api/single-page/select-version', {
+    intent: { kind: 'selectVersion', params: { pageId: 'pg-intent-sel' } },
   }), routeContext);
-  const quoteJson = await quoteResponse.json();
-  check('导出报价经意图通道与旧路径结果一致',
-    quoteResponse.status === 200
-      && quoteJson?.data?.pageCount === legacyQuote.pageCount
-      && JSON.stringify(quoteJson?.data?.quotes) === JSON.stringify(legacyQuote.quotes),
-    `实际 ${quoteResponse.status}`);
-  const wrongQuote = await quoteRoute.POST(post('http://localhost/api/pptx-exports/quote', {
-    intent: { kind: 'exportDeckImage', params: { deckId: deck.id } },
-  }), routeContext);
-  check('导出报价拒绝错配意图：400', wrongQuote.status === 400);
+  const missingVersionJson = await missingVersion.json();
+  check('单页路由把解析器文案原样套成 400（缺 versionId 不改版本）',
+    missingVersion.status === 400
+      && missingVersionJson?.error?.code === 'VALIDATION_ERROR'
+      && missingVersionJson?.error?.message === '缺少 pageId 或 versionId'
+      && singlePages.getSingleProjectDetail(uid, generated.page.projectId).pages[0].activeVersionId === genVersion.versionId,
+    `实际 ${missingVersion.status} ${missingVersionJson?.error?.message}`);
+
+  // ---------- 端到端：导出路由经意图通道（解析失败在动作前拒绝） ----------
+  const exportEditableRoute = await import('../../src/app/api/deck/[id]/export-editable/route.ts');
+  const deckContext = { params: Promise.resolve({ id: deck.id }) };
+  const badForce = await exportEditableRoute.POST(post(`http://localhost/api/deck/${deck.id}/export-editable`, {
+    intent: { kind: 'exportDeckEditable', params: { deckId: deck.id, force: 'maybe' } },
+  }), deckContext);
+  const badForceJson = await badForce.json();
+  check('导出路由拒绝非法参数：400 VALIDATION_ERROR 且不发起转换',
+    badForce.status === 400
+      && badForceJson?.error?.code === 'VALIDATION_ERROR'
+      && badForceJson?.error?.message === 'force 必须是布尔值',
+    `实际 ${badForce.status} ${badForceJson?.error?.message}`);
+  check('报价路由已删除：同一信封不再有可分发路径',
+    !ex.EXPORT_INTENT_PARAMS.quoteExport
+      && !('quoteExport' in ex.EXPORT_INTENT_PARAMS));
 }
 
 export async function runAdminIntentTests(ctx) {
@@ -182,9 +191,9 @@ export async function runAdminIntentTests(ctx) {
     JSON.stringify(calls.map((call) => `${call.method} ${call.path}`)));
   check('后台角色意图把 userId 编码进路径',
     calls[4].path === '/api/admin/users/u%2F1/role' && calls[4].method === 'POST');
-  check('后台解析：合法 / 缺省 params / 未知 kind / 数组参数',
+  check('后台解析：合法 / 必填缺失拒绝 / 未知 kind / 数组参数',
     envelope.parseIntent({ kind: 'setFeatureFlag', params: { key: 'k', state: 'beta' } }, intents.ADMIN_INTENT_PARAMS)?.kind === 'setFeatureFlag'
-      && JSON.stringify(envelope.parseIntent({ kind: 'setFeatureFlag' }, intents.ADMIN_INTENT_PARAMS)?.params) === '{}'
+      && envelope.parseIntent({ kind: 'setFeatureFlag' }, intents.ADMIN_INTENT_PARAMS)?.ok === false
       && envelope.parseIntent({ kind: 'drop-database' }, intents.ADMIN_INTENT_PARAMS)?.ok === false
       && envelope.parseIntent({ kind: 'setFeatureFlag', params: [1] }, intents.ADMIN_INTENT_PARAMS)?.ok === false);
   check('后台路由侧 expected kind 拒绝错配',
@@ -221,4 +230,18 @@ export async function runAdminIntentTests(ctx) {
   const mismatchedJson = await mismatchedPut.json();
   check('配置路由拒绝错配意图：400 且不落旧通道',
     mismatchedPut.status === 400 && mismatchedJson?.error?.code === 'VALIDATION_ERROR');
+
+  const badValuesPut = await configRoute.PUT(adminRequest('http://localhost/api/admin/config', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-anppt-action': '1' },
+    body: JSON.stringify({
+      intent: { kind: 'updateRuntimeConfig', params: { values: [] } },
+    }),
+  }));
+  const badValuesJson = await badValuesPut.json();
+  check('配置路由把解析器文案原样套成 400（values 不是对象）',
+    badValuesPut.status === 400
+      && badValuesJson?.error?.code === 'VALIDATION_ERROR'
+      && badValuesJson?.error?.message === 'values 格式不正确',
+    `实际 ${badValuesPut.status} ${badValuesJson?.error?.message}`);
 }
