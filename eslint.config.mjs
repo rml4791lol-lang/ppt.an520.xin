@@ -62,12 +62,6 @@ const eslintConfig = defineConfig([
     files: ["src/plugins/ppt-replicate/ui.ts", "src/plugins/ppt-replicate/client/beautify-tab.tsx"],
     rules: { "import/no-restricted-paths": "off" },
   },
-  // 登记例外：生成恢复唯一入口是恢复域的组装点——模块表只由模块读写，平台这里只注入判活口径、
-  // 调度模块导出的结算入口（「平台件不得 import 模块」的通用禁令让位于依赖倒置）。
-  {
-    files: ["src/lib/server/generation/recovery.ts"],
-    rules: { "import/no-restricted-paths": "off" },
-  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

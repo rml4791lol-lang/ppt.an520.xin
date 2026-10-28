@@ -1,17 +1,12 @@
 // WPS AIPPT 可编辑转换通道：内部上传 + SSE 转换 + provider 优先级/回退，全 mock。
+import { startEditableWithDone } from './editable-start-helpers.mjs';
 
 export async function runWpsAipptTests(ctx) {
   const { check, baseConfig, credits, uid, deck, jsonResponse } = ctx;
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
-  // 生产 view 无 done：测试经 deps.onPipelineDone 收集后台管线，再按需 drain 等终态。
-  const pipelineWaits = [];
-  const collectPipeline = (done) => { pipelineWaits.push(done); };
-  const drainPipelines = () => Promise.all(pipelineWaits.splice(0));
+  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
   const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    exportsLib.startEditableExport(exportsLib.deckEditableSource(userId, deckId), 'editable', {
-      ...options,
-      deps: { ...deps, onPipelineDone: collectPipeline },
-    });
+    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
   const wps = await import('../../src/modules/editable-export/server/wps-aippt.ts');
   const { getGenDb } = await import('../../src/lib/server/generation/db.ts');
 
@@ -99,7 +94,7 @@ export async function runWpsAipptTests(ctx) {
     const started = await startDeckEditableFor(uid, deck.id, { fetchImpl: makeWpsFetcher(calls), config: wpsConfig, pollIntervalMs: 1 },
       { force: true },
     );
-    await drainPipelines();
+    await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     const row = getGenDb().prepare('SELECT upstream_provider, upstream_task_id, file_url FROM export_jobs WHERE id = ?').get(started.exportId);
     check('WPS 作为主通道成功落盘并记录 provider 与 doc_id',
@@ -141,7 +136,7 @@ export async function runWpsAipptTests(ctx) {
       pollIntervalMs: 1,
       retryDelayMs: 0,
     }, { force: true });
-    await drainPipelines();
+    await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     const row = getGenDb().prepare('SELECT upstream_provider FROM export_jobs WHERE id = ?').get(started.exportId);
     check('WPS 登录态失效 → 自动回退 Codia 并成功', exp.status === 'succeeded' && row?.upstream_provider === 'codia');

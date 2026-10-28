@@ -1,4 +1,5 @@
 // Image2PPT 可编辑转换通道测试：提交/轮询/下载/回调验签/主备切换，全 mock。
+import { startEditableWithDone } from './editable-start-helpers.mjs';
 import { createHmac } from 'node:crypto';
 
 export async function runImage2PptTests(ctx) {
@@ -6,15 +7,9 @@ export async function runImage2PptTests(ctx) {
     check, baseConfig, credits, uid, deck, makeMockFetcher,
   } = ctx;
   const exportsLib = await import('../../src/modules/editable-export/server/editable.ts');
-  // 生产 view 无 done：测试经 deps.onPipelineDone 收集后台管线，再按需 drain 等终态。
-  const pipelineWaits = [];
-  const collectPipeline = (done) => { pipelineWaits.push(done); };
-  const drainPipelines = () => Promise.all(pipelineWaits.splice(0));
+  // 单入口测试垫片：生产句柄不再带 done，靠注入 deps.onPipelineDone 等管线结束。
   const startDeckEditableFor = (userId, deckId, deps = {}, options = {}) =>
-    exportsLib.startEditableExport(exportsLib.deckEditableSource(userId, deckId), 'editable', {
-      ...options,
-      deps: { ...deps, onPipelineDone: collectPipeline },
-    });
+    startEditableWithDone(exportsLib, exportsLib.deckEditableSource(userId, deckId), 'editable', deps, options);
   const i2p = await import('../../src/modules/editable-export/server/image2ppt.ts');
   const { getGenDb } = await import('../../src/lib/server/generation/db.ts');
 
@@ -155,7 +150,7 @@ export async function runImage2PptTests(ctx) {
       { force: true },
     );
     check('Image2PPT 管线发起：processing + 40🌟', started.status === 'processing' && started.credits === 40);
-    await drainPipelines();
+    await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     const row = getGenDb().prepare('SELECT upstream_provider, upstream_task_id FROM export_jobs WHERE id = ?').get(started.exportId);
     check('Image2PPT 管线成功落盘 + provider 记录',
@@ -186,7 +181,7 @@ export async function runImage2PptTests(ctx) {
     const started = await startDeckEditableFor(uid, deck.id, { fetchImpl: fetcher, config: bothConfig, pollIntervalMs: 1, retryDelayMs: 0 },
       { force: true },
     );
-    await drainPipelines();
+    await started.done;
     const exp = await exportsLib.getExport(uid, started.exportId);
     const row = getGenDb().prepare('SELECT upstream_provider FROM export_jobs WHERE id = ?').get(started.exportId);
     check('Image2PPT 失败自动切换 Codia 并成功',

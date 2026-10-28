@@ -1,7 +1,7 @@
 import { jsonOk } from '@/lib/server/http';
 import { requireUser } from '@/lib/server/auth';
 import { defineApiRoute } from '@/lib/server/generation/route';
-import { singlePageEditableSource, startEditableExport } from '@/modules/editable-export/server/editable';
+import { startSinglePageEditableExport } from '@/modules/editable-export/server/editable';
 import { SINGLE_PAGE_INTENT_PARAMS } from '@/lib/single-page-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
@@ -13,10 +13,20 @@ export const POST = defineApiRoute(async (request) => {
   const { user } = requireUser(request);
   const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const { params: body } = readIntentParams(raw, SINGLE_PAGE_INTENT_PARAMS, 'exportEditablePptx');
-  const started = await startEditableExport(
-    singlePageEditableSource(user.id, body.projectId),
-    'editable',
-    { force: body.force },
+  const started = await startSinglePageEditableExport(user.id, body.projectId, {}, { force: body.force });
+  return jsonOk(
+    {
+      exportId: started.exportId,
+      status: started.status,
+      credits: started.credits,
+      pageCount: started.pageCount,
+      progress: started.progress,
+      completedPages: started.completedPages,
+      totalPages: started.totalPages,
+      stage: started.stage,
+      url: started.url,
+      reused: started.reused,
+    },
+    { status: started.status === 'succeeded' ? 200 : 202 },
   );
-  return jsonOk(started, { status: started.status === 'succeeded' ? 200 : 202 });
 }, { mutation: true });
