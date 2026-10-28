@@ -11,16 +11,8 @@ import { getGenDb, nowMs } from './db';
 import { deckChargeKey } from './charge-keys';
 import { getGenerationConfig } from './config';
 
-// ---- 遗留登记口：单页 / 转底座尚未迁入 paid-run，先共用同一张在飞注册表 ----
-// 两域迁入计费运行模块后删除这四个函数（域代码不再手调 mark）。
-
-export function markJobActive(jobId: string): void {
-  holdInFlight({ runId: jobId });
-}
-
-export function markJobDone(jobId: string): void {
-  releaseInFlight(jobId);
-}
+// ---- 遗留登记口：单页尚未迁入 paid-run，先共用同一张在飞注册表 ----
+// 单页迁入计费运行模块后删除这两个函数（域代码不再手调 mark）。
 
 export function markSinglePageActive(pageId: string): void {
   holdInFlight({ runId: pageId, domain: 'single-page' });
@@ -255,6 +247,6 @@ function singlePageRuns(userId: string): InterruptedRun[] {
 }
 
 function pptToBaseRuns(userId: string): InterruptedRun[] {
-  // 底座表归模块：这里只注入判活口径，调度模块导出的结算入口
-  return interruptedPptToBaseRuns(userId, (jobId, heartbeatMs) => isInFlight(jobId) || !isStale(heartbeatMs));
+  // 底座表归模块：这里只注入判活口径（paid-run 在飞注册表 + 心跳），补退与终态归 reconcileInterrupted
+  return interruptedPptToBaseRuns(userId, (runId, heartbeatMs) => isInFlight(runId) || !isStale(heartbeatMs));
 }
