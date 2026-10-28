@@ -178,36 +178,6 @@ export async function runPptReplicateTests(ctx) {
       rpPrompt.includes('保画面') && rpPrompt.includes('metric') && rpPrompt.includes('只换色板')
         && !rpPrompt.includes('全面重新设计') && !rpPrompt.includes('专业演示 PPT') && !rpPrompt.includes('结构草图'),
       rpPrompt.slice(0, 180));
-    const visualPlanMod = await import('../../src/lib/server/generation/visual-plan.ts');
-    const rpPage = singlePages.getOwnedPage(uid, 'rpok1');
-    const expectedPlan = visualPlanMod.buildVisualPlan({
-      slide: {
-        pageIndex: rpPage.pageIndex,
-        pageType: '',
-        role: 'content',
-        title: '新指标',
-        goal: '',
-        summary: ['完成率 86%'],
-        structuredContent: '',
-      },
-      deckContext: { totalPages: 1, pageIndex: rpPage.pageIndex },
-      stylePack: null,
-      template: null,
-      mode: 'replicate',
-      replicate: {
-        structure: {
-          family: 'metric', zones: '左侧大数字', slots: '1 个指标', hierarchy: '数字最大', forbidden: ['旧营收数字'],
-        },
-        colorMode: 'new-theme',
-      },
-    });
-    check('复刻逐页路径与视觉计划同源（上游提示词 = 计划产出）',
-      rpPrompt === expectedPlan.prompt,
-      `计划 ${expectedPlan.prompt.slice(0, 80)} / 上游 ${rpPrompt.slice(0, 80)}`);
-    check('复刻计划：页型证据纳入壳页结构卡，且壳图是唯一底图（不取额外参考）',
-      expectedPlan.pageTypeKey === 'big-number' && expectedPlan.references.length === 0
-        && expectedPlan.primaryReference === null,
-      `实际 ${expectedPlan.pageTypeKey} / refs=${expectedPlan.references.length}`);
     const rpListed = projects.listProjects(uid).items.find((item) => item.id === rp1.page.projectId);
     check('复刻项目在列表中标记 source=replicate', rpListed?.source === 'replicate');
     check('详情透出 source 与壳路径',

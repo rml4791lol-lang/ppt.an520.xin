@@ -1,7 +1,8 @@
 // [7h] 恢复运行源注册表（T06）：恢复入口只有一循环——各域在装配期登记「运行源」（在途列表 +
 // 结算动作 + 扣费键），判活时钟与在飞注册表经 RunSourceContext 注入，来源不自读时间。
-// 覆盖：装配后三源登记（deck / single-page / ppt-to-base）、假运行源 + 假时钟（新鲜不收敛、
-// 过期收敛、退款只一次、重复恢复幂等）、三域同轮收敛各走各自运行源。
+// 覆盖：装配后四源登记（deck / single-page / ppt-to-base / editable）、假运行源 + 假时钟（新鲜不收敛、
+// 过期收敛、退款只一次、重复恢复幂等）、两种结算方式（退款型先退星再置终态；续跑型不退星且 hub 只启动
+// 不等待）、三域同轮收敛各走各自运行源。
 // 由 scripts/test-generation.mjs 汇总调用；装配点与进程启动钩子同源（src/recovery-assembly.ts）。
 export async function runRecoveryRegistryTests(ctx) {
   const { check, auth, credits, imageConfig } = ctx;
@@ -29,9 +30,9 @@ export async function runRecoveryRegistryTests(ctx) {
 
   // ---- 装配点登记三源：恢复入口只遍历注册表，不再认识任何域 ----
   const domains = registry.listRunSources().map((source) => source.domain);
-  const known = domains.filter((domain) => ['deck', 'single-page', 'ppt-to-base'].includes(domain));
-  check('运行源注册表：装配后登记三源，顺序 deck → single-page → ppt-to-base',
-    known.join(',') === 'deck,single-page,ppt-to-base', domains.join(','));
+  const known = domains.filter((domain) => ['deck', 'single-page', 'ppt-to-base', 'editable'].includes(domain));
+  check('运行源注册表：装配后登记四源，顺序 deck → single-page → ppt-to-base → editable',
+    known.join(',') === 'deck,single-page,ppt-to-base,editable', domains.join(','));
 
   // ---- 假运行源 + 注入时钟：新鲜不收敛、过期收敛、退款只一次 ----
   const uid = await makeUser('clock');
@@ -94,6 +95,68 @@ export async function runRecoveryRegistryTests(ctx) {
   check('重复恢复：幂等（不重复收敛、不双退）',
     againHealed === 0 && refundRows(uid).length === 1 && credits.getBalance(uid) === before + 10,
     `healed=${againHealed} refunds=${refundRows(uid).length}`);
+
+  // ---- 结算方式二：续跑（可编辑导出）不退星，hub 只启动不等待 ----
+  {
+    const rid = await makeUser('resume');
+    const resumeKey = `export-editable:resume-deck:exp-resume`;
+    credits.debitCredits(rid, 40, {
+      reason: '转可编辑 PPTX（2 页）', idempotencyKey: resumeKey, refType: 'deck', refId: 'resume-deck',
+    });
+    const spentResume = credits.getBalance(rid);
+    const settledResume = [];
+    let settleReturned = false;
+    const resumeSource = {
+      domain: 'resume-source',
+      listRuns(userId) {
+        if (userId !== rid || settledResume.length > 0) return [];
+        return [{
+          key: 'exp-resume',
+          domain: 'editable',
+          userId,
+          interrupted: true,
+          settlement: 'resume',
+          chargeKey: resumeKey,
+          refType: 'deck',
+          refId: 'resume-deck',
+          // 异步结算：返回一个未完成的 promise——hub 等待它就会挂住整条鉴权门
+          settle: () => {
+            settledResume.push('resume');
+            return new Promise(() => { settleReturned = true; });
+          },
+        }];
+      },
+    };
+    registry.registerRunSources([resumeSource]);
+    const healedResume = recovery.reconcileUser(rid, () => fakeHeartbeat);
+    check('续跑结算：中断的续跑型运行被列出并启动结算动作（不等待）',
+      healedResume === 1 && settledResume.join(',') === 'resume' && settleReturned === true,
+      `healed=${healedResume} settled=${settledResume.join(',')}`);
+    check('续跑结算：不退款（钱归仍在推进的那次运行）',
+      credits.getBalance(rid) === spentResume && refundRows(rid).length === 0,
+      `balance=${credits.getBalance(rid)} refunds=${JSON.stringify(refundRows(rid))}`);
+
+    // 退款型：settle 执行时钱已按实扣金额退回（退款先于终态，顺序归 paid-run.failPaidRun）
+    const oid = await makeUser('order');
+    const orderKey = 'deck-generate:order-deck:job-order:s-order';
+    credits.debitCredits(oid, 10, {
+      reason: '生成第 1 页', idempotencyKey: orderKey, refType: 'deck', refId: 'order-deck',
+    });
+    let balanceAtSettle = -1;
+    recovery.reconcileInterrupted([{
+      key: 's-order',
+      domain: 'deck',
+      userId: oid,
+      interrupted: true,
+      chargeKey: orderKey,
+      refundReason: '第 1 页生成中断退回',
+      refType: 'deck',
+      refId: 'order-deck',
+      settle: () => { balanceAtSettle = credits.getBalance(oid); },
+    }]);
+    check('退款先于终态：结算动作执行时钱已按实扣金额退回（先退款再置 failed）',
+      balanceAtSettle === 100, `余额=${balanceAtSettle}`);
+  }
 
   // ---- 三域同轮收敛：一次 reconcileUser 走完注册表，列表与结算只来自各自运行源 ----
   {

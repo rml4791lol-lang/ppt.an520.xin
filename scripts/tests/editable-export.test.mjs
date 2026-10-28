@@ -292,7 +292,7 @@ export async function runEditableExportTests(ctx) {
       check('懒恢复成功不触碰余额', credits.getBalance(uid) === before);
     }
 
-    // ---- 懒恢复读点：导出列表读一眼就重跑中断的导出（调用方不显式调用恢复）----
+    // ---- 读点不再自带续跑（T13 删除 30s 宽限）：续跑是运行源的结算动作 ----
     {
       const now = Date.now();
       genDb.prepare(`INSERT INTO export_jobs
@@ -310,13 +310,20 @@ export async function runEditableExportTests(ctx) {
       ]);
       const beforeRead = credits.getBalance(uid);
       exportsLib.listExports(uid, {}, codiaDeps(readFetcher));
-      let readStatus = 'processing';
-      for (let i = 0; i < 150 && readStatus !== 'succeeded'; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const readStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read')?.status || '');
+      check('读点不再自带续跑：列表读一眼不会重跑无上游任务的中断导出（判活归运行源）',
+        readStatus === 'processing' && readFetcher.calls.length === 0,
+        `实际 ${readStatus} / 上游调用 ${readFetcher.calls.length}`);
+      // 同一支续跑函数就是运行源的结算动作：注入依赖后把这条行跑完，不重复扣星
+      exportsLib.resumeInterruptedExport('exp_lazy_read', codiaDeps(readFetcher));
+      let resumedStatus = 'processing';
+      for (let i = 0; i < 150 && resumedStatus !== 'succeeded'; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 20));
-        readStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read')?.status || '');
+        resumedStatus = String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get('exp_lazy_read')?.status || '');
       }
-      check('懒恢复读点：listExports 读一眼即重跑中断的导出', readStatus === 'succeeded', `实际 ${readStatus}`);
-      check('懒恢复读点：重跑不重复扣星', credits.getBalance(uid) === beforeRead);
+      check('续跑结算动作：运行源的续跑函数把中断导出续跑成功', resumedStatus === 'succeeded', `实际 ${resumedStatus}`);
+      check('续跑不重复扣星（钱归首次运行）', credits.getBalance(uid) === beforeRead);
     }
 
     // ---- 未 generated deck → 409 ----
@@ -1195,5 +1202,305 @@ export async function runEditableExportTests(ctx) {
       !existsSync(new URL('./editable-start-helpers.mjs', import.meta.url)));
   }
 
+  console.log('\n[6k] 可编辑导出接入计费运行 + 恢复注册表（T13）');
+  {
+    const genDb = (await import('../../src/lib/server/generation/db.ts')).getGenDb();
+    const ledgerDb = (await import('../../src/lib/server/db.ts')).getDb();
+    const recovery = await import('../../src/lib/server/generation/recovery.ts');
+    const registry = await import('../../src/lib/server/generation/run-source.ts');
+    const paidRunLib = await import('../../src/lib/server/generation/paid-run.ts');
+    const staleMs = imageConfig.jobStaleMs;
+    const codiaDeps13 = (fetchImpl) => ({ fetchImpl, config: baseConfig, pollIntervalMs: 1, retryDelayMs: 0 });
+    const statusOf = (exportId) => String(genDb.prepare('SELECT status FROM export_jobs WHERE id = ?').get(exportId)?.status || '');
+    const refundKeys = (userId) => ledgerDb
+      .prepare("SELECT idempotency_key FROM credit_ledger WHERE user_id = ? AND event_type = 'refund'")
+      .all(userId).map((row) => String(row.idempotency_key));
+    const waitStatus = async (exportId, want, ms = 8000) => {
+      const deadline = Date.now() + ms;
+      while (Date.now() < deadline && statusOf(exportId) !== want) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return statusOf(exportId);
+    };
+    // 独立用户：鉴权门恢复只扫本用户的行，不把主套件的在途数据卷进来
+    const t13 = await auth.registerWithPassword(
+      { account: 'editablet13', password: 'password123', confirmPassword: 'password123' },
+      '127.9.13.1',
+    );
+    const tid = t13.user.id;
+    let rowSeq = 0;
+    /** 造一条在途导出行（上传来源：续跑管线读落盘 PDF，不依赖整套页图） */
+    const makeExportRow = async (opts = {}) => {
+      rowSeq += 1;
+      const exportId = `exp_t13_r${rowSeq}`;
+      const source = await exportsLib.uploadedEditableSource(
+        tid,
+        [{ name: `t13-${rowSeq}.png`, mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') }],
+        { config: baseConfig },
+      );
+      const chargeKey = `export-editable:${source.refId}:${exportId}`;
+      const now = Date.now();
+      genDb.prepare(
+        `INSERT INTO export_jobs
+          (id, user_id, ref_type, ref_id, source_fingerprint, source_path, source_name, source_mime,
+           kind, status, page_count, progress, completed_pages, stage, file_path, file_url, error,
+           upstream_task_id, upstream_provider, charged_credits, created_at, updated_at, started_at, completed_at)
+         VALUES (?, ?, 'upload', ?, ?, ?, 't13', 'application/pdf', 'editable', 'processing', 1, 0, 0, 'queued',
+                 '', '', '', ?, ?, ?, ?, ?, ?, 0)`,
+      ).run(
+        exportId,
+        tid,
+        source.refId,
+        source.fingerprint(source.readPages()),
+        source.meta?.path || '',
+        String(opts.taskId || ''),
+        String(opts.provider || ''),
+        opts.charged === false ? 0 : 20,
+        now,
+        opts.updatedAt ?? now,
+        now,
+      );
+      if (opts.charged !== false) {
+        credits.debitCredits(tid, 20, {
+          reason: '转可编辑 PPTX（1 页）', idempotencyKey: chargeKey, refType: 'upload', refId: source.refId,
+        });
+      }
+      return { exportId, chargeKey, sourceId: source.refId };
+    };
+
+    // ---- 扣费/退款走计费运行模块：在飞登记键 = 扣费键、域 = editable ----
+    {
+      const inner = makeMockFetcher([
+        { match: '/v2/open/tasks', payload: () => jsonResponse({ code: 4002, message: 'upstream credit exhausted' }, 402) },
+        { match: '/v2/open/uploads', payload: { code: 0, message: 'ok', data: { upload_id: 'upl_t13a' } } },
+      ]);
+      let releaseUpload;
+      const uploadGate = new Promise((resolve) => { releaseUpload = resolve; });
+      let first = true;
+      const fetcher = async (url, init) => {
+        if (first) { first = false; await uploadGate; }
+        return inner(url, init);
+      };
+      const source = await exportsLib.uploadedEditableSource(
+        tid,
+        [{ name: 'a.png', mime: 'image/png', data: Buffer.from(PNG_1X1_B64, 'base64') }],
+        { config: baseConfig },
+      );
+      const before = credits.getBalance(tid);
+      const pipelines = [];
+      const view = await exportsLib.startEditableExport(source, 'editable', {
+        force: true,
+        deps: { ...codiaDeps13(fetcher), onPipelineDone: (done) => pipelines.push(done) },
+      });
+      const chargeKey = `export-editable:${source.refId}:${view.exportId}`;
+      const inFlight = paidRunLib.listInFlight(tid).find((run) => run.runId === chargeKey);
+      check('T13：扣费走计费运行模块（在飞登记键 = 扣费键、域 = editable、动作 = 20🌟/页 的 export_editable）',
+        before - credits.getBalance(tid) === 20 && inFlight?.domain === 'editable'
+          && inFlight?.action === 'export_editable',
+        `charge=${before - credits.getBalance(tid)} inFlight=${JSON.stringify(inFlight)}`);
+      check('T13：20🌟/页 计价不变（1 页 = 20🌟，ledger 键仍为 export-editable:<refId>:<exportId>）',
+        Number(ledgerDb.prepare('SELECT delta FROM credit_ledger WHERE idempotency_key = ?').get(chargeKey)?.delta) === -20);
+      check('T13：上传/转换期间在飞即判活（注册表不把正在跑的导出当中断）',
+        recovery.reconcileUser(tid) === 0 && statusOf(view.exportId) === 'processing');
+      releaseUpload();
+      await Promise.all(pipelines);
+      check('T13：失败退款走运行模块（上游 402 → 全额退回 + 行 failed）',
+        credits.getBalance(tid) === before && statusOf(view.exportId) === 'failed',
+        `${credits.getBalance(tid)} / ${statusOf(view.exportId)}`);
+      check('T13：退款键仍由扣费键定长派生且只一笔',
+        refundKeys(tid).filter((key) => key === credits.deriveRefundKey(chargeKey)).length === 1);
+    }
+
+    // ---- 判活口径：updated_at 心跳 + 在飞注册表（不再看 created_at 30s 宽限）----
+    {
+      const source = registry.listRunSources().find((entry) => entry.domain === 'editable');
+      check('T13：装配期登记 editable 运行源（与 deck / single-page / ppt-to-base 同一注册表）',
+        Boolean(source));
+
+      const fresh = await makeExportRow({ updatedAt: Date.now() });
+      check('T13：心跳新鲜（未超 jobStaleMs）→ 不收敛、不重跑',
+        recovery.reconcileUser(tid) === 0 && statusOf(fresh.exportId) === 'processing');
+
+      genDb.prepare('UPDATE export_jobs SET updated_at = ? WHERE id = ?').run(Date.now() - 480_000, fresh.exportId);
+      check(`T13：480s 上传超时窗口不落进判活宽限（心跳阈值 ${staleMs}ms > 480s，未过期）`,
+        staleMs > 480_000 && recovery.reconcileUser(tid) === 0 && statusOf(fresh.exportId) === 'processing',
+        `staleMs=${staleMs}`);
+
+      genDb.prepare('UPDATE export_jobs SET updated_at = ? WHERE id = ?').run(Date.now() - staleMs * 2, fresh.exportId);
+      paidRunLib.holdInFlight({ runId: fresh.chargeKey, domain: 'editable', userId: tid, action: 'export_editable' });
+      check('T13：本进程在飞（心跳已过期）仍判活——长上传靠在飞注册表兜底',
+        recovery.reconcileUser(tid) === 0 && statusOf(fresh.exportId) === 'processing');
+      paidRunLib.releaseInFlight(fresh.chargeKey);
+
+      const listed = source.listRuns(tid, { isStale: () => true, isInFlight: () => false, isLive: () => false })
+        .find((run) => run.key === fresh.exportId);
+      check('T13：运行源列出在途导出（结算方式 = 续跑、扣费键同源、引用来自行）',
+        listed?.settlement === 'resume' && listed?.chargeKey === fresh.chargeKey
+          && listed?.refType === 'upload' && listed?.refId === fresh.sourceId,
+        JSON.stringify(listed));
+      // 清场：这条行结算为 failed，不再进后续用例的在途清单
+      genDb.prepare("UPDATE export_jobs SET status = 'failed', updated_at = ? WHERE id = ?").run(Date.now(), fresh.exportId);
+    }
+
+    // ---- 重启中断（有可恢复上游任务）：按心跳续跑既有任务，不重传、不重建、不重复扣星 ----
+    {
+      const resumed = await makeExportRow({ taskId: 'task_t13_resume', provider: 'codia', updatedAt: Date.now() - staleMs * 2 });
+      const advanceFetcher = makeMockFetcher([
+        { match: '/v2/open/tasks/task_t13_resume', payload: { code: 0, message: 'ok', data: { status: 'succeeded', result: { ppt_url: 'http://mock-codia/files/t13-resume.pptx', page_count: 1 } } } },
+        { match: 't13-resume.pptx', payload: new Response(Buffer.from('t13-resume-pptx')) },
+      ]);
+      const balanceBefore = credits.getBalance(tid);
+      const refundsBefore = refundKeys(tid).length;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = advanceFetcher;
+      let healed = 0;
+      let again = -1;
+      try {
+        healed = recovery.reconcileUser(tid);
+        again = recovery.reconcileUser(tid);
+        await waitStatus(resumed.exportId, 'succeeded');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+      const calls = advanceFetcher.calls.map((call) => String(call.url));
+      check('T13：中断导出由鉴权门同源入口按心跳续跑（收敛 1 条），重复恢复不再列同一条（一个导出一条管线）',
+        healed === 1 && again === 0, `healed=${healed} again=${again}`);
+      check('T13：续跑推进既有上游任务（GET 任务详情），不重新上传、不重建任务',
+        statusOf(resumed.exportId) === 'succeeded'
+          && calls.some((url) => url.includes('/v2/open/tasks/task_t13_resume'))
+          && !calls.some((url) => url.includes('/v2/open/uploads'))
+          && !calls.some((url) => /\/v2\/open\/tasks$/.test(url)),
+        calls.join(' | '));
+      check('T13：续跑成功不重复扣星、不退款',
+        credits.getBalance(tid) === balanceBefore && refundKeys(tid).length === refundsBefore,
+        `${credits.getBalance(tid)} / ${refundKeys(tid).length}`);
+    }
+
+    // ---- 续跑失败：仍由运行模块按实扣金额退款（先退款再置 failed）----
+    {
+      const broken = await makeExportRow({ updatedAt: Date.now() - staleMs * 2 });
+      genDb.prepare("UPDATE export_jobs SET source_path = 'uploads/missing/editable-sources/none.pdf' WHERE id = ?")
+        .run(broken.exportId);
+      const balanceBefore = credits.getBalance(tid);
+      const refundsBefore = refundKeys(tid).length;
+      const noFetch = makeMockFetcher([]);
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = noFetch;
+      let healed = 0;
+      try {
+        healed = recovery.reconcileUser(tid);
+        await waitStatus(broken.exportId, 'failed');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+      check('T13：续跑失败由运行模块退款（余额回满、行 failed、退款键同源、只一笔）',
+        healed === 1 && statusOf(broken.exportId) === 'failed' && credits.getBalance(tid) === balanceBefore + 20
+          && refundKeys(tid).length === refundsBefore + 1
+          && refundKeys(tid).includes(credits.deriveRefundKey(broken.chargeKey)),
+        `${statusOf(broken.exportId)} / ${credits.getBalance(tid)}`);
+      check('T13：续跑失败不触达上游（本地缺文件即失败，不重传 480s 的上传）',
+        noFetch.calls.length === 0, String(noFetch.calls.length));
+    }
+
+    // ---- 未扣费的中途行（claim 后进程死亡）：置 failed，不续跑（不白跑一次上游）----
+    {
+      const uncharged = await makeExportRow({ charged: false, updatedAt: Date.now() - staleMs * 2 });
+      const refundsBefore = refundKeys(tid).length;
+      const noFetch = makeMockFetcher([]);
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = noFetch;
+      let healed = 0;
+      try {
+        healed = recovery.reconcileUser(tid);
+        await waitStatus(uncharged.exportId, 'failed');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+      check('T13：未扣费的中途行置 failed、不续跑、无可退',
+        healed === 1 && statusOf(uncharged.exportId) === 'failed'
+          && refundKeys(tid).length === refundsBefore && noFetch.calls.length === 0,
+        `healed=${healed} ${statusOf(uncharged.exportId)} refunds=${refundKeys(tid).length}`);
+    }
+
+    // ---- 退款后崩溃（钱已退、行仍在途）：补终态，不续跑（否则等于免费交付一次）----
+    {
+      const refundedCrash = await makeExportRow({ updatedAt: Date.now() - staleMs * 2 });
+      credits.refundCredits(tid, 20, {
+        reason: '可编辑导出失败退回',
+        idempotencyKey: credits.deriveRefundKey(refundedCrash.chargeKey),
+        refType: 'upload',
+        refId: refundedCrash.sourceId,
+      });
+      const balanceBefore = credits.getBalance(tid);
+      const refundsBefore = refundKeys(tid).length;
+      const noFetch = makeMockFetcher([]);
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = noFetch;
+      let healed = 0;
+      try {
+        healed = recovery.reconcileUser(tid);
+        await waitStatus(refundedCrash.exportId, 'failed');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+      check('T13：退款后崩溃只补 failed 终态、不续跑、不重复退款（退款键已存在 → 不能免费交付）',
+        healed === 1 && statusOf(refundedCrash.exportId) === 'failed'
+          && credits.getBalance(tid) === balanceBefore && refundKeys(tid).length === refundsBefore
+          && noFetch.calls.length === 0,
+        `${statusOf(refundedCrash.exportId)} / ${credits.getBalance(tid)} / ${refundKeys(tid).length}`);
+    }
+
+    // ---- 文字可编辑档（5🌟/页）同一条扣费通道 ----
+    {
+      const textConfig13 = { ...llmConfig, llmModel: 'vlm-t13', llmFallbackModels: ['vlm-t13-fb'] };
+      let releaseChat;
+      const chatGate = new Promise((resolve) => { releaseChat = resolve; });
+      let chatStarted = false;
+      const textFetcher = makeMockFetcher([
+        { match: '/chat/completions', payload: () => '不是文字块 JSON' },
+      ]);
+      const gatedFetcher = async (url, init) => {
+        if (String(url).includes('/chat/completions') && !chatStarted) {
+          chatStarted = true;
+          await chatGate;
+        }
+        return textFetcher(url, init);
+      };
+      const source = exportsLib.deckTextEditableSource(uid, deck.id);
+      const before = credits.getBalance(uid);
+      const pipelines = [];
+      const view = await exportsLib.startEditableExport(source, 'editable_text', {
+        force: true,
+        deps: { config: textConfig13, fetchImpl: gatedFetcher, onPipelineDone: (done) => pipelines.push(done) },
+      });
+      const chargeKey = `export-editable-text:${deck.id}:${view.exportId}`;
+      const inFlight = paidRunLib.listInFlight(uid).find((run) => run.runId === chargeKey);
+      check('T13：文字档同样走计费运行模块（在飞登记 / 动作 export_editable_text / 5🌟/页）',
+        view.credits === 10 && inFlight?.domain === 'editable' && inFlight?.action === 'export_editable_text',
+        `credits=${view.credits} inFlight=${JSON.stringify(inFlight)}`);
+      releaseChat();
+      await Promise.all(pipelines);
+      check('T13：文字档失败仍全额退星（5🌟/页 口径不变）',
+        credits.getBalance(uid) === before && statusOf(view.exportId) === 'failed',
+        `${credits.getBalance(uid)} / ${statusOf(view.exportId)}`);
+    }
+
+    // ---- 代码口径：直接自写扣费/退款与 30s 宽限都已删除 ----
+    {
+      const moduleSource = readFileSync(
+        new URL('../../src/modules/editable-export/server/editable.ts', import.meta.url), 'utf8');
+      const recoverySource = readFileSync(
+        new URL('../../src/lib/server/generation/recovery.ts', import.meta.url), 'utf8');
+      check('T13：30s created_at 宽限已删除（判活不再看建行时间）',
+        !moduleSource.includes('RECOVERY_GRACE_MS') && !/created_at[\s\S]{0,40}?30_000/.test(moduleSource));
+      check('T13：模块不再直接扣费/退款（无 debitCredits / refundCredits / chargeRefundKeys）',
+        !moduleSource.includes('debitCredits') && !moduleSource.includes('refundCredits')
+          && !moduleSource.includes('chargeRefundKeys'));
+      check('T13：模块扣费与退款走计费运行模块（beginPaidRun / failPaidRun）',
+        moduleSource.includes('beginPaidRun') && moduleSource.includes('failPaidRun'));
+      check('T13：单条走读恢复口 reconcileInterruptedRun 已删除（注册表取代）',
+        !recoverySource.includes('reconcileInterruptedRun') && !moduleSource.includes('reconcileInterruptedRun'));
+    }
+  }
 
 }

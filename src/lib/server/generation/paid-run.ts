@@ -35,6 +35,8 @@ export interface PaidRunInput<TRow, TResult> {
   action: string;
   /** 启动时定格一次的单价快照：扣费与失败退款都按它，运行中换价不影响在途任务 */
   unitPrice: number;
+  /** 本次运行覆盖的计费单位数（默认 1；可编辑导出 = 页数）：扣费金额 = 单价 × 单位数 */
+  units?: number;
   /** 域键模块产出的扣费键 */
   chargeKey: string;
   refType: string;
@@ -144,8 +146,10 @@ export function beginPaidRun<TRow, TResult>(input: PaidRunInput<TRow, TResult>):
   });
 
   let debit;
+  // 单位数在运行时定格：可编辑导出一次运行覆盖整套页数（20🌟/页 × N 页）
+  const units = Math.max(1, Math.floor(Number(input.units) || 1));
   try {
-    debit = debitCredits(input.userId, input.unitPrice, {
+    debit = debitCredits(input.userId, input.unitPrice * units, {
       reason: input.reason,
       idempotencyKey: chargeKey,
       refType: input.refType,

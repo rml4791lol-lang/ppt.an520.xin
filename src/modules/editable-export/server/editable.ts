@@ -1,6 +1,7 @@
-// 可编辑导出模块服务端：WPS / Image2PPT / Codia 多通道重转换链（20🌟/页，任务制+懒恢复）
+// 可编辑导出模块服务端：WPS / Image2PPT / Codia 多通道重转换链（20🌟/页，任务制+续跑）
 // + 轻量文字可编辑档（VLM 覆盖层，5🌟/页）
-// + 导出中心查询（listExports/getExport，含可编辑行的懒恢复触发）。
+// + 导出中心查询（listExports/getExport，含对已有上游任务的现场推进）。
+// 扣费与退款走 paid-run（顺序只有一份）；中断续跑由运行源（./recovery.ts）在鉴权门触发。
 // 图片版 PPTX 导出在平台件 src/lib/server/exports.ts。
 import { createRequire } from 'node:module';
 import { createWriteStream } from 'node:fs';
@@ -9,7 +10,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import { ApiError, validationError } from '@/lib/server/http';
-import { chargeRefundKeys, debitCredits, estimateCredits, getBalance, refundCredits } from '@/lib/server/credits';
+import { estimateCredits, getBalance } from '@/lib/server/credits';
 import { verifyImage2PptWebhook } from './image2ppt';
 import { editableChargeKey, type EditableExportKind } from './charge-keys';
 import { codiaProvider } from './providers/codia';
@@ -37,7 +38,7 @@ import { getGenerationConfig, type GenerationConfig } from '@/lib/server/generat
 import { genId, getGenDb, nowMs } from '@/lib/server/generation/db';
 import { getOwnedDeck, listSlides } from '@/lib/server/generation/decks';
 import { getActiveVersionImagePath, listSingleProjectPages } from '@/lib/server/generation/single-pages';
-import { reconcileInterruptedRun } from '@/lib/server/generation/recovery';
+import { beginPaidRun, failPaidRun, withInFlightRun, type PaidRunFailure } from '@/lib/server/generation/paid-run';
 import { absPathForRelPath, readSiteFile, saveFile } from '@/lib/server/generation/storage';
 import { cleanString } from '@/lib/server/generation/types';
 import { PAGE_H, PAGE_W, type PptxCtor } from '@/lib/server/exports';
@@ -50,8 +51,6 @@ const TEXT_EDITABLE_MAX_PAGES = 50;
 const LARGE_SOURCE_PAGES = 20;
 /** 轮询间隔（官方建议 3-5 秒） */
 const POLL_INTERVAL_MS = 4_000;
-/** 懒恢复宽限：建行 30s 后仍无上游任务视为进程中断，重跑管线 */
-const RECOVERY_GRACE_MS = 30_000;
 
 export interface EditableExportDeps {
   fetchImpl?: typeof fetch;
@@ -318,13 +317,67 @@ export async function uploadedEditableSource(
   };
 }
 
-function ensureEditablePipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
+/** 一次导出的扣费键：扣费、退款、判活、恢复都用这个函数，键形状只在 charge-keys.ts 定义。 */
+function exportChargeKey(row: ExportRow): string {
+  return editableChargeKey({
+    kind: row.kind,
+    refId: String(row.ref_id || ''),
+    exportId: String(row.id),
+  });
+}
+
+/** 管线终态结算：新运行走 paid-run 句柄，续跑走恢复口——退款与终态顺序都只有模块一份。 */
+interface EditableSettlement {
+  succeed(): void;
+  fail(failure: PaidRunFailure): void;
+}
+
+/** 置 failed 终态（幂等）：状态/阶段/文案/完成时间。 */
+function markExportFailed(exportId: string, failure: PaidRunFailure): void {
+  updateExportRow(exportId, { status: 'failed', stage: 'failed', error: failure.message, completedAt: nowMs() });
+}
+
+/** 续跑行的结算：失败按 ledger 实扣金额退款再置 failed（failPaidRun 顺序），成功行已由管线写好。 */
+function rowSettlement(row: ExportRow): EditableSettlement {
+  const exportId = String(row.id);
+  return {
+    succeed: () => {},
+    fail: (failure) => failPaidRun({
+      userId: String(row.user_id),
+      chargeKey: exportChargeKey(row),
+      refundReason: '可编辑导出失败退回',
+      refType: String(row.ref_type || 'deck'),
+      refId: String(row.ref_id || ''),
+      settle: () => markExportFailed(exportId, failure),
+    }),
+  };
+}
+
+/**
+ * 启动（或复用）一条导出管线：同一导出最多一条管线（进程内去重）。
+ * 整条管线都在 paid-run 在飞登记里：480s 上传这类没有心跳的窗口靠它判活，不只靠 updated_at。
+ */
+function ensureEditablePipeline(
+  row: ExportRow,
+  deps: EditableExportDeps,
+  settlement?: EditableSettlement,
+): Promise<void> {
   const exportId = String(row.id);
   const existing = editablePipelines.get(exportId);
   if (existing) return existing;
   const runDeps = snapshotEditableDeps(deps);
-  const runner = String(row.kind) === 'editable_text' ? runTextEditablePipeline : runEditableExportPipeline;
-  const running = runner(row, runDeps).finally(() => {
+  const kind = String(row.kind);
+  const runner = kind === 'editable_text' ? runTextEditablePipeline : runEditableExportPipeline;
+  const settle = settlement ?? rowSettlement(row);
+  const running = withInFlightRun(
+    {
+      runId: exportChargeKey(row),
+      domain: 'editable',
+      userId: String(row.user_id),
+      action: kind === 'editable_text' ? 'export_editable_text' : 'export_editable',
+    },
+    () => runner(row, runDeps, settle),
+  ).finally(() => {
     if (editablePipelines.get(exportId) === running) editablePipelines.delete(exportId);
   });
   editablePipelines.set(exportId, running);
@@ -364,6 +417,7 @@ function updateExportRow(
     fileUrl?: string;
     upstreamTaskId?: string;
     upstreamProvider?: string;
+    chargedCredits?: number;
     progress?: number;
     completedPages?: number;
     stage?: string;
@@ -396,6 +450,10 @@ function updateExportRow(
   if (patch.upstreamProvider !== undefined) {
     sets.push('upstream_provider = ?');
     values.push(patch.upstreamProvider);
+  }
+  if (patch.chargedCredits !== undefined) {
+    sets.push('charged_credits = ?');
+    values.push(Math.max(0, Math.round(patch.chargedCredits)));
   }
   if (patch.progress !== undefined) {
     sets.push('progress = MAX(progress, ?)');
@@ -435,16 +493,11 @@ async function buildImagePdf(images: Buffer[]): Promise<Buffer> {
     addPage(size: [number, number]): {
       drawImage(image: EmbeddedImage, opts: { x: number; y: number; width: number; height: number }): void;
     };
-    setCreationDate(date: Date): void;
-    setModificationDate(date: Date): void;
     save(): Promise<Uint8Array>;
   }
   const require = createRequire(import.meta.url);
   const { PDFDocument } = require('pdf-lib') as { PDFDocument: { create(): Promise<PdfDoc> } };
   const pdf = await PDFDocument.create();
-  // 相同图片必须生成逐字节相同的 PDF：pdf-lib 默认写入当前时间，会让指纹去重跨秒失效
-  pdf.setCreationDate(new Date(0));
-  pdf.setModificationDate(new Date(0));
   const compressPages = images.length > LARGE_SOURCE_PAGES;
   for (const image of images) {
     const isJpeg = image.length >= 3 && image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff;
@@ -534,33 +587,6 @@ async function prepareEditablePdf(row: ExportRow, config: GenerationConfig): Pro
   }
   const images = await readExportSourceImages(row, config);
   return { pdf: await buildImagePdf(images), pageCount: images.length };
-}
-
-/** 退星（幂等：退款键由扣费键定长派生，重复执行不重复返还）；键前缀与扣费时一致（按 kind 分档） */
-function refundEditableCharge(row: ExportRow): void {
-  const charged = Number(row.charged_credits) || 0;
-  if (charged <= 0) return;
-  try {
-    const { refundKey } = chargeRefundKeys(
-      editableChargeKey({ kind: row.kind, refId: String(row.ref_id), exportId: String(row.id) }),
-    );
-    refundCredits(String(row.user_id), charged, {
-      reason: '可编辑导出失败退回',
-      idempotencyKey: refundKey,
-      refType: String(row.ref_type || 'deck'),
-      refId: String(row.ref_id),
-    });
-  } catch (error) {
-    logProblem({
-      category: 'editable',
-      level: 'error',
-      message: '可编辑导出退款失败',
-      detail: error,
-      userId: String(row.user_id),
-      refType: 'export',
-      refId: String(row.id),
-    });
-  }
 }
 
 /** 下载 PPTX 落盘并置行 succeeded。webhook 与轮询可能同时到达，按 exportId 去重。 */
@@ -719,6 +745,7 @@ function providerDelay(deps: EditableExportDeps): Promise<void> {
 /**
  * 用一条通道跑完整条转换：按能力声明的提交次数重建，成功即落盘。
  * 非可重试错误立刻冒泡（由 registry 决定切哪条通道），可重试错误留到下一次提交。
+ * 行上已有本通道的可恢复任务时先推进它（续跑不重新上传、不重建任务）。
  */
 async function convertWithProvider(
   provider: EditableProvider,
@@ -729,12 +756,19 @@ async function convertWithProvider(
 ): Promise<void> {
   const exportId = String(row.id);
   const ctx = providerContext(row, deps, pageCount, provider.id);
-  updateExportRow(exportId, { upstreamProvider: provider.id, stage: 'uploading' });
+  const resumableTaskId = provider.capabilities.resumable && String(row.upstream_provider || '') === provider.id
+    ? String(row.upstream_task_id || '')
+    : '';
+  updateExportRow(exportId, resumableTaskId
+    ? { upstreamProvider: provider.id }
+    : { upstreamProvider: provider.id, stage: 'uploading' });
   try {
     let lastError: unknown = null;
     for (let attempt = 0; attempt < Math.max(1, provider.capabilities.attempts); attempt += 1) {
       try {
-        let step = await provider.start(ctx, { pdf, filename: `${exportId}.pdf`, pageCount, attempt });
+        let step = attempt === 0 && resumableTaskId
+          ? await provider.advance(ctx, resumableTaskId)
+          : await provider.start(ctx, { pdf, filename: `${exportId}.pdf`, pageCount, attempt });
         persistProviderProgress(exportId, step.view, pageCount);
         if (step.taskId) updateExportRow(exportId, { upstreamProvider: provider.id, upstreamTaskId: step.taskId });
         while (!step.product) {
@@ -795,9 +829,13 @@ async function convertWithProviders(
 /**
  * 可编辑导出管线（不含扣费；扣费只在 start 时发生一次）。
  * 读图 → image-only PDF → 按 registry 顺序转换；失败自动切主备通道。
- * 全部失败/异常 → 退星 + 行标 failed。上游 402（站方余额不足）：终态退星 + 大字日志。
+ * 全部失败/异常 → 交给结算（paid-run 先退星再置 failed）。上游 402：终态退星 + 大字日志。
  */
-async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
+async function runEditableExportPipeline(
+  row: ExportRow,
+  deps: EditableExportDeps,
+  settlement: EditableSettlement,
+): Promise<void> {
   const runDeps = snapshotEditableDeps(deps);
   const config = runDeps.config;
   const exportId = String(row.id);
@@ -810,6 +848,7 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
       throw notConfiguredError();
     }
     await convertWithProviders(providers, row, pdf, pageCount, runDeps);
+    settlement.succeed();
   } catch (error) {
     const noCredits = error instanceof ApiError && error.code === 'UPSTREAM_NO_CREDITS';
     logProblem({
@@ -821,12 +860,9 @@ async function runEditableExportPipeline(row: ExportRow, deps: EditableExportDep
       refType: 'export',
       refId: exportId,
     });
-    refundEditableCharge(row);
-    updateExportRow(exportId, {
-      status: 'failed',
-      stage: 'failed',
-      completedAt: nowMs(),
-      error: noCredits
+    settlement.fail({
+      code: noCredits ? 'UPSTREAM_NO_CREDITS' : 'EDITABLE_EXPORT_FAILED',
+      message: noCredits
         ? '可编辑转换服务暂时不可用，星星已退回'
         : '服务器刚刚开了个小差，星星已退回；稍后可重新转换。',
     });
@@ -897,10 +933,11 @@ async function startEditableExportRun(
 type LaunchDecision = { row: ExportRow; created: boolean };
 
 /**
- * 建行 + 扣费 + 启动后台管线（deck / single-page 共用）。
+ * 建行 + 扣费 + 启动后台管线（四个来源共用）。
  * - 同项目有进行中任务：无条件复用，避免重复转换/重复扣星；
  * - 同一来源版本已有成功任务：默认复用；仅 force=true 才重新转换；
- * - 查重、建行和扣费位于同一 BEGIN IMMEDIATE 事务，防并发双击竞态。
+ * - 查重、余额预检与建行位于同一 BEGIN IMMEDIATE 事务，防并发双击竞态与「402 后留行」。
+ * 扣费/退款顺序归 paid-run（claim 行 → 在飞 → 幂等扣费 → 执行 → 终态；失败先退款再置 failed）。
  * kind 区分重管线（editable=Codia）与轻量文字档（editable_text=VLM 覆盖层），两档记录互不串扰。
  */
 async function launchEditableExport(
@@ -941,6 +978,7 @@ async function launchEditableExport(
       if (succeeded) return { row: succeeded, created: false };
     }
 
+    // 余额预检在建行之前：402 不产生 export 行（与历史行为一致）
     const balance = getBalance(userId);
     if (balance < estimate.credits) {
       throw new ApiError(
@@ -958,7 +996,7 @@ async function launchEditableExport(
         (id, user_id, ref_type, ref_id, source_fingerprint, source_path, source_name, source_mime,
          kind, status, page_count, progress, completed_pages, stage, file_path, file_url, error,
          upstream_task_id, charged_credits, created_at, updated_at, started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 'queued', '', '', '', '', ?, ?, ?, ?, 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 'queued', '', '', '', '', 0, ?, ?, ?, 0)`,
     ).run(
       exportId,
       userId,
@@ -970,45 +1008,89 @@ async function launchEditableExport(
       cleanString(source.mime, 100),
       kind,
       pageCount,
-      estimate.credits,
       now,
       now,
       now,
     );
-    const { chargeKey } = chargeRefundKeys(editableChargeKey({ kind, refId, exportId }));
-    debitCredits(userId, estimate.credits, {
-      reason: kind === 'editable_text' ? `转文字可编辑 PPTX（${pageCount} 页）` : `转可编辑 PPTX（${pageCount} 页）`,
-      idempotencyKey: chargeKey,
-      refType,
-      refId,
-    });
     const row = db.prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow;
     return { row, created: true };
   });
 
-  let row = decision.row;
-  let done: Promise<void>;
-  if (decision.created) {
-    done = ensureEditablePipeline(row, runDeps);
-  } else {
-    row = await recoverEditableExport(row, runDeps);
-    done = editablePipelines.get(String(row.id)) ?? Promise.resolve();
+  if (!decision.created) {
+    // 复用：不为复用行扣费，也不重启管线（进行中行由模块内的在途去重兜住）
+    const row = await recoverEditableExport(decision.row, runDeps);
+    return {
+      view: startView(row, sourceFingerprint, 0, true),
+      done: editablePipelines.get(String(row.id)) ?? Promise.resolve(),
+    };
   }
+
+  const claimed = decision.row;
+  const exportId = String(claimed.id);
+  const chargeKey = exportChargeKey(claimed);
+  const began = beginPaidRun<ExportRow, void>({
+    domain: 'editable',
+    userId,
+    action: chargeAction,
+    unitPrice: estimate.unitPrice,
+    units: pageCount,
+    chargeKey,
+    refType,
+    refId,
+    reason: kind === 'editable_text' ? `转文字可编辑 PPTX（${pageCount} 页）` : `转可编辑 PPTX（${pageCount} 页）`,
+    refundReason: '可编辑导出失败退回',
+    store: {
+      claim: () => claimed,
+      markRunning: (row) => updateExportRow(String(row.id), {
+        status: 'processing',
+        chargedCredits: estimate.credits,
+        startedAt: nowMs(),
+      }),
+      // 成功终态（落盘路径 + status）由管线写入，这里只负责 paid-run 的收尾（释放在飞）
+      markSucceeded: () => {},
+      markFailed: (_row, failure) => markExportFailed(exportId, failure),
+    },
+  });
+  if (!began.charged) {
+    if (began.duplicate) {
+      throw new ApiError('DUPLICATE_REQUEST', '该导出已有扣费记录，请勿重复提交，结果请在下载中心查看', 409, false);
+    }
+    if (began.failure.code === 'INSUFFICIENT_CREDITS') {
+      throw new ApiError('INSUFFICIENT_CREDITS', began.failure.message, 402, false);
+    }
+    throw new ApiError('CHARGE_FAILED', began.failure.message || '扣费失败', 500, false);
+  }
+
+  const chargedRow = db.prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow;
+  const done = ensureEditablePipeline(chargedRow, runDeps, {
+    succeed: () => began.run.succeed(undefined),
+    fail: (failure) => began.run.fail(failure),
+  });
+  return {
+    view: startView(chargedRow, sourceFingerprint, estimate.credits, false),
+    done,
+  };
+}
+
+/** 发起响应共用形状：共享 view 加上「本次是否复用、扣了多少星」。 */
+function startView(
+  row: ExportRow,
+  sourceFingerprint: string,
+  credits: number,
+  reused: boolean,
+): EditableExportView {
   const view = toExportView(row, sourceFingerprint);
   return {
-    view: {
-      exportId: view.exportId,
-      status: view.status === 'succeeded' ? 'succeeded' : 'processing',
-      credits: decision.created ? estimate.credits : 0,
-      pageCount: view.pageCount,
-      progress: view.progress,
-      completedPages: view.completedPages,
-      totalPages: view.totalPages,
-      stage: view.stage,
-      url: view.url,
-      reused: !decision.created,
-    },
-    done,
+    exportId: view.exportId,
+    status: view.status === 'succeeded' ? 'succeeded' : 'processing',
+    credits,
+    pageCount: view.pageCount,
+    progress: view.progress,
+    completedPages: view.completedPages,
+    totalPages: view.totalPages,
+    stage: view.stage,
+    url: view.url,
+    reused,
   };
 }
 
@@ -1052,21 +1134,22 @@ async function recoverEditableExport(row: ExportRow, deps: EditableExportDeps): 
     }
     return (getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(exportId) as ExportRow) ?? row;
   }
-  if (nowMs() - Number(row.created_at) > RECOVERY_GRACE_MS) {
-    // 建行后超过宽限仍无上游任务 = 进程中断：走同一个收敛实现重跑整条管线（可编辑导出是续跑，不是退星）
-    // （debit 幂等键 + Codia Idempotency-Key 防重，重跑安全）
-    reconcileInterruptedRun({
-      key: exportId,
-      domain: 'editable-export',
-      userId: String(row.user_id),
-      settle: () => {
-        ensureEditablePipeline(row, runDeps);
-      },
-      refType: String(row.ref_type || 'deck'),
-      refId: String(row.ref_id || ''),
-    });
-  }
+  // 无上游任务时不在这里判活/重跑：中断导出由运行源按 updated_at 心跳 + paid-run 在飞
+  // 注册表判定，在鉴权门（recovery.reconcileUser）调度——读路径只推进已存在的上游任务。
   return row;
+}
+
+/**
+ * 中断导出的续跑结算动作（运行源用，只启动不等待）。
+ * 有可恢复的上游任务时管线先推进既有任务（convertWithProvider 按行上的 task_id 续跑），
+ * 没有任务才重新提交（同一份幂等键）；同一导出最多一条管线由 ensureEditablePipeline 去重。
+ */
+export function resumeInterruptedExport(exportId: string, deps: EditableExportDeps = {}): void {
+  const runDeps = snapshotEditableDeps(deps);
+  const id = cleanString(exportId, 80);
+  const row = getGenDb().prepare('SELECT * FROM export_jobs WHERE id = ?').get(id) as ExportRow | undefined;
+  if (!row || !['pending', 'processing'].includes(String(row.status))) return;
+  void ensureEditablePipeline(row, runDeps).catch(() => {});
 }
 
 export interface Image2PptWebhookResult {
@@ -1321,7 +1404,11 @@ async function buildTextOverlayPptx(
 }
 
 /** 轻量文字档管线：读图 → 逐页 VLM 提取 + 底色采样 → 合成落盘。全部页提取失败才整体失败退星。 */
-async function runTextEditablePipeline(row: ExportRow, deps: EditableExportDeps): Promise<void> {
+async function runTextEditablePipeline(
+  row: ExportRow,
+  deps: EditableExportDeps,
+  settlement: EditableSettlement,
+): Promise<void> {
   const runDeps = snapshotEditableDeps(deps);
   const config = runDeps.config;
   const exportId = String(row.id);
@@ -1365,6 +1452,7 @@ async function runTextEditablePipeline(row: ExportRow, deps: EditableExportDeps)
       stage: 'completed',
       completedAt: nowMs(),
     });
+    settlement.succeed();
   } catch (error) {
     logProblem({
       category: 'editable',
@@ -1375,12 +1463,9 @@ async function runTextEditablePipeline(row: ExportRow, deps: EditableExportDeps)
       refType: 'export',
       refId: exportId,
     });
-    refundEditableCharge(row);
-    updateExportRow(exportId, {
-      status: 'failed',
-      stage: 'failed',
-      completedAt: nowMs(),
-      error: '文字层提取服务暂时不可用，星星已退回；稍后可重新转换。',
+    settlement.fail({
+      code: 'EDITABLE_TEXT_FAILED',
+      message: '文字层提取服务暂时不可用，星星已退回；稍后可重新转换。',
     });
   }
 }

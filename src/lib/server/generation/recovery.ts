@@ -30,11 +30,17 @@ export function isStale(heartbeatMs: number, now: () => number = nowMs): boolean
 /**
  * 唯一收敛实现：中断任务 → 先按实扣金额补退 → 再置 failed，返回收敛条数。
  * 顺序归 paid-run.failPaidRun：先退款再置终态，崩在中间仍是在途态、恢复能重试退款。
+ * resume 型（可编辑导出）是续跑不是失败：不退星，结算动作只启动管线、hub 不等待。
  * 调用方（运行源）只负责列出在途任务；重复调用幂等。
  */
 export function reconcileInterrupted(runs: InterruptedRun[]): number {
   const healed = runs.filter((run) => run.interrupted);
   for (const run of healed) {
+    if (run.settlement === 'resume') {
+      // 续跑：settle 启动后台管线后立即返回；同一运行最多一条管线由域内去重保证
+      run.settle();
+      continue;
+    }
     failPaidRun({
       userId: run.userId,
       chargeKey: run.chargeKey,
@@ -49,14 +55,6 @@ export function reconcileInterrupted(runs: InterruptedRun[]): number {
     console.warn(`[anppt-v2][recovery] 收敛中断任务 ${healed.length} 条（${refs.join('、')}）`);
   }
   return healed.length;
-}
-
-/**
- * 调用方已判定中断的单条任务：收敛 + 按实扣金额补退。
- * 判活留在调用方（读路径无法等心跳扫描），不必为了签名伪造 interrupted 标志。
- */
-export function reconcileInterruptedRun(run: Omit<InterruptedRun, 'interrupted'>): number {
-  return reconcileInterrupted([{ ...run, interrupted: true }]);
 }
 
 /**

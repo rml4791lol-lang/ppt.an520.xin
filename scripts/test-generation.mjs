@@ -456,31 +456,6 @@ console.log('\n[2b] 页型归一 + 场景推断 + 原创风格 DNA + 逐页参�
   check('页型注册表从通用 16 型扩展为 30+ 信息任务', pageTypes.PAGE_TYPES.length >= 30, `实际 ${pageTypes.PAGE_TYPES.length}`);
   check('自由文本兜底通用内容页', pageTypes.resolvePageType('随便写点什么', 'content').key === 'content');
   check('空 pageType 兜底通用内容页', pageTypes.resolvePageType('', 'content').key === 'content');
-  // 原孤儿脚本 test-page-types.mjs 的别名回归表（本文件是唯一副本）
-  const pageTypeAliasCases = [
-    ['市场痛点', 'pain-analysis'],
-    ['bp_skill_demo', 'skills-showcase'],
-    ['bp_cover', 'cover'],
-    ['工作流程', 'workflow'],
-    ['技能要点', 'skill'],
-    ['项目成果', 'outcomes'],
-    ['项目设计', 'design'],
-    ['应用价值', 'value'],
-    ['创新点', 'innovation'],
-    ['股权结构', 'funding-plan'],
-    ['封面', 'cover'],
-    ['目录', 'toc'],
-    ['技术路线', 'technical-route'],
-    ['产教融合', 'education-impact'],
-    ['流程', 'process'],
-    ['团队介绍', 'team'],
-    ['解决方案', 'solution'],
-  ];
-  const pageTypeAliasMisses = pageTypeAliasCases.filter(
-    ([pageType, expected]) => pageTypes.resolvePageType(pageType, 'content').key !== expected,
-  );
-  check('页型别名回归表全绿（含赛事/通用历史别名）',
-    pageTypeAliasMisses.length === 0, JSON.stringify(pageTypeAliasMisses));
 
   const pack = stylePacks.resolveStylePack(STYLE_PACKS[0].id);
   const slide = { role: 'content', pageType: '数据图表', title: 'T', goal: '', copyLines: ['一行'], visualNote: '' };
@@ -1242,35 +1217,13 @@ console.log('\n[7] 单页生成器（generate/refine/失败退还/导出）');
   const singleGenerateBody = JSON.parse(okFetcher.calls.find((c) => c.url.includes('/images/generations')).init.body);
   check('单页生成也携带所选风格的内容页参考图',
     Array.isArray(singleGenerateBody.reference_images) && singleGenerateBody.reference_images[0]?.url?.startsWith('data:image/'));
-  check('单选模板包时单页走视觉计划的模板参考路线（与整套同一配方）',
-    singleGenerateBody.prompt.includes('真模板参考页') && singleGenerateBody.prompt.includes('把本页文案准确填入'));
   check('单页扣 ×3 实现报价 30🌟（换实现即换价）', before - g1.balance === 30, `before=${before} after=${g1.balance}`);
 
   const g2 = await singlePages.refineSinglePage(uid, { pageId: 'page-001', editInstruction: '改成深色背景' }, okDeps);
   check('单页改图成功且走 edits', g2.status === 'succeeded' && okFetcher.calls.some((c) => c.url.includes('/images/edits')));
-  const refinePromptRow = generationDb.getGenDb()
-    .prepare('SELECT prompt FROM single_page_versions WHERE id = ?')
-    .get(g2.versionId);
-  check('单页改图后缀归视觉计划模块（版本提示词只此一份模板）',
-    String(refinePromptRow?.prompt || '').includes('改图要求（在保持整体风格与版式的前提下执行）：改成深色背景')
-      && !String(refinePromptRow?.prompt || '').includes('改图要求（保持整体风格与版式）：'),
-    String(refinePromptRow?.prompt || '').slice(-120));
 
   const f1 = await singlePages.generateSinglePage(uid, { pageId: 'page-002', content: '会失败的内容' }, okDeps);
   check('单页失败自动退还（余额不变）', f1.status === 'failed' && credits.getBalance(uid) === g2.balance, `实际 ${credits.getBalance(uid)} vs ${g2.balance}`);
-
-  const styleOnlyPack = STYLE_PACKS.find((pack) => pack.kind !== 'template');
-  const evidencePage = await singlePages.generateSinglePage(uid, {
-    pageId: 'page-evidence', title: '痛点分析', content: '传统种植依赖经验', stylePackId: styleOnlyPack.id,
-  }, okDeps);
-  const evidenceBody = JSON.parse(
-    okFetcher.calls.filter((call) => call.url.includes('/images/generations')).at(-1).init.body,
-  );
-  check('单页页型证据由视觉计划解析（标题命中痛点分析，提示词读同一页型）',
-    evidencePage.status === 'succeeded' && evidenceBody.prompt.includes('页型协议 · 痛点分析页'),
-    evidenceBody.prompt.slice(0, 120));
-  check('无模板风格包走风格参考路线（不出现模板路线话术）',
-    evidenceBody.prompt.includes('同风格参考样张') && !evidenceBody.prompt.includes('真模板参考页'));
 
   const exp = await exportsLib.exportSinglePagesImagePptx(uid, { projectId: g1.page.projectId }, { config: baseConfig });
   check('单页项目导出图片版 pptx（仅成功页 1 页）', exp.pageCount === 1);

@@ -312,6 +312,32 @@ export async function runPaidRunTests(ctx) {
   }
 
   {
+    // --- 一次运行覆盖多个计费单位（可编辑导出 = 页数）：扣费 = 单价快照 × 单位数 ---
+    const uid = await makeUser('units');
+    const key = 'export-editable:d-units:exp-units';
+    const began = paidRun.beginPaidRun({
+      domain: 'editable',
+      userId: uid,
+      action: 'export_editable',
+      unitPrice: 20,
+      units: 3,
+      chargeKey: key,
+      refType: 'deck',
+      refId: 'd-units',
+      reason: '转可编辑 PPTX（3 页）',
+      refundReason: '可编辑导出失败退回',
+      store: makeStore([]),
+    });
+    check('多单位运行：按单价快照 × 单位数扣费（20 × 3 = 60）',
+      began.charged === true && began.balance === 40 && Number(ledgerRow(key)?.delta) === -60,
+      `实际 ${began.balance} / ${JSON.stringify(ledgerRow(key))}`);
+    began.run.fail({ code: 'EDITABLE_FAILED', message: 'x' });
+    check('多单位运行失败：按账本实扣金额退一次（60）',
+      credits.getBalance(uid) === 100 && refundRows(uid).length === 1 && refundRows(uid)[0].delta === 60,
+      `${credits.getBalance(uid)} / ${JSON.stringify(refundRows(uid))}`);
+  }
+
+  {
     // --- 批次在飞作用域：执行中可判活/列出，结束或抛错都释放 ---
     const uid = await makeUser('scope');
     let during = null;

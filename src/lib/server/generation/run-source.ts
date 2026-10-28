@@ -8,7 +8,7 @@
 export interface InterruptedRun {
   /** 日志用稳定标识（slideId / pageId / exportId） */
   key: string;
-  /** 生成类型：deck | single-page | editable-export | ppt-to-base */
+  /** 生成类型：deck | single-page | editable | ppt-to-base */
   domain: string;
   userId: string;
   /** 已判定中断（无人认领且心跳过期）；false = 仍在途，一概不动 */
@@ -18,7 +18,12 @@ export interface InterruptedRun {
   refundReason?: string;
   refType: string;
   refId: string;
-  /** 收敛动作（幂等）：置 failed，或重新推进管线（可编辑导出是重跑而不是退星） */
+  /**
+   * 结算方式：refund（默认）= 先按实扣金额退星再置终态；resume = 续跑（不退星）。
+   * 续跑的结算动作只启动管线、不等待：同一运行由域内去重保证最多一条管线。
+   */
+  settlement?: 'refund' | 'resume';
+  /** 收敛动作（幂等）：refund 型置 failed；resume 型启动续跑管线后立即返回 */
   settle: () => void;
 }
 
@@ -34,7 +39,7 @@ export interface RunSourceContext {
 
 /** 一个生成域的在途运行来源：只列行与给出结算动作，扣费/退款/终态顺序归 paid-run。 */
 export interface RunSource {
-  /** 域标识（deck / single-page / ppt-to-base；可编辑导出随 T13 并入） */
+  /** 域标识（deck / single-page / ppt-to-base / editable） */
   domain: string;
   listRuns(userId: string, ctx: RunSourceContext): InterruptedRun[];
 }
