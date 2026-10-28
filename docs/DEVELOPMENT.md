@@ -1,7 +1,7 @@
 # AnPPT v2 开发与架构约定
 
 > 本文是开发流程与架构纪律的权威入口；系统全貌（部署/链路/运维）见 `docs/DEBUG-HANDBOOK.md`。
-> 改代码前读本文；改完代码同步两份文档。最后更新：2026-10-28（门命令化、工作树脚本、护栏自检）
+> 改代码前读本文；改完代码同步两份文档。最后更新：2026-10-29（单页接入计费运行）
 
 ## 1. 金字塔分层
 
@@ -23,7 +23,7 @@ src/lib/server/db.ts   持久层 —— node:sqlite（WAL），业务层不手�
 
 - 新功能先问"属于哪一层"，代码只放那一层；路由里出现业务判断 = 分层错误。
 - **模块纪律**：模块可依赖平台件与共享组件，平台件不得 import 模块；模块之间不交叉 import（交叉需求下沉平台层）。模块的开关/计价/测试/文档是模块四件套，缺一不可。
-- **边界由 lint 强制执行**（2026-09-06）：`eslint.config.mjs` 的 `import/no-restricted-paths` 拦「`src/lib` → `src/modules`」与「`src/plugins` → `src/lib/server` / `src/modules`」（插件运行参数经 ctx 注入、模块实现随插件迁移，见 ADR-0001 G4）；合法例外以 overrides 逐个登记（当前：插件组合根 `src/lib/plugin/default.ts`、生成恢复组装点 `src/lib/server/generation/recovery.ts`——后者须调度模块自有的结算入口，模块表只由模块写；以及 ppt-replicate 的 strangler 残留 `src/plugins/ppt-replicate/{ui.ts,client/beautify-tab.tsx}`，删例条件见 PLUGIN-ARCHITECTURE §5），新增例外必须同步注释原因。**已知遗留（2026-10-27，勿当已收口）**：① 模块表 DDL 仍写在平台 `src/lib/server/generation/db.ts`（`single_page_*` / `ppt_to_base_jobs` 等），模块尚无自己的建表入口；② `src/lib/server/generation/recovery.ts` 的 lint 例外是整文件关闭 `import/no-restricted-paths`，不是按行/按 import 精确豁免——后续收口应缩到具体依赖或改为显式注入；③ 计费运行模块（`src/lib/server/generation/paid-run.ts`，T03/T05）已迁整套生成与转底座：claim/扣费/重放/退款/终态顺序与在飞注册表单点——同一扣费键重放由模块识别（`duplicate=true`，本次不扣也不退），转底座据此回 409。单页 / 可编辑导出仍各自拼扣费键、自写扣费与退款顺序，且 `recovery.ts` 的 `markSinglePageActive`/`markSinglePageDone` 两个遗留登记口还在（共用模块注册表）——随 #25 逐域迁入模块后删除本条与那两个函数；④ 意图解析与分派（2026-10-29）：deck 的 20 个 kind 与单页/导出/后台 13 个 kind 均已迁到 kind → 解析器、路由一次 parse（无消费方的报价 kind/路由已删除）；deck 分派随 #34 迁到 kind → 处理器注册表（`DECK_INTENT_HANDLERS`，映射类型强制穷尽、漏注册即编译失败），覆盖测试改为运行时断言注册表、不再读服务端源码。`src/components/` 里既有纯共享件（icons/layout），也有页面级编排件（upload-card/template-library 等）——编排件允许接线模块入口（import 模块 client），纯共享件不得依赖模块。功能入口优先走插件 `ui.entries`（组合根 `src/plugins/ui-registry.ts`，壳只按 `flag` 过滤、组件懒加载），不在壳里写 `if (开关)`（ADR-0001 G2）。
+- **边界由 lint 强制执行**（2026-09-06）：`eslint.config.mjs` 的 `import/no-restricted-paths` 拦「`src/lib` → `src/modules`」与「`src/plugins` → `src/lib/server` / `src/modules`」（插件运行参数经 ctx 注入、模块实现随插件迁移，见 ADR-0001 G4）；合法例外以 overrides 逐个登记（当前：插件组合根 `src/lib/plugin/default.ts`、生成恢复组装点 `src/lib/server/generation/recovery.ts`——后者须调度模块自有的结算入口，模块表只由模块写；以及 ppt-replicate 的 strangler 残留 `src/plugins/ppt-replicate/{ui.ts,client/beautify-tab.tsx}`，删例条件见 PLUGIN-ARCHITECTURE §5），新增例外必须同步注释原因。**已知遗留（2026-10-27，勿当已收口）**：① 模块表 DDL 仍写在平台 `src/lib/server/generation/db.ts`（`single_page_*` / `ppt_to_base_jobs` 等），模块尚无自己的建表入口；② `src/lib/server/generation/recovery.ts` 的 lint 例外是整文件关闭 `import/no-restricted-paths`，不是按行/按 import 精确豁免——后续收口应缩到具体依赖或改为显式注入；③ 计费运行模块（`src/lib/server/generation/paid-run.ts`，T03/T04/T05）已迁整套生成、单页（含复刻逐页生成/改图）与转底座：claim/扣费/重放/退款/终态顺序与在飞注册表单点——同一扣费键重放由模块识别（`duplicate=true`，本次不扣也不退），三域的扣费键都由 `charge-keys.ts` 产出并写入各自行，恢复读存储键，`recovery.ts` 的遗留登记口已全部删除；可编辑导出仍各自拼扣费键、自写扣费与退款顺序，随 #25 迁完该域后删除本条；④ 意图解析与分派（2026-10-29）：deck 的 20 个 kind 与单页/导出/后台 13 个 kind 均已迁到 kind → 解析器、路由一次 parse（无消费方的报价 kind/路由已删除）；deck 分派随 #34 迁到 kind → 处理器注册表（`DECK_INTENT_HANDLERS`，映射类型强制穷尽、漏注册即编译失败），覆盖测试改为运行时断言注册表、不再读服务端源码。`src/components/` 里既有纯共享件（icons/layout），也有页面级编排件（upload-card/template-library 等）——编排件允许接线模块入口（import 模块 client），纯共享件不得依赖模块。功能入口优先走插件 `ui.entries`（组合根 `src/plugins/ui-registry.ts`，壳只按 `flag` 过滤、组件懒加载），不在壳里写 `if (开关)`（ADR-0001 G2）。
 - 存量归拢（裁定 2026-09-06）：新功能一律进 `src/modules/`；老代码按样板（ppt-replicate）逐步归拢，顺序 ~~editable-export~~（已成）→ image-edit-tools → single-page → deck → payments → admin → auth，每次只搬一块、搬完全量门必须绿。
 - 静态数据优先：能写死在 `src/data/` 的不建表；必须运行时可改（管理员要调）才进 DB 或加密运行时配置。
 
