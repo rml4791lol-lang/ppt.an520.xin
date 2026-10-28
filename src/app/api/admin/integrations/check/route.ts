@@ -1,6 +1,6 @@
 import { recordAdminAudit, requireAdmin } from '@/lib/server/admin';
-import { checkAdminIntegration, type AdminIntegrationKind } from '@/lib/server/admin-integrations';
-import { defineRoute, jsonOk, readJsonBody, validationError } from '@/lib/server/http';
+import { checkAdminIntegration } from '@/lib/server/admin-integrations';
+import { defineRoute, jsonOk, readJsonBody } from '@/lib/server/http';
 import { ADMIN_INTENT_PARAMS } from '@/lib/admin-intents';
 import { readIntentParams } from '@/lib/server/intents';
 
@@ -10,20 +10,14 @@ export const dynamic = 'force-dynamic';
 export const POST = defineRoute(async (request) => {
   const { user } = requireAdmin(request);
   const { params: body } = readIntentParams(await readJsonBody(request), ADMIN_INTENT_PARAMS, 'checkIntegration');
-  const kind = String(body.kind || '') as AdminIntegrationKind;
-  const values = body.values == null
-    ? undefined
-    : body.values && typeof body.values === 'object' && !Array.isArray(body.values)
-      ? body.values as Record<string, unknown>
-      : (() => { throw validationError('values 格式不正确'); })();
   const startedAt = Date.now();
   try {
-    const result = await checkAdminIntegration(kind, values);
+    const result = await checkAdminIntegration(body.kind, body.values);
     recordAdminAudit({
       adminUserId: user.id,
       action: 'integration.check',
       targetType: 'integration',
-      targetId: kind,
+      targetId: body.kind,
       detail: { success: true, latencyMs: result.latencyMs },
     });
     return jsonOk(result, {
@@ -34,7 +28,7 @@ export const POST = defineRoute(async (request) => {
       adminUserId: user.id,
       action: 'integration.check',
       targetType: 'integration',
-      targetId: kind,
+      targetId: body.kind,
       detail: { success: false, latencyMs: Date.now() - startedAt },
     });
     throw error;

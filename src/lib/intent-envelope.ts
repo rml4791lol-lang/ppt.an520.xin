@@ -24,11 +24,6 @@ export type IntentParseResult<M extends Record<string, object>> =
   | ({ ok: true } & ParsedIntent<M>)
   | { ok: false; message: string };
 
-/** 尚未迁移解析器的契约占位：原样收下参数（三表迁移票完成后删除） */
-export function acceptParams<P extends object>(params: IntentParams): IntentParamsParse<P> {
-  return { ok: true, params: params as P };
-}
-
 /**
  * 逐字段读取器：类型不对/超限时记下第一条错误，解析器末尾用 done 一次收口。
  * record() 返回同一条错误链上的嵌套读取器（新页草稿这类子对象）。
@@ -41,6 +36,8 @@ export interface IntentFieldReader {
   int(key: string): number | undefined;
   list(key: string, maxItem: number, maxItems?: number): string[];
   record(key: string): IntentFieldReader | undefined;
+  /** 任意键值对象（管理端草稿配置）：只校验「是对象」，内容由业务层解释 */
+  object(key: string, message: string): Record<string, unknown> | undefined;
   fail(message: string): void;
   done<P>(params: P): IntentParamsParse<P>;
 }
@@ -49,6 +46,13 @@ export function readIntentFields(params: IntentParams): IntentFieldReader {
   // 解析器是纯函数：信封已挡掉非对象，这里再兜一次直调，坏输入降级为空对象而不是抛异常
   const source = params && typeof params === 'object' ? params : {};
   return makeFieldReader(source, { error: '' });
+}
+
+/** 必填字符串字段：清洗/截断后仍为空则记下调用方的 400 文案 */
+export function readRequiredText(f: IntentFieldReader, key: string, max: number, message: string): string {
+  const value = f.text(key, max);
+  if (!value) f.fail(message);
+  return value;
 }
 
 function makeFieldReader(params: IntentParams, state: { error: string }): IntentFieldReader {
@@ -115,6 +119,15 @@ function makeFieldReader(params: IntentParams, state: { error: string }): Intent
         return undefined;
       }
       return makeFieldReader(value as IntentParams, state);
+    },
+    object(key, message) {
+      const value = params[key];
+      if (value === undefined || value === null) return undefined;
+      if (typeof value !== 'object' || Array.isArray(value)) {
+        fail(message);
+        return undefined;
+      }
+      return value as Record<string, unknown>;
     },
     fail,
     done<P>(value: P): IntentParamsParse<P> {
