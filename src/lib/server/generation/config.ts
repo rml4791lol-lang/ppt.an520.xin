@@ -68,6 +68,8 @@ export interface GenerationConfig {
   imageMaxRetries: number;
   /** 自动重试基础退避毫秒数 */
   imageRetryBaseMs: number;
+  /** 死 key（401/402/403）冷却窗口毫秒数；0 = 关闭冷却 */
+  imageKeyCooldownMs: number;
   /** 生成 job 心跳卡死判定阈值：超过即视为进程中断，懒恢复可收敛（默认生图超时+2min，下限 5min） */
   jobStaleMs: number;
   /** Codia 开放 API（图片版 PPT 转可编辑 PPTX 上游） */
@@ -132,6 +134,8 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
   const effectiveEnv = env === process.env ? getEffectiveGenerationEnv(env) : env;
   const dataDir = trim(effectiveEnv.ANPPT_V2_DATA_DIR) || path.resolve(process.cwd(), 'data');
   const imageTimeoutMs = intFrom(effectiveEnv.ANPPT_V2_IMAGE_TIMEOUT_MS, 480_000);
+  // 空值走默认，只有显式写 0 才关闭冷却（.env 里留空的键很常见）
+  const imageKeyCooldownEnv = trim(effectiveEnv.ANPPT_V2_IMAGE_KEY_COOLDOWN_MS);
   const imageModel = trim(effectiveEnv.ANPPT_V2_IMAGE_MODEL) || 'gpt-image-2';
   return {
     dataDir,
@@ -177,6 +181,9 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     imageStartsPerUserPerMinute: Math.min(60, intFrom(effectiveEnv.ANPPT_V2_IMAGE_STARTS_PER_USER_PER_MINUTE, 16)),
     imageMaxRetries: Math.min(3, nonNegativeIntFrom(effectiveEnv.ANPPT_V2_IMAGE_MAX_RETRIES, 2)),
     imageRetryBaseMs: Math.min(30_000, intFrom(effectiveEnv.ANPPT_V2_IMAGE_RETRY_BASE_MS, 2_000)),
+    imageKeyCooldownMs: imageKeyCooldownEnv
+      ? Math.min(86_400_000, nonNegativeIntFrom(imageKeyCooldownEnv, 600_000))
+      : 600_000,
     jobStaleMs: intFrom(effectiveEnv.ANPPT_V2_JOB_STALE_MS, Math.max(5 * 60_000, imageTimeoutMs + 120_000)),
     codiaApiKey: trim(effectiveEnv.ANPPT_V2_CODIA_API_KEY),
     codiaBaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_CODIA_BASE_URL) || 'https://openapi.codia.ai'),

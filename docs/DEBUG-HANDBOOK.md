@@ -122,7 +122,7 @@ NODE
 npm run gate         # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build（全 mock，零真实付费调用）
 npm run gate:fast    # 快集：跳过 build 与两套测试
 npm run test:guardrails  # 护栏自检：用坏夹具证明门/钩子/工作树/发布脚本会红
-# 单跑某一层（排查用）：node scripts/test-generation.mjs（996 断言）/ node scripts/test-backend.mjs（184 断言）
+# 单跑某一层（排查用）：node scripts/test-generation.mjs（1014 断言）/ node scripts/test-backend.mjs（184 断言）
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）
 BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实生图扣费（约 $0.08），慎用
 ```
@@ -136,7 +136,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - `[anppt-v2][codia]` — Codia 上游调用告警（超时/非 JSON/HTTP 错误/重试）
 - `[anppt-v2][exports]` — 导出管线内部异常（上传源清理、懒恢复轮询、文字层单页提取）
 - `[anppt-v2][generation]` — 生成管线非致命降级（如全局视觉规范生成失败后继续）
-- `[anppt-v2][image-upstream]` — 生图上游瞬态重试/站点切换（站点 + 模型 + 单价；非 2xx 终态失败已进问题日志）
+- `[anppt-v2][image-upstream]` — 生图上游瞬态重试/站点切换（站点 + 模型 + 单价；非 2xx 终态失败已进问题日志）；#45 起同前缀还有死 key 冷却行（站点 + 模型 + key 指纹末 4 位，绝不打印完整 key）与「全部 key 冷却中，本轮跳过」
 - `[anppt-v2][recovery]` — 崩溃懒恢复触发（出现即说明发生过中断，值得看上一条 journal）
 - `[anppt-v2][admin]` / `[anppt-v2][admin-config]` — 管理员审计写入或运行时配置异常（日志仍须脱敏）
 
@@ -175,9 +175,9 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - ONLYOFFICE：`/tools/onlyoffice`。软件本身是第三方开源免费软件；AnPPT 的三个 Windows 一键下载入口、版本校验、兼容工具包与附带支持，仅在任意真实充值成功后永久解锁。权益判定为 `recharge_orders.status='paid'`，兑换码不算“充值一次”。
 - 项目导航：侧栏只保留一个「我的项目」，页面按 `updated_at DESC` 同时承担原“最近项目”视图。
 - 生图调度：单套默认并发 6、全站最大在途 20、滚动每分钟启动 24；429/5xx/网络抖动最多后台恢复 2 次，400/401/403/超时不盲目重试；单请求超时默认 8 分钟。
-- **生图池（2026-10-13 落灾备；2026-10-29 #44 改为按单价排序的站点池）**：`src/lib/server/generation/images.ts` `imageEndpoints()` 收集最多三站——主站 `ANPPT_V2_IMAGE_*`、灾备 `ANPPT_V2_IMAGE_BACKUP_*`、第二灾备 `ANPPT_V2_IMAGE_BACKUP2_BASE_URL` + `_API_KEY` + `_MODEL`（改图另用 `_EDIT_MODEL`，缺省回落 `_MODEL`）；**每站 base/key/model 三项齐备才入池**。`orderByPrice()`：单价已知（>0，来自 `ANPPT_V2_COST_IMAGE_FEN_PER_CALL` / `_BACKUP_` / `_BACKUP2_`）的站按升序排前，单价未配置（0 = 未知）的站保持配置顺序排其后——全未配置时顺序与历史的「主站 → 灾备」完全一致。站内 key 支持逗号分隔多把，当前只用第一把（轮换与冷却未接入）。切站规则 `isFailoverWorthy()`：401/402/403/429/5xx/网络/超时都切，400/413 是请求本身的问题不切（省灾备费用）。atlascloud 走异步 `/model/generateImage` + `/model/prediction/{id}` 轮询，其余渠道按 OpenAI `/images/generations`。切站日志（生图/改图同格式）`[anppt-v2][image-upstream] 生图站 backup（tt-image-2.5，单价 3 分/张）失败，切换 backup2（…）：<错误>`——站点 + 模型 + 单价；记账 provider 依次为 `image` / `image-backup` / `image-backup-2`，cost_fen 用该站单价。
+- **生图池（2026-10-13 落灾备；2026-10-29 #44 改为按单价排序的站点池）**：`src/lib/server/generation/images.ts` `imageEndpoints()` 收集最多三站——主站 `ANPPT_V2_IMAGE_*`、灾备 `ANPPT_V2_IMAGE_BACKUP_*`、第二灾备 `ANPPT_V2_IMAGE_BACKUP2_BASE_URL` + `_API_KEY` + `_MODEL`（改图另用 `_EDIT_MODEL`，缺省回落 `_MODEL`）；**每站 base/key/model 三项齐备才入池**。`orderByPrice()`：单价已知（>0，来自 `ANPPT_V2_COST_IMAGE_FEN_PER_CALL` / `_BACKUP_` / `_BACKUP2_`）的站按升序排前，单价未配置（0 = 未知）的站保持配置顺序排其后——全未配置时顺序与历史的「主站 → 灾备」完全一致。**站内多把 key 与轮换（2026-10-29，#45）**：每站 `_API_KEY` 支持逗号分隔多把，逐请求 round-robin（游标模块级、每请求前进）；站点轮换只在「同为最低已知单价、且文生图模型与改图模型都相同」的站之间移动起点——不同价或不同模型不参与（避免一套 PPT 混模型），单价全未配置时保持配置顺序不轮转。401/402/403 视为死 key：进冷却窗口（`ANPPT_V2_IMAGE_KEY_COOLDOWN_MS`，默认 600000ms，0 = 关闭）后所有请求跳过该 key，成功即清除、到期自动恢复；同站全部 key 冷却则该站本轮跳过，整池不可用抛既有 `IMAGE_UPSTREAM_UNAVAILABLE`（不新造错误码）。冷却日志只写 key 指纹（末 4 位），完整 key 不进日志。切站规则 `isFailoverWorthy()`：401/402/403/429/5xx/网络/超时都切，400/413 是请求本身的问题不切（省灾备费用）。atlascloud 走异步 `/model/generateImage` + `/model/prediction/{id}` 轮询，其余渠道按 OpenAI `/images/generations`。切站日志（生图/改图同格式）`[anppt-v2][image-upstream] 生图站 backup（tt-image-2.5，单价 3 分/张）失败，切换 backup2（…）：<错误>`——站点 + 模型 + 单价；记账 provider 依次为 `image` / `image-backup` / `image-backup-2`，cost_fen 用该站单价。
   - **历史缺口（2026-10-13 修复）**：代码一直支持灾备，但生产 `.env` 从未配 `ANPPT_V2_IMAGE_BACKUP_*`，灾备形同不存在——10-04 主站 402（insufficient balance）直接拖垮整站生成 6 个任务。**灾备必须与主站分账号/分额度**，否则同账号欠费一起挂；跨站灾备（atlascloud）还需账户有余额，2026-10-13 实测 atlascloud 与 KIE 均不可用（前者 402、后者无凭证）。
-  - 回归：`scripts/test-generation.mjs` 18 条断言（既有 4 条：主站 402 切灾备出图 / 灾备确被调用 / 主站 400 不切 / 灾备三项不全按单站失败；#44 补 14 条：未配单价顺序不变 / 已知单价先试且未知按配置顺序排后 / 最便宜站先被调用 / 请求体带命中站模型 / 最便宜站 402 顺延 / 切站日志带站点+模型+单价 / 400 与 413 不切 / 第二灾备三项不齐不入池 / 三站 provider+cost 记账 / 改图共用同一排序 / 逗号 key 只取第一把）。
+  - 回归：`scripts/test-generation.mjs` 36 条断言（既有 4 条：主站 402 切灾备出图 / 灾备确被调用 / 主站 400 不切 / 灾备三项不全按单站失败；#44 补 14 条：未配单价顺序不变 / 已知单价先试且未知按配置顺序排后 / 最便宜站先被调用 / 请求体带命中站模型 / 最便宜站 402 顺延 / 切站日志带站点+模型+单价 / 400 与 413 不切 / 第二灾备三项不齐不入池 / 三站 provider+cost 记账 / 改图共用同一排序 / 逗号 key 首请求取第一把；#45 补 18 条：同价同模型两站按请求 A→B→A 轮转且模型一致 / 文生图模型不同不轮转 / 改图模型不同不轮转 / 未知单价不轮转 / 同站两把 key 逐请求轮转 / 403 死 key 同请求让位 / 冷却期跳过该 key / 冷却日志只含指纹末 4 位 / 注入时钟窗口内跳过与到期恢复 / 默认 600000 与 0 关闭与空值回落 / 0 关闭时死 key 仍参与轮转 / 整站全冷却跳过且另一站兜底 / 冷却期不再空撞上游 / 整池不可用抛既有错误）。
   - **灾备换站（2026-10-29）**：生产 `ANPPT_V2_IMAGE_BACKUP_*` 由「同站 sqface 备用 key」改为跨站灵可/lk 中转 `https://api.lk888.ai/v1` + `tt-image-2.5`（改图同名）。三方直连实测：文生图 1536x864 28s 返回 b64_json、改图 1536x864 33s 返回、`reference_images` 字段不报错（该站也接受 `api.lk666.ai` 备用域名）。key 侧勾选 8 条线路（当前在线：`XT-2.5sys` 0.0313 算力/张、`BR-default-特惠分组` 0.0455，其余离线），余额初期约 2 算力——**只够短期兜底，花完即等于单站**，用完需充值或换回 atlascloud；成本估算 `ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL=3`。旧值仍保存在服务器 `/opt/anppt-v2/shared/.env.bak-image-fallback-20261029-214431`（同站备用 key 不是真隔离，仅覆盖单账号欠费）。
 - 下载：`/api/files/...` 使用文件流，支持 `HEAD`、`Range`、206 和 416；Codia PPTX 结果也直接流式落盘，避免并发时整文件进入 Node 堆内存。
 - 原创模板生成链：已落地「整套场景识别 → 六类叙事骨架 → 35 页型任务 → 逐页同风格参考 → 25 包设计 DNA」。当前不调用付费生图批量重制；后续按高校赛事、企业商务、政企工作三套逐张验收并原子替换，详见 `docs/ORIGINAL-TEMPLATE-REGEN.md`。

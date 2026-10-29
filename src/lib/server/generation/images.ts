@@ -1,4 +1,5 @@
 // gpt-image-2 生图上游客户端。站点池（主站 + 两站跨站灾备）按单价升序尝试、失败逐站回退；
+// 同价同模型的站之间按请求轮换起点，站内多把 key 逐请求轮转，401/402/403 的死 key 冷却后跳过；
 // OpenAI 兼容站走 /images/generations + /images/edits；atlascloud 走异步预测 API
 // （/model/generateImage + /model/prediction）。
 // 所有真实请求经过全局并发/启动速率调度，并只对瞬态错误做有限后台恢复。
@@ -10,6 +11,8 @@ import { logProblem } from '../problem-log';
 export interface ImageDeps {
   fetchImpl?: typeof fetch;
   config?: GenerationConfig;
+  /** 注入时钟：死 key 冷却窗口判定（测试用，生产走 Date.now） */
+  now?: () => number;
 }
 
 export class ImageUpstreamError extends Error {
@@ -221,7 +224,8 @@ async function parseImageResponse(
 interface ImageEndpoint {
   site: 'primary' | 'backup' | 'backup2';
   baseUrl: string;
-  apiKey: string;
+  /** 站内多把 key（逗号分隔）：逐请求轮转，死 key 冷却跳过 */
+  apiKeys: string[];
   /** 文生图模型名 */
   model: string;
   /** 改图模型名（不分模型名的渠道与 model 相同） */
@@ -237,7 +241,7 @@ const IMAGE_SITE_PROVIDER: Record<ImageEndpoint['site'], UsageProvider> = {
   backup2: 'image-backup-2',
 };
 
-/** 站内多把 key 先按逗号解析成数组；当前只使用第一把（轮换与冷却尚未接入） */
+/** 站内多把 key 用逗号分隔，按配置顺序轮转 */
 function imageApiKeys(raw: string): string[] {
   return raw
     .split(',')
@@ -248,40 +252,136 @@ function imageApiKeys(raw: string): string[] {
 /** 生图站点候选：主站 → 跨站灾备 → 第二跨站灾备（每站三项齐备才挂上） */
 function imageEndpoints(config: GenerationConfig): ImageEndpoint[] {
   const endpoints: ImageEndpoint[] = [];
-  const [primaryKey] = imageApiKeys(config.imageApiKey);
-  if (config.imageBaseUrl && primaryKey) {
+  const primaryKeys = imageApiKeys(config.imageApiKey);
+  if (config.imageBaseUrl && primaryKeys.length > 0) {
     endpoints.push({
       site: 'primary',
       baseUrl: config.imageBaseUrl,
-      apiKey: primaryKey,
+      apiKeys: primaryKeys,
       model: config.imageModel,
       editModel: config.imageEditModel,
       price: config.costImageFenPerCall,
     });
   }
-  const [backupKey] = imageApiKeys(config.imageBackupApiKey);
-  if (config.imageBackupBaseUrl && backupKey && config.imageBackupModel) {
+  const backupKeys = imageApiKeys(config.imageBackupApiKey);
+  if (config.imageBackupBaseUrl && backupKeys.length > 0 && config.imageBackupModel) {
     endpoints.push({
       site: 'backup',
       baseUrl: config.imageBackupBaseUrl,
-      apiKey: backupKey,
+      apiKeys: backupKeys,
       model: config.imageBackupModel,
       editModel: config.imageBackupEditModel || config.imageBackupModel,
       price: config.costImageBackupFenPerCall,
     });
   }
-  const [backup2Key] = imageApiKeys(config.imageBackup2ApiKey);
-  if (config.imageBackup2BaseUrl && backup2Key && config.imageBackup2Model) {
+  const backup2Keys = imageApiKeys(config.imageBackup2ApiKey);
+  if (config.imageBackup2BaseUrl && backup2Keys.length > 0 && config.imageBackup2Model) {
     endpoints.push({
       site: 'backup2',
       baseUrl: config.imageBackup2BaseUrl,
-      apiKey: backup2Key,
+      apiKeys: backup2Keys,
       model: config.imageBackup2Model,
       editModel: config.imageBackup2EditModel || config.imageBackup2Model,
       price: config.costImageBackup2FenPerCall,
     });
   }
   return orderByPrice(endpoints);
+}
+
+interface ImageKeyCooldown {
+  until: number;
+  error: unknown;
+}
+
+/** 轮换游标与死 key 冷却：模块级、每请求前进（与调度器同样挂 globalThis，避免 dev 热重载丢状态） */
+interface ImagePoolState {
+  rotationCursors: Map<string, number>;
+  keyCursors: Map<string, number>;
+  keyCooldowns: Map<string, ImageKeyCooldown>;
+}
+
+const poolGlobal = globalThis as typeof globalThis & { __anpptImagePool?: ImagePoolState };
+const imagePool: ImagePoolState = poolGlobal.__anpptImagePool ?? {
+  rotationCursors: new Map(),
+  keyCursors: new Map(),
+  keyCooldowns: new Map(),
+};
+poolGlobal.__anpptImagePool = imagePool;
+
+/** 仅测试使用：清空轮换游标与冷却窗口，别依赖真实时间。 */
+export function resetImagePoolForTests(): void {
+  imagePool.rotationCursors.clear();
+  imagePool.keyCursors.clear();
+  imagePool.keyCooldowns.clear();
+}
+
+function imageEndpointId(endpoint: ImageEndpoint): string {
+  return `${endpoint.site}|${endpoint.baseUrl}|${endpoint.model}|${endpoint.editModel}`;
+}
+
+function imageKeyCooldownId(endpoint: ImageEndpoint, apiKey: string): string {
+  return `${imageEndpointId(endpoint)}\u0000${apiKey}`;
+}
+
+/** 401/402/403 是凭据/额度问题：这把 key 进冷却，换站或换 key 都可能活 */
+function isDeadImageKeyError(error: unknown): boolean {
+  return error instanceof ImageUpstreamError
+    && (error.status === 401 || error.status === 402 || error.status === 403);
+}
+
+function isImageKeyCooling(endpoint: ImageEndpoint, apiKey: string, now: number): boolean {
+  const id = imageKeyCooldownId(endpoint, apiKey);
+  const cooldown = imagePool.keyCooldowns.get(id);
+  if (!cooldown) return false;
+  if (cooldown.until > now) return true;
+  // 冷却到点自动恢复：过期条目当场清掉，避免状态无限增长、也避免误用陈旧错误
+  imagePool.keyCooldowns.delete(id);
+  return false;
+}
+
+/** 站内 key 全在冷却时，用冷却中的失败原因对外报错（不新造错误码） */
+function firstCoolingError(endpoint: ImageEndpoint): unknown {
+  const prefix = `${imageEndpointId(endpoint)}\u0000`;
+  for (const [id, cooldown] of imagePool.keyCooldowns) {
+    if (id.startsWith(prefix)) return cooldown.error;
+  }
+  return undefined;
+}
+
+/** 站内 key 轮转：从游标起取第一把不在冷却的 key，返回即把游标推进到它的下一把 */
+function takeNextImageKey(endpoint: ImageEndpoint, now: number): string | null {
+  const total = endpoint.apiKeys.length;
+  if (total === 0) return null;
+  const id = imageEndpointId(endpoint);
+  const cursor = (imagePool.keyCursors.get(id) ?? 0) % total;
+  for (let step = 0; step < total; step += 1) {
+    const index = (cursor + step) % total;
+    const apiKey = endpoint.apiKeys[index];
+    if (isImageKeyCooling(endpoint, apiKey, now)) continue;
+    imagePool.keyCursors.set(id, (index + 1) % total);
+    return apiKey;
+  }
+  return null;
+}
+
+/** 同价同模型的站才成组轮转：一套 PPT 内混用不同图像模型会让风格不一致 */
+function orderPoolForRequest(endpoints: ImageEndpoint[]): ImageEndpoint[] {
+  const head = endpoints[0];
+  if (!head || head.price <= 0) return endpoints;
+  const group = endpoints.filter(
+    (endpoint) => endpoint.price === head.price
+      && endpoint.model === head.model
+      && endpoint.editModel === head.editModel,
+  );
+  if (group.length < 2) return endpoints;
+  const groupKey = group.map(imageEndpointId).join('+');
+  const offset = (imagePool.rotationCursors.get(groupKey) ?? 0) % group.length;
+  imagePool.rotationCursors.set(groupKey, (offset + 1) % group.length);
+  // 只互换组员占的槽位：同价不同模型的站留在原顺位，成本排序与回退语义不因轮换改变
+  const inGroup = new Set(group);
+  const rotated = [...group.slice(offset), ...group.slice(0, offset)];
+  let next = 0;
+  return endpoints.map((endpoint) => (inGroup.has(endpoint) ? rotated[next++] : endpoint));
 }
 
 /** 单价已知（>0）的站升序在前；单价未知的站保持配置顺序排在后面（全未配置时顺序与历史一致） */
@@ -298,17 +398,44 @@ function orderByPrice(candidates: ImageEndpoint[]): ImageEndpoint[] {
     .map((item) => item.endpoint);
 }
 
+/** 站点描述：站点 + 模型 + 单价（切站与冷却日志共用，线上口径不变） */
+function describeImageStation(action: '生图' | '改图', endpoint: ImageEndpoint): string {
+  const model = action === '改图' ? endpoint.editModel : endpoint.model;
+  const price = endpoint.price > 0 ? `单价 ${endpoint.price} 分/张` : '单价未配置';
+  return `${endpoint.site}（${model}，${price}）`;
+}
+
+/** 日志只写 key 指纹：完整 key 不进任何日志 */
+function imageKeyFingerprint(apiKey: string): string {
+  return apiKey.length <= 4 ? `#len${apiKey.length}` : `#${apiKey.slice(-4)}`;
+}
+
 /** 切站日志：站点 + 模型 + 单价（既有 [anppt-v2][image-upstream] 前缀不变），便于线上核对命中顺序与每张成本 */
 function logImageSwitch(action: '生图' | '改图', from: ImageEndpoint, to: ImageEndpoint, error: unknown): void {
-  const describe = (endpoint: ImageEndpoint) => {
-    const model = action === '改图' ? endpoint.editModel : endpoint.model;
-    const price = endpoint.price > 0 ? `单价 ${endpoint.price} 分/张` : '单价未配置';
-    return `${endpoint.site}（${model}，${price}）`;
-  };
   console.warn(
-    `[anppt-v2][image-upstream] ${action}站 ${describe(from)}失败，切换 ${describe(to)}：${
+    `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, from)}失败，切换 ${describeImageStation(action, to)}：${
       error instanceof Error ? error.message : String(error)
     }`,
+  );
+}
+
+/** 死 key 冷却：只写 key 指纹与上游状态码，线上定位不用翻完整密钥 */
+function logImageKeyCooldown(
+  action: '生图' | '改图',
+  endpoint: ImageEndpoint,
+  apiKey: string,
+  error: unknown,
+  cooldownMs: number,
+): void {
+  const status = error instanceof ImageUpstreamError ? error.status : 0;
+  console.warn(
+    `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, endpoint)} key ${imageKeyFingerprint(apiKey)} 上游 HTTP ${status} 失败，冷却 ${cooldownMs}ms`,
+  );
+}
+
+function logImageStationBlocked(action: '生图' | '改图', endpoint: ImageEndpoint): void {
+  console.warn(
+    `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, endpoint)} 全部 key 冷却中，本轮跳过`,
   );
 }
 
@@ -362,6 +489,7 @@ interface AtlasEnvelope<T> {
 
 async function atlasHttp<T>(
   ep: ImageEndpoint,
+  apiKey: string,
   path: string,
   init: { method: string; body?: unknown },
   timeoutMs: number,
@@ -373,7 +501,7 @@ async function atlasHttp<T>(
     const fetchImpl = deps.fetchImpl ?? fetch;
     const response = await fetchImpl(`${ep.baseUrl}${path}`, {
       method: init.method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ep.apiKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       signal: controller.signal,
     });
@@ -406,11 +534,12 @@ async function atlasHttp<T>(
 
 async function atlasRunImageJob(
   ep: ImageEndpoint,
+  apiKey: string,
   body: Record<string, unknown>,
   config: GenerationConfig,
   deps: ImageDeps,
 ): Promise<Buffer> {
-  const created = await atlasHttp<{ id?: string }>(ep, '/model/generateImage', { method: 'POST', body }, 90_000, deps);
+  const created = await atlasHttp<{ id?: string }>(ep, apiKey, '/model/generateImage', { method: 'POST', body }, 90_000, deps);
   if (!created.id) throw new ImageUpstreamError('atlascloud 未返回任务 id', 502);
   const deadline = Date.now() + config.imageTimeoutMs;
   for (;;) {
@@ -418,6 +547,7 @@ async function atlasRunImageJob(
     await sleep(ATLAS_POLL_INTERVAL_MS);
     const prediction = await atlasHttp<{ status?: string; outputs?: string[]; error?: string }>(
       ep,
+      apiKey,
       `/model/prediction/${created.id}`,
       { method: 'GET' },
       30_000,
@@ -448,89 +578,146 @@ export interface GenerateImageInput {
   userKey?: string;
 }
 
-export async function generateImage(input: GenerateImageInput, deps: ImageDeps = {}): Promise<Buffer> {
-  const config = deps.config ?? getGenerationConfig();
-  const endpoints = imageEndpoints(config);
+interface ImagePoolFailure {
+  endpoint: ImageEndpoint;
+  error: unknown;
+}
+
+/**
+ * 站点池唯一入口：同价同模型轮转起点 → 站内 key 轮转 → 死 key 冷却跳过 → 逐站按单价回退。
+ * 400/413 是请求本身的问题，不换 key 也不换站；整池都在冷却时用最近一次冷却错误对外报错（不新造错误码）。
+ */
+async function runImagePool(
+  config: GenerationConfig,
+  action: '生图' | '改图',
+  userKey: string,
+  deps: ImageDeps,
+  attempt: (endpoint: ImageEndpoint, apiKey: string) => Promise<Buffer>,
+): Promise<Buffer> {
+  const endpoints = orderPoolForRequest(imageEndpoints(config));
   if (endpoints.length === 0) {
     throw new ImageUpstreamError('生图服务未配置（ANPPT_V2_IMAGE_BASE_URL/API_KEY）', 503);
   }
-  const fetchImpl = deps.fetchImpl ?? fetch;
+  const cooldownMs = Math.max(0, config.imageKeyCooldownMs ?? 600_000);
+  const clock = deps.now ?? Date.now;
   let lastError: unknown;
-  for (let i = 0; i < endpoints.length; i += 1) {
-    const ep = endpoints[i];
-    const provider = IMAGE_SITE_PROVIDER[ep.site];
-    try {
-      return await withTransientRecovery(config, input.userKey || 'anonymous', async () => {
-        const startedAt = Date.now();
-        if (isAtlasEndpoint(ep)) {
-          try {
-            const image = await atlasRunImageJob(
-              ep,
-              {
-                model: ep.model,
-                prompt: input.prompt,
-                size: input.size || config.imageSize,
-                enable_sync_mode: false,
-                enable_base64_output: false,
-              },
-              config,
-              deps,
-            );
-            recordUpstreamUsage({
-              provider, kind: 'image-generate', model: ep.model,
-              status: 'ok', units: 1, durationMs: Date.now() - startedAt,
+  let blockedError: unknown;
+  let failed: ImagePoolFailure | null = null;
+  for (const endpoint of endpoints) {
+    let currentKey = takeNextImageKey(endpoint, clock());
+    if (!currentKey) {
+      logImageStationBlocked(action, endpoint);
+      blockedError ??= firstCoolingError(endpoint);
+      continue;
+    }
+    if (failed) {
+      logImageSwitch(action, failed.endpoint, endpoint, failed.error);
+      failed = null;
+    }
+    for (;;) {
+      const apiKey = currentKey;
+      try {
+        const image = await withTransientRecovery(config, userKey, () => attempt(endpoint, apiKey));
+        imagePool.keyCooldowns.delete(imageKeyCooldownId(endpoint, apiKey));
+        return image;
+      } catch (error) {
+        lastError = error;
+        if (isDeadImageKeyError(error)) {
+          if (cooldownMs > 0) {
+            imagePool.keyCooldowns.set(imageKeyCooldownId(endpoint, apiKey), {
+              until: clock() + cooldownMs,
+              error,
             });
-            return image;
-          } catch (error) {
-            recordUpstreamUsage({
-              provider, kind: 'image-generate', model: ep.model,
-              status: 'error', durationMs: Date.now() - startedAt,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw error;
+            logImageKeyCooldown(action, endpoint, apiKey, error, cooldownMs);
           }
+          const nextKey = takeNextImageKey(endpoint, clock());
+          if (nextKey) {
+            currentKey = nextKey;
+            continue;
+          }
+          failed = { endpoint, error };
+          break;
         }
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), config.imageTimeoutMs);
-        try {
-          const response = await fetchImpl(`${ep.baseUrl}/images/generations`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ep.apiKey}` },
-            body: JSON.stringify({
-              model: ep.model,
-              prompt: input.prompt,
-              size: input.size || config.imageSize,
-              n: 1,
-              ...(input.referenceImages && input.referenceImages.length > 0
-                ? { reference_images: input.referenceImages.map((url) => ({ url })) }
-                : {}),
-            }),
-            signal: controller.signal,
-          });
-          const image = await parseImageResponse(response, deps, controller.signal);
-          recordUpstreamUsage({
-            provider, kind: 'image-generate', model: ep.model,
-            status: 'ok', units: 1, durationMs: Date.now() - startedAt,
-          });
-          return image;
-        } catch (error) {
-          recordUpstreamUsage({
-            provider, kind: 'image-generate', model: ep.model,
-            status: 'error', durationMs: Date.now() - startedAt,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        } finally {
-          clearTimeout(timer);
-        }
-      });
-    } catch (error) {
-      lastError = error;
-      if (i >= endpoints.length - 1 || !isFailoverWorthy(error)) throw error;
-      logImageSwitch('生图', ep, endpoints[i + 1], error);
+        if (!isFailoverWorthy(error)) throw error;
+        failed = { endpoint, error };
+        break;
+      }
     }
   }
-  throw lastError instanceof Error ? lastError : new ImageUpstreamError('生图上游全部站点失败', 502);
+  if (lastError) throw lastError;
+  if (blockedError) throw blockedError;
+  throw new ImageUpstreamError('生图站点池无可用 key（全部冷却中）', 503);
+}
+
+export async function generateImage(input: GenerateImageInput, deps: ImageDeps = {}): Promise<Buffer> {
+  const config = deps.config ?? getGenerationConfig();
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  return runImagePool(config, '生图', input.userKey || 'anonymous', deps, async (ep, apiKey) => {
+    const provider = IMAGE_SITE_PROVIDER[ep.site];
+    const startedAt = Date.now();
+    if (isAtlasEndpoint(ep)) {
+      try {
+        const image = await atlasRunImageJob(
+          ep,
+          apiKey,
+          {
+            model: ep.model,
+            prompt: input.prompt,
+            size: input.size || config.imageSize,
+            enable_sync_mode: false,
+            enable_base64_output: false,
+          },
+          config,
+          deps,
+        );
+        recordUpstreamUsage({
+          provider, kind: 'image-generate', model: ep.model,
+          status: 'ok', units: 1, durationMs: Date.now() - startedAt,
+        });
+        return image;
+      } catch (error) {
+        recordUpstreamUsage({
+          provider, kind: 'image-generate', model: ep.model,
+          status: 'error', durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.imageTimeoutMs);
+    try {
+      const response = await fetchImpl(`${ep.baseUrl}/images/generations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: ep.model,
+          prompt: input.prompt,
+          size: input.size || config.imageSize,
+          n: 1,
+          ...(input.referenceImages && input.referenceImages.length > 0
+            ? { reference_images: input.referenceImages.map((url) => ({ url })) }
+            : {}),
+        }),
+        signal: controller.signal,
+      });
+      const image = await parseImageResponse(response, deps, controller.signal);
+      recordUpstreamUsage({
+        provider, kind: 'image-generate', model: ep.model,
+        status: 'ok', units: 1, durationMs: Date.now() - startedAt,
+      });
+      return image;
+    } catch (error) {
+      recordUpstreamUsage({
+        provider, kind: 'image-generate', model: ep.model,
+        status: 'error', durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 }
 
 export interface EditImageInput {
@@ -547,95 +734,81 @@ export interface EditImageInput {
 
 export async function editImage(input: EditImageInput, deps: ImageDeps = {}): Promise<Buffer> {
   const config = deps.config ?? getGenerationConfig();
-  const endpoints = imageEndpoints(config);
-  if (endpoints.length === 0) {
-    throw new ImageUpstreamError('生图服务未配置（ANPPT_V2_IMAGE_BASE_URL/API_KEY）', 503);
-  }
   const fetchImpl = deps.fetchImpl ?? fetch;
-  let lastError: unknown;
-  for (let i = 0; i < endpoints.length; i += 1) {
-    const ep = endpoints[i];
+  return runImagePool(config, '改图', input.userKey || 'anonymous', deps, async (ep, apiKey) => {
     const provider = IMAGE_SITE_PROVIDER[ep.site];
-    try {
-      return await withTransientRecovery(config, input.userKey || 'anonymous', async () => {
-        const extraImages = (input.extraImages || []).filter((item) => item && item.length > 0);
-        // atlascloud 多图编辑支持未验证：灾备只发原图，第二图意图降级为文字描述
-        const degraded = extraImages.length > 0 && isAtlasEndpoint(ep);
-        const instruction = degraded && input.extraImageNote
-          ? `${input.instruction}\n\n${input.extraImageNote}`
-          : input.instruction;
-        const form = new FormData();
-        form.append('model', ep.editModel);
-        form.append('prompt', instruction);
-        form.append('size', input.size || config.imageSize);
-        form.append('image', new Blob([new Uint8Array(input.image)], { type: 'image/png' }), 'source.png');
-        extraImages.forEach((extra, index) => {
-          form.append('image', new Blob([new Uint8Array(extra)], { type: 'image/png' }), `extra-${index + 1}.png`);
+    const extraImages = (input.extraImages || []).filter((item) => item && item.length > 0);
+    // atlascloud 多图编辑支持未验证：灾备只发原图，第二图意图降级为文字描述
+    const degraded = extraImages.length > 0 && isAtlasEndpoint(ep);
+    const instruction = degraded && input.extraImageNote
+      ? `${input.instruction}\n\n${input.extraImageNote}`
+      : input.instruction;
+    const form = new FormData();
+    form.append('model', ep.editModel);
+    form.append('prompt', instruction);
+    form.append('size', input.size || config.imageSize);
+    form.append('image', new Blob([new Uint8Array(input.image)], { type: 'image/png' }), 'source.png');
+    extraImages.forEach((extra, index) => {
+      form.append('image', new Blob([new Uint8Array(extra)], { type: 'image/png' }), `extra-${index + 1}.png`);
+    });
+    const startedAt = Date.now();
+    if (isAtlasEndpoint(ep)) {
+      if (degraded) {
+        console.warn('[anppt-v2][image-upstream] 灾备渠道多图编辑未验证：已丢弃附加图，意图转为文字描述');
+      }
+      try {
+        const image = await atlasRunImageJob(
+          ep,
+          apiKey,
+          {
+            model: ep.editModel,
+            prompt: instruction,
+            image: `data:image/png;base64,${input.image.toString('base64')}`,
+            size: input.size || config.imageSize,
+            enable_sync_mode: false,
+            enable_base64_output: false,
+          },
+          config,
+          deps,
+        );
+        recordUpstreamUsage({
+          provider, kind: 'image-edit', model: ep.editModel,
+          status: 'ok', units: 1, durationMs: Date.now() - startedAt,
         });
-        const startedAt = Date.now();
-        if (isAtlasEndpoint(ep)) {
-          if (degraded) {
-            console.warn('[anppt-v2][image-upstream] 灾备渠道多图编辑未验证：已丢弃附加图，意图转为文字描述');
-          }
-          try {
-            const image = await atlasRunImageJob(
-              ep,
-              {
-                model: ep.editModel,
-                prompt: instruction,
-                image: `data:image/png;base64,${input.image.toString('base64')}`,
-                size: input.size || config.imageSize,
-                enable_sync_mode: false,
-                enable_base64_output: false,
-              },
-              config,
-              deps,
-            );
-            recordUpstreamUsage({
-              provider, kind: 'image-edit', model: ep.editModel,
-              status: 'ok', units: 1, durationMs: Date.now() - startedAt,
-            });
-            return image;
-          } catch (error) {
-            recordUpstreamUsage({
-              provider, kind: 'image-edit', model: ep.editModel,
-              status: 'error', durationMs: Date.now() - startedAt,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw error;
-          }
-        }
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), config.imageTimeoutMs);
-        try {
-          const response = await fetchImpl(`${ep.baseUrl}/images/edits`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${ep.apiKey}` },
-            body: form,
-            signal: controller.signal,
-          });
-          const image = await parseImageResponse(response, deps, controller.signal);
-          recordUpstreamUsage({
-            provider, kind: 'image-edit', model: ep.editModel,
-            status: 'ok', units: 1, durationMs: Date.now() - startedAt,
-          });
-          return image;
-        } catch (error) {
-          recordUpstreamUsage({
-            provider, kind: 'image-edit', model: ep.editModel,
-            status: 'error', durationMs: Date.now() - startedAt,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        } finally {
-          clearTimeout(timer);
-        }
-      });
-    } catch (error) {
-      lastError = error;
-      if (i >= endpoints.length - 1 || !isFailoverWorthy(error)) throw error;
-      logImageSwitch('改图', ep, endpoints[i + 1], error);
+        return image;
+      } catch (error) {
+        recordUpstreamUsage({
+          provider, kind: 'image-edit', model: ep.editModel,
+          status: 'error', durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     }
-  }
-  throw lastError instanceof Error ? lastError : new ImageUpstreamError('改图上游全部站点失败', 502);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.imageTimeoutMs);
+    try {
+      const response = await fetchImpl(`${ep.baseUrl}/images/edits`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+        signal: controller.signal,
+      });
+      const image = await parseImageResponse(response, deps, controller.signal);
+      recordUpstreamUsage({
+        provider, kind: 'image-edit', model: ep.editModel,
+        status: 'ok', units: 1, durationMs: Date.now() - startedAt,
+      });
+      return image;
+    } catch (error) {
+      recordUpstreamUsage({
+        provider, kind: 'image-edit', model: ep.editModel,
+        status: 'error', durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 }

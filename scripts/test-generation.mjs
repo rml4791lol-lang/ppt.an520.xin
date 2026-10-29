@@ -1915,6 +1915,8 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
   check('生图回退：主站 402 → 切灾备站出图', failedOver.length > 0);
   check('生图回退：灾备站确实被调用', failoverFetcher.calls.some((c) => c.url.includes('mock-image-backup')));
 
+  // 刚才的 402 已把主站 key 打进冷却；本条要验的是「干净池」上 400 不切站
+  imagesMod.resetImagePoolForTests();
   const noFailoverFetcher = makeMockFetcher([
     { match: 'mock-image-primary', payload: jsonResponse({ error: { message: 'bad request' } }, 400) },
     { match: 'mock-image-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
@@ -1950,6 +1952,7 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
 // 视为未知，保持配置顺序排在已知单价之后。未配任何单价时与今天的「主站 → 灾备」一致。
 {
   const imagesMod = await import('../src/lib/server/generation/images.ts');
+  imagesMod.resetImagePoolForTests();
   const poolConfig = (prices) => ({
     ...imageConfig,
     imageBaseUrl: 'http://mock-pool-primary',
@@ -1981,6 +1984,8 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     unpaidImage.length > 0 && poolOrder(unpaidFetcher) === 'primary → backup → b2',
     `实际调用 ${poolOrder(unpaidFetcher) || '(无)'}`);
 
+  // 上一条场景已把主站/灾备 key 打进冷却，排序断言需要干净的池
+  imagesMod.resetImagePoolForTests();
   const pricedFetcher = makeMockFetcher([
     { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
     { match: 'mock-pool-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
@@ -2014,7 +2019,8 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
   check('生图池：最便宜站 402 自动切到下一站出图，更贵的主站不被调用',
     carriedImage.length > 0 && poolOrder(carryFetcher) === 'backup → b2',
     `实际调用 ${poolOrder(carryFetcher) || '(无)'}`);
-  const switchWarn = switchWarns.find((line) => line.includes('[anppt-v2][image-upstream]'));
+  // 同前缀现在还有死 key 冷却行，按切站文案定位，别被前一行抢走
+  const switchWarn = switchWarns.find((line) => line.includes('失败，切换'));
   check('生图池：切站日志保留既有前缀并带出站点+模型+单价',
     Boolean(switchWarn)
       && switchWarn.includes('失败，切换')
@@ -2022,6 +2028,8 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
       && switchWarn.includes('backup2（model-b2，单价 5 分/张）'),
     `实际日志 ${switchWarn || '(无)'}`);
 
+  // 上一条场景把最便宜站 key 打进了冷却；400/413 不换站的断言要求先能打到它
+  imagesMod.resetImagePoolForTests();
   for (const status of [400, 413]) {
     const rejectFetcher = makeMockFetcher([
       { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
@@ -2054,6 +2062,8 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     poolOrder(mixedFetcher) === 'backup → primary → b2',
     `实际调用 ${poolOrder(mixedFetcher) || '(无)'}`);
 
+  // 已知单价场景把主站/灾备 key 打进冷却；两款不全的断言要求两站都还活着
+  imagesMod.resetImagePoolForTests();
   const partialFetcher = makeMockFetcher([
     { match: 'mock-pool-primary', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
     { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
@@ -2073,6 +2083,8 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     `实际调用 ${poolOrder(partialFetcher) || '(无)'}`);
 
   // 记账：provider 按站点文案（image / image-backup / image-backup-2），cost_fen 用该站单价。
+  // 前面几条兜底场景把各站 key 打进了冷却，记账断言要按「逐站失败再换站」的真实顺序跑
+  imagesMod.resetImagePoolForTests();
   const savedCostEnv = {
     ANPPT_V2_COST_IMAGE_FEN_PER_CALL: process.env.ANPPT_V2_COST_IMAGE_FEN_PER_CALL,
     ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL: process.env.ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL,
@@ -2130,6 +2142,7 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     `实际 ${JSON.stringify(primaryCostGroup)}`);
 
   // 改图与生图共用同一站点池（imageEndpoints 单点），排序与回退口径不单独分叉
+  imagesMod.resetImagePoolForTests();
   const editPoolFetcher = makeMockFetcher([
     { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
     { match: 'mock-pool-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
@@ -2142,17 +2155,292 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     poolOrder(editPoolFetcher) === 'backup',
     `实际调用 ${poolOrder(editPoolFetcher) || '(无)'}`);
 
-  // 站内多把 key：先支持逗号分隔，本票只使用第一把（轮换与冷却不在本票范围）
+  // 站内多把 key：逗号分隔解析成数组，首请求从第一把开始（逐请求轮转见 #45 块）
   const multiKeyFetcher = makeMockFetcher([
     { match: 'mock-key-site', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
   ]);
-  await imagesMod.generateImage({ prompt: '站内多 key 只用第一把' }, {
+  await imagesMod.generateImage({ prompt: '站内多 key 首请求第一把' }, {
     fetchImpl: multiKeyFetcher,
     config: { ...poolConfig([0, 0, 0]), imageBaseUrl: 'http://mock-key-site', imageApiKey: ' sk-first , sk-second ' },
   });
-  check('生图池：站内逗号分隔的 key 只使用第一把',
+  check('生图池：站内逗号分隔解析为多把 key，首请求用第一把',
     multiKeyFetcher.calls[0]?.init.headers?.Authorization === 'Bearer sk-first',
     `实际 ${multiKeyFetcher.calls[0]?.init.headers?.Authorization || '(无)'}`);
+}
+
+// 轮换与冷却（#45）：同价同模型的站之间按请求轮转起点；同站多把 key 逐请求轮转；
+// 401/402/403 的死 key 冷却后被跳过，到期自动恢复。轮换只在同价且同模型（文生图 + 改图）的站之间发生。
+console.log('\n[2c2] 生图池：同价轮换与死键冷却');
+{
+  const imagesMod = await import('../src/lib/server/generation/images.ts');
+  const rotationConfig = (overrides = {}) => ({
+    ...imageConfig,
+    imageBaseUrl: 'http://mock-rot-a',
+    imageApiKey: 'sk-rot-key-aaaa',
+    imageModel: 'model-shared',
+    imageEditModel: 'model-shared',
+    imageBackupBaseUrl: 'http://mock-rot-b',
+    imageBackupApiKey: 'sk-rot-key-bbbb',
+    imageBackupModel: 'model-shared',
+    imageBackupEditModel: 'model-shared',
+    imageBackup2BaseUrl: '',
+    imageBackup2ApiKey: '',
+    imageBackup2Model: '',
+    costImageFenPerCall: 3,
+    costImageBackupFenPerCall: 3,
+    costImageBackup2FenPerCall: 0,
+    ...overrides,
+  });
+  const stationOrder = (fetcher) => fetcher.calls
+    .map((call) => call.url.match(/^http:\/\/mock-rot-([^/]+)/)?.[1] ?? call.url)
+    .join(' → ');
+
+  const rotateFetcher = makeMockFetcher([
+    { match: 'mock-rot-a', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-rot-b', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  const rotateModels = [];
+  for (let index = 0; index < 3; index += 1) {
+    await imagesMod.generateImage({ prompt: `同价同模型轮转 ${index}` }, {
+      fetchImpl: rotateFetcher, config: rotationConfig(),
+    });
+    rotateModels.push(JSON.parse(rotateFetcher.calls.at(-1).init.body).model);
+  }
+  check('轮换：同价同模型的两站按请求轮转起点（A → B → A）',
+    stationOrder(rotateFetcher) === 'a → b → a',
+    `实际调用 ${stationOrder(rotateFetcher) || '(无)'}`);
+  check('轮换：同价同模型两站始终用同一个模型（不混模型）',
+    rotateModels.length === 3 && rotateModels.every((model) => model === 'model-shared'),
+    `实际 ${rotateModels.join(',')}`);
+
+  const mixedModelFetcher = makeMockFetcher([
+    { match: 'mock-rot-a', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-rot-b', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  for (let index = 0; index < 3; index += 1) {
+    await imagesMod.generateImage({ prompt: `不同模型不轮转 ${index}` }, {
+      fetchImpl: mixedModelFetcher,
+      config: rotationConfig({ imageBackupModel: 'model-other', imageBackupEditModel: 'model-other' }),
+    });
+  }
+  check('轮换：同价但文生图模型不同 → 不轮转（三请求都打同一站）',
+    stationOrder(mixedModelFetcher) === 'a → a → a',
+    `实际调用 ${stationOrder(mixedModelFetcher) || '(无)'}`);
+
+  const mixedEditFetcher = makeMockFetcher([
+    { match: 'mock-rot-a', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-rot-b', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  for (let index = 0; index < 3; index += 1) {
+    await imagesMod.generateImage({ prompt: `改图模型不同不轮转 ${index}` }, {
+      fetchImpl: mixedEditFetcher,
+      config: rotationConfig({ imageBackupEditModel: 'model-edit-other' }),
+    });
+  }
+  check('轮换：同价同文生图模型但改图模型不同 → 不轮转',
+    stationOrder(mixedEditFetcher) === 'a → a → a',
+    `实际调用 ${stationOrder(mixedEditFetcher) || '(无)'}`);
+
+  const unpaidRotationFetcher = makeMockFetcher([
+    { match: 'mock-rot-a', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-rot-b', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  for (let index = 0; index < 3; index += 1) {
+    await imagesMod.generateImage({ prompt: `未知单价不轮转 ${index}` }, {
+      fetchImpl: unpaidRotationFetcher,
+      config: rotationConfig({ costImageFenPerCall: 0, costImageBackupFenPerCall: 0 }),
+    });
+  }
+  check('轮换：单价未配置（未知）时保持配置顺序、不轮转',
+    stationOrder(unpaidRotationFetcher) === 'a → a → a',
+    `实际调用 ${stationOrder(unpaidRotationFetcher) || '(无)'}`);
+
+  const keyRotationFetcher = makeMockFetcher([
+    { match: 'mock-rot-keys', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  const keyAuths = [];
+  for (let index = 0; index < 4; index += 1) {
+    await imagesMod.generateImage({ prompt: `站内多 key 轮转 ${index}` }, {
+      fetchImpl: keyRotationFetcher,
+      config: rotationConfig({
+        imageBaseUrl: 'http://mock-rot-keys',
+        imageApiKey: 'sk-rot-key-aaaa, sk-rot-key-bbbb',
+        imageBackupBaseUrl: '',
+        imageBackupApiKey: '',
+        imageBackupModel: '',
+      }),
+    });
+    keyAuths.push(keyRotationFetcher.calls.at(-1).init.headers.Authorization);
+  }
+  check('轮换：同站两把 key 逐请求轮转（aaaa → bbbb → aaaa → bbbb）',
+    keyAuths.join(',') === 'Bearer sk-rot-key-aaaa,Bearer sk-rot-key-bbbb,Bearer sk-rot-key-aaaa,Bearer sk-rot-key-bbbb',
+    `实际 ${keyAuths.join(',')}`);
+
+  // 按 Authorization 分流：makeMockFetcher 只按 URL 匹配，按 key 返回不同响应要自己写 fetcher
+  const keyedFetcher = (respond) => {
+    const calls = [];
+    const fetcher = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      const apiKey = String(init.headers?.Authorization || '').replace(/^Bearer /, '');
+      return respond(apiKey);
+    };
+    fetcher.calls = calls;
+    return fetcher;
+  };
+  const keyTailOf = (call) => String(call.init?.headers?.Authorization || '')
+    .replace(/^Bearer /, '')
+    .replace('sk-rot-key-', '');
+
+  const cooldownFetcher = keyedFetcher((apiKey) => (apiKey.endsWith('dead')
+    ? jsonResponse({ error: { message: 'invalid token' } }, 403)
+    : jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] })));
+  const cooldownConfig = rotationConfig({
+    imageBaseUrl: 'http://mock-rot-cd-a',
+    imageApiKey: 'sk-rot-key-dead, sk-rot-key-live',
+    imageBackupBaseUrl: 'http://mock-rot-cd-b',
+    imageBackupApiKey: 'sk-rot-key-backup',
+    costImageFenPerCall: 3,
+    costImageBackupFenPerCall: 5,
+  });
+  const cooldownWarns = [];
+  const originalImageWarn = console.warn;
+  console.warn = (...args) => { cooldownWarns.push(args.map((arg) => String(arg)).join(' ')); };
+  try {
+    await imagesMod.generateImage({ prompt: '死 key 冷却 1' }, { fetchImpl: cooldownFetcher, config: cooldownConfig });
+    check('冷却：403 的死 key 在同一请求内让位给下一把 key（dead → live）',
+      cooldownFetcher.calls.map(keyTailOf).join(',') === 'dead,live',
+      `实际 ${cooldownFetcher.calls.map(keyTailOf).join(',') || '(无)'}`);
+
+    const beforeSecondRequest = cooldownFetcher.calls.length;
+    await imagesMod.generateImage({ prompt: '死 key 冷却 2' }, { fetchImpl: cooldownFetcher, config: cooldownConfig });
+    const secondRequestKeys = cooldownFetcher.calls.slice(beforeSecondRequest).map(keyTailOf);
+    check('冷却：冷却期内的后续请求直接跳过死 key（只打 live）',
+      secondRequestKeys.join(',') === 'live',
+      `实际 ${secondRequestKeys.join(',') || '(无)'}`);
+  } finally {
+    console.warn = originalImageWarn;
+  }
+  const cooldownWarn = cooldownWarns.find((line) => line.includes('冷却'));
+  check('冷却：日志只写 key 指纹（末 4 位），不打印完整 key',
+    Boolean(cooldownWarn) && cooldownWarn.includes('#dead') && !cooldownWarn.includes('sk-rot-key-dead'),
+    `实际日志 ${cooldownWarn || '(无)'}`);
+
+  // 冷却窗口由注入时钟判定，不依赖真实 sleep
+  const deadKeysResponder = (deadKeys) => (apiKey) => (deadKeys.includes(apiKey)
+    ? jsonResponse({ error: { message: 'invalid token' } }, 403)
+    : jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] }));
+  const fakeClock = { now: 1_700_000_000_000 };
+  const expiryDead = { value: true };
+  const expiryFetcher = keyedFetcher((apiKey) => {
+    if (apiKey === 'sk-rot-key-dead' && expiryDead.value) {
+      return jsonResponse({ error: { message: 'invalid token' } }, 403);
+    }
+    return jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] });
+  });
+  const expiryConfig = rotationConfig({
+    imageBaseUrl: 'http://mock-rot-expiry',
+    imageApiKey: 'sk-rot-key-dead, sk-rot-key-live',
+    imageBackupBaseUrl: '',
+    imageBackupApiKey: '',
+    imageBackupModel: '',
+  });
+  const expiryDeps = { config: expiryConfig, fetchImpl: expiryFetcher, now: () => fakeClock.now };
+  await imagesMod.generateImage({ prompt: '冷却注入时钟 1' }, expiryDeps);
+  const beforeWindow = expiryFetcher.calls.length;
+  fakeClock.now += 600_000 - 1;
+  await imagesMod.generateImage({ prompt: '冷却注入时钟 2' }, expiryDeps);
+  check('冷却：窗口内（600000ms - 1）仍跳过死 key',
+    expiryFetcher.calls.slice(beforeWindow).map(keyTailOf).join(',') === 'live',
+    `实际 ${expiryFetcher.calls.slice(beforeWindow).map(keyTailOf).join(',') || '(无)'}`);
+
+  fakeClock.now += 1;
+  expiryDead.value = false;
+  const beforeExpired = expiryFetcher.calls.length;
+  await imagesMod.generateImage({ prompt: '冷却注入时钟 3' }, expiryDeps);
+  check('冷却：窗口到期后死 key 自动恢复、重新参与轮转',
+    expiryFetcher.calls.slice(beforeExpired).map(keyTailOf).join(',') === 'dead',
+    `实际 ${expiryFetcher.calls.slice(beforeExpired).map(keyTailOf).join(',') || '(无)'}`);
+
+  const cooldownConfigMod = await import('../src/lib/server/generation/config.ts');
+  check('冷却：默认窗口 600000ms，0 关闭，空值回落默认',
+    cooldownConfigMod.getGenerationConfig({ ...process.env, ANPPT_V2_IMAGE_KEY_COOLDOWN_MS: '' }).imageKeyCooldownMs === 600_000
+      && cooldownConfigMod.getGenerationConfig({ ...process.env, ANPPT_V2_IMAGE_KEY_COOLDOWN_MS: '0' }).imageKeyCooldownMs === 0
+      && cooldownConfigMod.getGenerationConfig({ ...process.env, ANPPT_V2_IMAGE_KEY_COOLDOWN_MS: '1500' }).imageKeyCooldownMs === 1500);
+
+  const disabledFetcher = keyedFetcher(deadKeysResponder(['sk-rot-key-dead']));
+  const disabledConfig = rotationConfig({
+    imageBaseUrl: 'http://mock-rot-off',
+    imageApiKey: 'sk-rot-key-dead, sk-rot-key-live',
+    imageBackupBaseUrl: '',
+    imageBackupApiKey: '',
+    imageBackupModel: '',
+    imageKeyCooldownMs: 0,
+  });
+  await imagesMod.generateImage({ prompt: '冷却关闭 1' }, { fetchImpl: disabledFetcher, config: disabledConfig });
+  await imagesMod.generateImage({ prompt: '冷却关闭 2' }, { fetchImpl: disabledFetcher, config: disabledConfig });
+  check('冷却：0 关闭冷却时死 key 下个请求仍参与轮转（dead → live 两次）',
+    disabledFetcher.calls.map(keyTailOf).join(',') === 'dead,live,dead,live',
+    `实际 ${disabledFetcher.calls.map(keyTailOf).join(',') || '(无)'}`);
+
+  // 站内全部 key 冷却 → 该站本轮跳过，另一站照常兜底
+  const blockedFetcher = keyedFetcher(deadKeysResponder(['sk-rot-key-dead1', 'sk-rot-key-dead2']));
+  const blockedConfig = rotationConfig({
+    imageBaseUrl: 'http://mock-rot-block-a',
+    imageApiKey: 'sk-rot-key-dead1, sk-rot-key-dead2',
+    imageBackupBaseUrl: 'http://mock-rot-block-b',
+    imageBackupApiKey: 'sk-rot-key-live',
+    costImageFenPerCall: 3,
+    costImageBackupFenPerCall: 5,
+  });
+  const blockedWarns = [];
+  const originalBlockedWarn = console.warn;
+  console.warn = (...args) => { blockedWarns.push(args.map((arg) => String(arg)).join(' ')); };
+  try {
+    await imagesMod.generateImage({ prompt: '整站冷却 1' }, { fetchImpl: blockedFetcher, config: blockedConfig });
+    const beforeBlockedSecond = blockedFetcher.calls.length;
+    await imagesMod.generateImage({ prompt: '整站冷却 2' }, { fetchImpl: blockedFetcher, config: blockedConfig });
+    check('冷却：两把 key 都死后该站被跳过，另一站兜底出图',
+      blockedFetcher.calls.map(keyTailOf).join(',') === 'dead1,dead2,live,live',
+      `实际 ${blockedFetcher.calls.map(keyTailOf).join(',') || '(无)'}`);
+    check('冷却：全站 key 冷却时后续请求不再向上游发请求',
+      blockedFetcher.calls.slice(beforeBlockedSecond).map(keyTailOf).join(',') === 'live',
+      `实际 ${blockedFetcher.calls.slice(beforeBlockedSecond).map(keyTailOf).join(',') || '(无)'}`);
+  } finally {
+    console.warn = originalBlockedWarn;
+  }
+  check('冷却：整站跳过的日志写明「全部 key 冷却中」且不泄露 key',
+    blockedWarns.some((line) => line.includes('全部 key 冷却中')) && blockedWarns.every((line) => !line.includes('sk-rot-key-dead')),
+    `实际日志 ${blockedWarns.filter((line) => line.includes('冷却')).join(' | ') || '(无)'}`);
+
+  // 整池 key 都不可用 → 抛既有错误码，不生造新错误
+  const exhaustedFetcher = keyedFetcher(deadKeysResponder(['sk-rot-key-dead1', 'sk-rot-key-dead2']));
+  const exhaustedConfig = rotationConfig({
+    imageBaseUrl: 'http://mock-rot-exhausted',
+    imageApiKey: 'sk-rot-key-dead1, sk-rot-key-dead2',
+    imageBackupBaseUrl: '',
+    imageBackupApiKey: '',
+    imageBackupModel: '',
+  });
+  let exhaustedError;
+  try {
+    await imagesMod.generateImage({ prompt: '整池不可用 1' }, { fetchImpl: exhaustedFetcher, config: exhaustedConfig });
+  } catch (error) {
+    exhaustedError = error;
+  }
+  check('冷却：整池 key 都死时抛既有上游错误（IMAGE_UPSTREAM_UNAVAILABLE）',
+    imagesMod.toPublicImageError(exhaustedError).code === 'IMAGE_UPSTREAM_UNAVAILABLE',
+    `实际 ${imagesMod.toPublicImageError(exhaustedError).code}`);
+  const exhaustedCalls = exhaustedFetcher.calls.length;
+  let exhaustedAgain;
+  try {
+    await imagesMod.generateImage({ prompt: '整池不可用 2' }, { fetchImpl: exhaustedFetcher, config: exhaustedConfig });
+  } catch (error) {
+    exhaustedAgain = error;
+  }
+  check('冷却：整池仍冷却时直接抛同一错误，不再空撞上游',
+    exhaustedFetcher.calls.length === exhaustedCalls
+      && imagesMod.toPublicImageError(exhaustedAgain).code === 'IMAGE_UPSTREAM_UNAVAILABLE',
+    `实际调用 ${exhaustedFetcher.calls.length - exhaustedCalls} 次、错误 ${imagesMod.toPublicImageError(exhaustedAgain).code}`);
 }
 
 console.log('\n[19] 免费 LLM 动作频控（30 次/10 分钟/用户，共享桶）+ 限流器单元');
