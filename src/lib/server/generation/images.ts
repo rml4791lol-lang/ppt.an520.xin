@@ -348,8 +348,11 @@ function firstCoolingError(endpoint: ImageEndpoint): unknown {
   return undefined;
 }
 
-/** 站内 key 轮转：从游标起取第一把不在冷却的 key，返回即把游标推进到它的下一把 */
-function takeNextImageKey(endpoint: ImageEndpoint, now: number): string | null {
+/**
+ * 站内 key 轮转：从游标起取第一把不在冷却、且本请求还没试过的 key。
+ * `tried` 是请求级的：冷却关闭时死 key 不进冷却表，没有它就会对同一把 key 无限重试。
+ */
+function takeNextImageKey(endpoint: ImageEndpoint, now: number, tried: Set<string>): string | null {
   const total = endpoint.apiKeys.length;
   if (total === 0) return null;
   const id = imageEndpointId(endpoint);
@@ -357,21 +360,24 @@ function takeNextImageKey(endpoint: ImageEndpoint, now: number): string | null {
   for (let step = 0; step < total; step += 1) {
     const index = (cursor + step) % total;
     const apiKey = endpoint.apiKeys[index];
-    if (isImageKeyCooling(endpoint, apiKey, now)) continue;
+    if (tried.has(apiKey) || isImageKeyCooling(endpoint, apiKey, now)) continue;
     imagePool.keyCursors.set(id, (index + 1) % total);
     return apiKey;
   }
   return null;
 }
 
-/** 同价同模型的站才成组轮转：一套 PPT 内混用不同图像模型会让风格不一致 */
-function orderPoolForRequest(endpoints: ImageEndpoint[]): ImageEndpoint[] {
+/**
+ * 同价同模型的站才成组轮转：一套 PPT 内混用不同图像模型会让风格不一致。
+ * 生图不看 editModel（该请求用不到），改图才要求两者都相同。
+ */
+function orderPoolForRequest(endpoints: ImageEndpoint[], action: '生图' | '改图'): ImageEndpoint[] {
   const head = endpoints[0];
   if (!head || head.price <= 0) return endpoints;
   const group = endpoints.filter(
     (endpoint) => endpoint.price === head.price
       && endpoint.model === head.model
-      && endpoint.editModel === head.editModel,
+      && (action !== '改图' || endpoint.editModel === head.editModel),
   );
   if (group.length < 2) return endpoints;
   const groupKey = group.map(imageEndpointId).join('+');
@@ -594,17 +600,18 @@ async function runImagePool(
   deps: ImageDeps,
   attempt: (endpoint: ImageEndpoint, apiKey: string) => Promise<Buffer>,
 ): Promise<Buffer> {
-  const endpoints = orderPoolForRequest(imageEndpoints(config));
+  const endpoints = orderPoolForRequest(imageEndpoints(config), action);
   if (endpoints.length === 0) {
     throw new ImageUpstreamError('生图服务未配置（ANPPT_V2_IMAGE_BASE_URL/API_KEY）', 503);
   }
-  const cooldownMs = Math.max(0, config.imageKeyCooldownMs ?? 600_000);
+  const cooldownMs = Math.max(0, config.imageKeyCooldownMs);
   const clock = deps.now ?? Date.now;
   let lastError: unknown;
   let blockedError: unknown;
   let failed: ImagePoolFailure | null = null;
   for (const endpoint of endpoints) {
-    let currentKey = takeNextImageKey(endpoint, clock());
+    const triedKeys = new Set<string>();
+    let currentKey = takeNextImageKey(endpoint, clock(), triedKeys);
     if (!currentKey) {
       logImageStationBlocked(action, endpoint);
       blockedError ??= firstCoolingError(endpoint);
@@ -616,6 +623,7 @@ async function runImagePool(
     }
     for (;;) {
       const apiKey = currentKey;
+      triedKeys.add(apiKey);
       try {
         const image = await withTransientRecovery(config, userKey, () => attempt(endpoint, apiKey));
         imagePool.keyCooldowns.delete(imageKeyCooldownId(endpoint, apiKey));
@@ -630,7 +638,7 @@ async function runImagePool(
             });
             logImageKeyCooldown(action, endpoint, apiKey, error, cooldownMs);
           }
-          const nextKey = takeNextImageKey(endpoint, clock());
+          const nextKey = takeNextImageKey(endpoint, clock(), triedKeys);
           if (nextKey) {
             currentKey = nextKey;
             continue;

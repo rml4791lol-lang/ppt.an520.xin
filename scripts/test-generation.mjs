@@ -2141,6 +2141,21 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     primaryCostGroup?.provider === 'image' && primaryCostGroup?.costFen === 7,
     `实际 ${JSON.stringify(primaryCostGroup)}`);
 
+  const costDbMod = await import('../src/lib/server/db.ts');
+  const costRows = costDbMod.getDb().prepare(
+    "SELECT model, status, cost_fen FROM upstream_usage_records WHERE model LIKE 'cost-%'",
+  ).all();
+  const failedCostRows = costRows.filter((row) => row.status === 'error');
+  check('生图池记账：失败尝试的 cost_fen 记 NULL（不按站点单价虚高）',
+    failedCostRows.length === 3 && failedCostRows.every((row) => row.cost_fen === null),
+    `失败 ${failedCostRows.length} 条、cost_fen ${failedCostRows.map((row) => row.cost_fen).join(',') || '(无)'}`);
+  const okCostTotal = costRows
+    .filter((row) => row.status === 'ok')
+    .reduce((sum, row) => sum + (row.cost_fen ?? 0), 0);
+  check('生图池记账：成功调用合计 15 分（3 + 5 + 7），与失败条数无关',
+    okCostTotal === 15,
+    `实际 ${okCostTotal}`);
+
   // 改图与生图共用同一站点池（imageEndpoints 单点），排序与回退口径不单独分叉
   imagesMod.resetImagePoolForTests();
   const editPoolFetcher = makeMockFetcher([
@@ -2232,14 +2247,28 @@ console.log('\n[2c2] 生图池：同价轮换与死键冷却');
     { match: 'mock-rot-b', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
   ]);
   for (let index = 0; index < 3; index += 1) {
-    await imagesMod.generateImage({ prompt: `改图模型不同不轮转 ${index}` }, {
+    await imagesMod.generateImage({ prompt: `改图模型不同仍轮转 ${index}` }, {
       fetchImpl: mixedEditFetcher,
       config: rotationConfig({ imageBackupEditModel: 'model-edit-other' }),
     });
   }
-  check('轮换：同价同文生图模型但改图模型不同 → 不轮转',
-    stationOrder(mixedEditFetcher) === 'a → a → a',
+  check('轮换：生图不看改图模型，同价同文生图模型仍轮转（A → B → A）',
+    stationOrder(mixedEditFetcher) === 'a → b → a',
     `实际调用 ${stationOrder(mixedEditFetcher) || '(无)'}`);
+
+  const editModelFetcher = makeMockFetcher([
+    { match: 'mock-rot-a', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-rot-b', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  for (let index = 0; index < 3; index += 1) {
+    await imagesMod.editImage({ image: Buffer.from(PNG_1X1_B64, 'base64'), instruction: `改图模型不同不轮转 ${index}` }, {
+      fetchImpl: editModelFetcher,
+      config: rotationConfig({ imageBackupEditModel: 'model-edit-other' }),
+    });
+  }
+  check('轮换：改图要求文生图与改图模型都相同才轮转（模型不同 → 不轮转）',
+    stationOrder(editModelFetcher) === 'a → a → a',
+    `实际调用 ${stationOrder(editModelFetcher) || '(无)'}`);
 
   const unpaidRotationFetcher = makeMockFetcher([
     { match: 'mock-rot-a', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
@@ -2381,6 +2410,54 @@ console.log('\n[2c2] 生图池：同价轮换与死键冷却');
   check('冷却：0 关闭冷却时死 key 下个请求仍参与轮转（dead → live 两次）',
     disabledFetcher.calls.map(keyTailOf).join(',') === 'dead,live,dead,live',
     `实际 ${disabledFetcher.calls.map(keyTailOf).join(',') || '(无)'}`);
+
+  // 冷却关闭时死 key 不进冷却表：请求级已试集合必须保证同一把 key 只试一次，否则 for(;;) 挂死
+  const guardTimeout = (promise) => Promise.race([
+    promise,
+    new Promise((_, reject) => { setTimeout(() => reject(new Error('生图站点池挂死（超时 3s）')), 3000); }),
+  ]);
+
+  const singleKeyFetcher = keyedFetcher(deadKeysResponder(['sk-rot-key-onlydead']));
+  const singleKeyConfig = rotationConfig({
+    imageBaseUrl: 'http://mock-rot-single',
+    imageApiKey: 'sk-rot-key-onlydead',
+    imageBackupBaseUrl: '',
+    imageBackupApiKey: '',
+    imageBackupModel: '',
+    imageKeyCooldownMs: 0,
+  });
+  let singleKeyError;
+  try {
+    await guardTimeout(imagesMod.generateImage({ prompt: '单站单死 key 不挂死' }, { fetchImpl: singleKeyFetcher, config: singleKeyConfig }));
+  } catch (error) {
+    singleKeyError = error;
+  }
+  check('冷却关闭：单站单把死 key 不无限重试（限时抛上游错误、上游只调用一次）',
+    Boolean(singleKeyError)
+      && imagesMod.toPublicImageError(singleKeyError).code === 'IMAGE_UPSTREAM_UNAVAILABLE'
+      && singleKeyFetcher.calls.length === 1,
+    `实际调用 ${singleKeyFetcher.calls.length} 次、错误 ${imagesMod.toPublicImageError(singleKeyError).code}`);
+
+  const deadStationFetcher = keyedFetcher(deadKeysResponder(['sk-rot-key-deadonly']));
+  const deadStationConfig = rotationConfig({
+    imageBaseUrl: 'http://mock-rot-dead-a',
+    imageApiKey: 'sk-rot-key-deadonly',
+    imageBackupBaseUrl: 'http://mock-rot-dead-b',
+    imageBackupApiKey: 'sk-rot-key-live',
+    costImageFenPerCall: 3,
+    costImageBackupFenPerCall: 5,
+    imageKeyCooldownMs: 0,
+  });
+  let deadStationSwitched = false;
+  try {
+    await guardTimeout(imagesMod.generateImage({ prompt: '死 key 站冷却关闭时切站' }, { fetchImpl: deadStationFetcher, config: deadStationConfig }));
+    deadStationSwitched = deadStationFetcher.calls.map(keyTailOf).join(',') === 'deadonly,live';
+  } catch {
+    deadStationSwitched = false;
+  }
+  check('冷却关闭：死 key 站试满即切下一站出图（deadonly → live）',
+    deadStationSwitched,
+    `实际调用 ${deadStationFetcher.calls.map(keyTailOf).join(',') || '(无)'}`);
 
   // 站内全部 key 冷却 → 该站本轮跳过，另一站照常兜底
   const blockedFetcher = keyedFetcher(deadKeysResponder(['sk-rot-key-dead1', 'sk-rot-key-dead2']));

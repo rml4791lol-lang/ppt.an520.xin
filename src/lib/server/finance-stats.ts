@@ -80,7 +80,7 @@ const USAGE_SUMMARY_SELECT = `
          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
          COALESCE(SUM(units), 0) AS units,
-         SUM(cost_fen) AS cost_fen
+         SUM(CASE WHEN status = 'ok' THEN cost_fen END) AS cost_fen
   FROM upstream_usage_records`;
 
 function usageSummaryOf(row: Row | undefined): UpstreamUsageSummary {
@@ -144,7 +144,7 @@ export async function getFinanceStats(): Promise<FinanceStats> {
             COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
             COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
             COALESCE(SUM(units), 0) AS units,
-            SUM(cost_fen) AS cost_fen
+            SUM(CASE WHEN status = 'ok' THEN cost_fen END) AS cost_fen
      FROM upstream_usage_records
      GROUP BY provider, kind, model
      ORDER BY provider, kind, model`,

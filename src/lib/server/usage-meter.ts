@@ -31,6 +31,8 @@ export interface UsageRecordInput {
 }
 
 function estimateCostFen(input: UsageRecordInput, config: GenerationConfig): number | null {
+  // 失败调用不一定真实计费（上游常不扣费），不臆造金额：金额只对成功调用估算
+  if (input.status !== 'ok') return null;
   if (input.provider === 'llm-primary' || input.provider === 'llm-backup') {
     const inRate = input.provider === 'llm-primary' ? config.costLlmInputFenPerMtok : config.costLlmBackupInputFenPerMtok;
     const outRate = input.provider === 'llm-primary' ? config.costLlmOutputFenPerMtok : config.costLlmBackupOutputFenPerMtok;
