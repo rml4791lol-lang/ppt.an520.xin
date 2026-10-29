@@ -27,7 +27,8 @@ ssh "$SERVER" "sudo -n mkdir -p '$RELEASE/.next' '$RELEASE/public' '$RELEASE/scr
 rsync -az --delete --exclude 'cache/' .next/ "$SERVER:$RELEASE/.next/"
 rsync -az --delete public/ "$SERVER:$RELEASE/public/"
 rsync -az package.json package-lock.json next.config.ts "$SERVER:$RELEASE/"
-rsync -az scripts/verify-health.mjs "$SERVER:$RELEASE/scripts/verify-health.mjs"
+# Whole scripts/ dir: npm ci runs `prepare` (scripts/setup-hooks.mjs) inside the release.
+rsync -az --delete scripts/ "$SERVER:$RELEASE/scripts/"
 
 echo "== 3/5 install production deps =="
 ssh "$SERVER" "cd '$RELEASE' && npm ci --omit=dev --no-audit --no-fund && printf '%s\n' '$COMMIT' > '$RELEASE/.deploy-commit'"
