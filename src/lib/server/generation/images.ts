@@ -1,9 +1,10 @@
-// gpt-image-2 生图上游客户端。主站走 OpenAI 兼容 /images/generations + /images/edits；
-// atlascloud 灾备站自动切换其异步预测 API（/model/generateImage + /model/prediction）。
+// gpt-image-2 生图上游客户端。站点池（主站 + 两站跨站灾备）按单价升序尝试、失败逐站回退；
+// OpenAI 兼容站走 /images/generations + /images/edits；atlascloud 走异步预测 API
+// （/model/generateImage + /model/prediction）。
 // 所有真实请求经过全局并发/启动速率调度，并只对瞬态错误做有限后台恢复。
 import { getGenerationConfig, type GenerationConfig } from './config';
 import { cleanString } from './types';
-import { recordUpstreamUsage } from '../usage-meter';
+import { recordUpstreamUsage, type UsageProvider } from '../usage-meter';
 import { logProblem } from '../problem-log';
 
 export interface ImageDeps {
@@ -218,37 +219,97 @@ async function parseImageResponse(
 }
 
 interface ImageEndpoint {
-  site: 'primary' | 'backup';
+  site: 'primary' | 'backup' | 'backup2';
   baseUrl: string;
   apiKey: string;
   /** 文生图模型名 */
   model: string;
   /** 改图模型名（不分模型名的渠道与 model 相同） */
   editModel: string;
+  /** 单张成本（分）；0 = 单价未配置（未知），排序时排在已知单价之后 */
+  price: number;
 }
 
-/** 生图站点候选：主站 → 跨站灾备（贵渠道，BACKUP_* 三项齐备才挂上） */
+/** 上游记账里的站点文案：线上账本/财务按站点分开统计消耗与单价 */
+const IMAGE_SITE_PROVIDER: Record<ImageEndpoint['site'], UsageProvider> = {
+  primary: 'image',
+  backup: 'image-backup',
+  backup2: 'image-backup-2',
+};
+
+/** 站内多把 key 先按逗号解析成数组；当前只使用第一把（轮换与冷却尚未接入） */
+function imageApiKeys(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((key) => key.trim())
+    .filter(Boolean);
+}
+
+/** 生图站点候选：主站 → 跨站灾备 → 第二跨站灾备（每站三项齐备才挂上） */
 function imageEndpoints(config: GenerationConfig): ImageEndpoint[] {
   const endpoints: ImageEndpoint[] = [];
-  if (config.imageBaseUrl && config.imageApiKey) {
+  const [primaryKey] = imageApiKeys(config.imageApiKey);
+  if (config.imageBaseUrl && primaryKey) {
     endpoints.push({
       site: 'primary',
       baseUrl: config.imageBaseUrl,
-      apiKey: config.imageApiKey,
+      apiKey: primaryKey,
       model: config.imageModel,
       editModel: config.imageEditModel,
+      price: config.costImageFenPerCall,
     });
   }
-  if (config.imageBackupBaseUrl && config.imageBackupApiKey && config.imageBackupModel) {
+  const [backupKey] = imageApiKeys(config.imageBackupApiKey);
+  if (config.imageBackupBaseUrl && backupKey && config.imageBackupModel) {
     endpoints.push({
       site: 'backup',
       baseUrl: config.imageBackupBaseUrl,
-      apiKey: config.imageBackupApiKey,
+      apiKey: backupKey,
       model: config.imageBackupModel,
       editModel: config.imageBackupEditModel || config.imageBackupModel,
+      price: config.costImageBackupFenPerCall,
     });
   }
-  return endpoints;
+  const [backup2Key] = imageApiKeys(config.imageBackup2ApiKey);
+  if (config.imageBackup2BaseUrl && backup2Key && config.imageBackup2Model) {
+    endpoints.push({
+      site: 'backup2',
+      baseUrl: config.imageBackup2BaseUrl,
+      apiKey: backup2Key,
+      model: config.imageBackup2Model,
+      editModel: config.imageBackup2EditModel || config.imageBackup2Model,
+      price: config.costImageBackup2FenPerCall,
+    });
+  }
+  return orderByPrice(endpoints);
+}
+
+/** 单价已知（>0）的站升序在前；单价未知的站保持配置顺序排在后面（全未配置时顺序与历史一致） */
+function orderByPrice(candidates: ImageEndpoint[]): ImageEndpoint[] {
+  return candidates
+    .map((endpoint, index) => ({ endpoint, index }))
+    .sort((a, b) => {
+      const aKnown = a.endpoint.price > 0;
+      const bKnown = b.endpoint.price > 0;
+      if (aKnown !== bKnown) return aKnown ? -1 : 1;
+      if (aKnown && a.endpoint.price !== b.endpoint.price) return a.endpoint.price - b.endpoint.price;
+      return a.index - b.index;
+    })
+    .map((item) => item.endpoint);
+}
+
+/** 切站日志：站点 + 模型 + 单价（既有 [anppt-v2][image-upstream] 前缀不变），便于线上核对命中顺序与每张成本 */
+function logImageSwitch(action: '生图' | '改图', from: ImageEndpoint, to: ImageEndpoint, error: unknown): void {
+  const describe = (endpoint: ImageEndpoint) => {
+    const model = action === '改图' ? endpoint.editModel : endpoint.model;
+    const price = endpoint.price > 0 ? `单价 ${endpoint.price} 分/张` : '单价未配置';
+    return `${endpoint.site}（${model}，${price}）`;
+  };
+  console.warn(
+    `[anppt-v2][image-upstream] ${action}站 ${describe(from)}失败，切换 ${describe(to)}：${
+      error instanceof Error ? error.message : String(error)
+    }`,
+  );
 }
 
 /** 400/413 是请求本身的问题，换站也必败，不浪费灾备费用；其余（402/401/429/5xx/网络/超时）都可切站 */
@@ -397,7 +458,7 @@ export async function generateImage(input: GenerateImageInput, deps: ImageDeps =
   let lastError: unknown;
   for (let i = 0; i < endpoints.length; i += 1) {
     const ep = endpoints[i];
-    const provider = ep.site === 'backup' ? 'image-backup' : 'image';
+    const provider = IMAGE_SITE_PROVIDER[ep.site];
     try {
       return await withTransientRecovery(config, input.userKey || 'anonymous', async () => {
         const startedAt = Date.now();
@@ -466,11 +527,7 @@ export async function generateImage(input: GenerateImageInput, deps: ImageDeps =
     } catch (error) {
       lastError = error;
       if (i >= endpoints.length - 1 || !isFailoverWorthy(error)) throw error;
-      console.warn(
-        `[anppt-v2][image-upstream] 主站生图失败，切换灾备站（${ep.model} → ${endpoints[i + 1].model}）：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      logImageSwitch('生图', ep, endpoints[i + 1], error);
     }
   }
   throw lastError instanceof Error ? lastError : new ImageUpstreamError('生图上游全部站点失败', 502);
@@ -498,7 +555,7 @@ export async function editImage(input: EditImageInput, deps: ImageDeps = {}): Pr
   let lastError: unknown;
   for (let i = 0; i < endpoints.length; i += 1) {
     const ep = endpoints[i];
-    const provider = ep.site === 'backup' ? 'image-backup' : 'image';
+    const provider = IMAGE_SITE_PROVIDER[ep.site];
     try {
       return await withTransientRecovery(config, input.userKey || 'anonymous', async () => {
         const extraImages = (input.extraImages || []).filter((item) => item && item.length > 0);
@@ -577,11 +634,7 @@ export async function editImage(input: EditImageInput, deps: ImageDeps = {}): Pr
     } catch (error) {
       lastError = error;
       if (i >= endpoints.length - 1 || !isFailoverWorthy(error)) throw error;
-      console.warn(
-        `[anppt-v2][image-upstream] 主站改图失败，切换灾备站（${ep.editModel} → ${endpoints[i + 1].editModel}）：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      logImageSwitch('改图', ep, endpoints[i + 1], error);
     }
   }
   throw lastError instanceof Error ? lastError : new ImageUpstreamError('改图上游全部站点失败', 502);

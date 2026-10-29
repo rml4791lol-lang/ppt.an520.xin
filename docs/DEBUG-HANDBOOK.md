@@ -122,7 +122,7 @@ NODE
 npm run gate         # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build（全 mock，零真实付费调用）
 npm run gate:fast    # 快集：跳过 build 与两套测试
 npm run test:guardrails  # 护栏自检：用坏夹具证明门/钩子/工作树/发布脚本会红
-# 单跑某一层（排查用）：node scripts/test-generation.mjs（982 断言）/ node scripts/test-backend.mjs（184 断言）
+# 单跑某一层（排查用）：node scripts/test-generation.mjs（996 断言）/ node scripts/test-backend.mjs（184 断言）
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）
 BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实生图扣费（约 $0.08），慎用
 ```
@@ -136,7 +136,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - `[anppt-v2][codia]` — Codia 上游调用告警（超时/非 JSON/HTTP 错误/重试）
 - `[anppt-v2][exports]` — 导出管线内部异常（上传源清理、懒恢复轮询、文字层单页提取）
 - `[anppt-v2][generation]` — 生成管线非致命降级（如全局视觉规范生成失败后继续）
-- `[anppt-v2][image-upstream]` — 生图上游瞬态重试/灾备切换（非 2xx 终态失败已进问题日志）
+- `[anppt-v2][image-upstream]` — 生图上游瞬态重试/站点切换（站点 + 模型 + 单价；非 2xx 终态失败已进问题日志）
 - `[anppt-v2][recovery]` — 崩溃懒恢复触发（出现即说明发生过中断，值得看上一条 journal）
 - `[anppt-v2][admin]` / `[anppt-v2][admin-config]` — 管理员审计写入或运行时配置异常（日志仍须脱敏）
 
@@ -175,9 +175,9 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - ONLYOFFICE：`/tools/onlyoffice`。软件本身是第三方开源免费软件；AnPPT 的三个 Windows 一键下载入口、版本校验、兼容工具包与附带支持，仅在任意真实充值成功后永久解锁。权益判定为 `recharge_orders.status='paid'`，兑换码不算“充值一次”。
 - 项目导航：侧栏只保留一个「我的项目」，页面按 `updated_at DESC` 同时承担原“最近项目”视图。
 - 生图调度：单套默认并发 6、全站最大在途 20、滚动每分钟启动 24；429/5xx/网络抖动最多后台恢复 2 次，400/401/403/超时不盲目重试；单请求超时默认 8 分钟。
-- **生图回退（2026-10-13 落地）**：`src/lib/server/generation/images.ts` `imageEndpoints()` 在主站之后挂跨站灾备，**三项齐备才生效**：`ANPPT_V2_IMAGE_BACKUP_BASE_URL` + `_API_KEY` + `_MODEL`（改图另用 `_EDIT_MODEL`，缺省回落 `_MODEL`）。切站规则 `isFailoverWorthy()`：401/402/403/429/5xx/网络/超时都切，400/413 是请求本身的问题不切（省灾备费用）。atlascloud 走异步 `/model/generateImage` + `/model/prediction/{id}` 轮询，其余渠道按 OpenAI `/images/generations`。日志 `[anppt-v2][image-upstream] 主站生图失败，切换灾备站`。
+- **生图池（2026-10-13 落灾备；2026-10-29 #44 改为按单价排序的站点池）**：`src/lib/server/generation/images.ts` `imageEndpoints()` 收集最多三站——主站 `ANPPT_V2_IMAGE_*`、灾备 `ANPPT_V2_IMAGE_BACKUP_*`、第二灾备 `ANPPT_V2_IMAGE_BACKUP2_BASE_URL` + `_API_KEY` + `_MODEL`（改图另用 `_EDIT_MODEL`，缺省回落 `_MODEL`）；**每站 base/key/model 三项齐备才入池**。`orderByPrice()`：单价已知（>0，来自 `ANPPT_V2_COST_IMAGE_FEN_PER_CALL` / `_BACKUP_` / `_BACKUP2_`）的站按升序排前，单价未配置（0 = 未知）的站保持配置顺序排其后——全未配置时顺序与历史的「主站 → 灾备」完全一致。站内 key 支持逗号分隔多把，当前只用第一把（轮换与冷却未接入）。切站规则 `isFailoverWorthy()`：401/402/403/429/5xx/网络/超时都切，400/413 是请求本身的问题不切（省灾备费用）。atlascloud 走异步 `/model/generateImage` + `/model/prediction/{id}` 轮询，其余渠道按 OpenAI `/images/generations`。切站日志（生图/改图同格式）`[anppt-v2][image-upstream] 生图站 backup（tt-image-2.5，单价 3 分/张）失败，切换 backup2（…）：<错误>`——站点 + 模型 + 单价；记账 provider 依次为 `image` / `image-backup` / `image-backup-2`，cost_fen 用该站单价。
   - **历史缺口（2026-10-13 修复）**：代码一直支持灾备，但生产 `.env` 从未配 `ANPPT_V2_IMAGE_BACKUP_*`，灾备形同不存在——10-04 主站 402（insufficient balance）直接拖垮整站生成 6 个任务。**灾备必须与主站分账号/分额度**，否则同账号欠费一起挂；跨站灾备（atlascloud）还需账户有余额，2026-10-13 实测 atlascloud 与 KIE 均不可用（前者 402、后者无凭证）。
-  - 回归：`scripts/test-generation.mjs` 4 条断言（主站 402 切灾备出图 / 灾备确被调用 / 主站 400 不切 / 灾备三项不全按单站失败）。
+  - 回归：`scripts/test-generation.mjs` 18 条断言（既有 4 条：主站 402 切灾备出图 / 灾备确被调用 / 主站 400 不切 / 灾备三项不全按单站失败；#44 补 14 条：未配单价顺序不变 / 已知单价先试且未知按配置顺序排后 / 最便宜站先被调用 / 请求体带命中站模型 / 最便宜站 402 顺延 / 切站日志带站点+模型+单价 / 400 与 413 不切 / 第二灾备三项不齐不入池 / 三站 provider+cost 记账 / 改图共用同一排序 / 逗号 key 只取第一把）。
   - **灾备换站（2026-10-29）**：生产 `ANPPT_V2_IMAGE_BACKUP_*` 由「同站 sqface 备用 key」改为跨站灵可/lk 中转 `https://api.lk888.ai/v1` + `tt-image-2.5`（改图同名）。三方直连实测：文生图 1536x864 28s 返回 b64_json、改图 1536x864 33s 返回、`reference_images` 字段不报错（该站也接受 `api.lk666.ai` 备用域名）。key 侧勾选 8 条线路（当前在线：`XT-2.5sys` 0.0313 算力/张、`BR-default-特惠分组` 0.0455，其余离线），余额初期约 2 算力——**只够短期兜底，花完即等于单站**，用完需充值或换回 atlascloud；成本估算 `ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL=3`。旧值仍保存在服务器 `/opt/anppt-v2/shared/.env.bak-image-fallback-20261029-214431`（同站备用 key 不是真隔离，仅覆盖单账号欠费）。
 - 下载：`/api/files/...` 使用文件流，支持 `HEAD`、`Range`、206 和 416；Codia PPTX 结果也直接流式落盘，避免并发时整文件进入 Node 堆内存。
 - 原创模板生成链：已落地「整套场景识别 → 六类叙事骨架 → 35 页型任务 → 逐页同风格参考 → 25 包设计 DNA」。当前不调用付费生图批量重制；后续按高校赛事、企业商务、政企工作三套逐张验收并原子替换，详见 `docs/ORIGINAL-TEMPLATE-REGEN.md`。
@@ -198,7 +198,7 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
 - 计量代码：`src/lib/server/usage-meter.ts`（`recordUpstreamUsage`，全路径 try/catch——**记账绝不允许影响主流程**）；接入点在 engine/images/codia 的真实上游调用处。
 - 金额估算：`cost_fen` 仅在 `ANPPT_V2_COST_*` 单价 env 配置后衍生估算；未配置保持 NULL——**tokens/张数/次数是上游返回的真实数据，金额只是衍生**。汇总时整组未定价则 costFen 为 null（未配置单价 ≠ 花费 0）。
 - 统计接口：`GET /api/admin/finance`（仅 admin）→ `src/lib/server/finance-stats.ts`，返回收入（充值订单）+ 内部消费（星星账/兑换码）+ 上游消耗（total/last30d/byProvider，按 provider+kind+model 分组——便宜渠道与贵渠道据此分开）。当前只有 API，无后台页面。
-- 注意：byProvider 分组里的 `model` 字段承载渠道区分（如 seedream vs gpt-image-2），排查成本时先看这一层。
+- 注意：byProvider 分组里的 `model` 字段承载渠道区分（如 seedream vs gpt-image-2），排查成本时先看这一层。生图按站点分 provider：`image` / `image-backup` / `image-backup-2`（2026-10-29 #44），cost_fen 用该站单价。
 
 ## 15. 功能开关板与测试用户（2026-08-22）
 

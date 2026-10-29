@@ -1946,6 +1946,215 @@ console.log('\n[18] 图片级编辑工具（高精清除/图上改字/模板融�
     singleSiteThrew && !singleSiteFetcher.calls.some((c) => c.url.includes('mock-image-backup')));
 }
 
+// 生图池（#44）：最多三站（主站 / 灾备 / 第二灾备），按单价升序尝试；单价未配置（0）
+// 视为未知，保持配置顺序排在已知单价之后。未配任何单价时与今天的「主站 → 灾备」一致。
+{
+  const imagesMod = await import('../src/lib/server/generation/images.ts');
+  const poolConfig = (prices) => ({
+    ...imageConfig,
+    imageBaseUrl: 'http://mock-pool-primary',
+    imageApiKey: 'sk-pool-primary',
+    imageModel: 'model-primary',
+    imageBackupBaseUrl: 'http://mock-pool-backup',
+    imageBackupApiKey: 'sk-pool-backup',
+    imageBackupModel: 'model-backup',
+    imageBackup2BaseUrl: 'http://mock-pool-b2',
+    imageBackup2ApiKey: 'sk-pool-b2',
+    imageBackup2Model: 'model-b2',
+    costImageFenPerCall: prices[0],
+    costImageBackupFenPerCall: prices[1],
+    costImageBackup2FenPerCall: prices[2],
+  });
+  const poolOrder = (fetcher) => fetcher.calls
+    .map((call) => call.url.match(/^http:\/\/mock-pool-([^/]+)/)?.[1] ?? call.url)
+    .join(' → ');
+
+  const unpaidFetcher = makeMockFetcher([
+    { match: 'mock-pool-primary', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  const unpaidImage = await imagesMod.generateImage({ prompt: '未配单价保持配置顺序' }, {
+    fetchImpl: unpaidFetcher, config: poolConfig([0, 0, 0]),
+  });
+  check('生图池：未配单价时保持配置顺序（主站 → 灾备 → 第二灾备）且第二灾备可兜底出图',
+    unpaidImage.length > 0 && poolOrder(unpaidFetcher) === 'primary → backup → b2',
+    `实际调用 ${poolOrder(unpaidFetcher) || '(无)'}`);
+
+  const pricedFetcher = makeMockFetcher([
+    { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-pool-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  await imagesMod.generateImage({ prompt: '最便宜站优先' }, {
+    fetchImpl: pricedFetcher, config: poolConfig([7, 3, 5]),
+  });
+  check('生图池：按单价升序先打到最便宜站（灾备 3 分），更贵的主站/第二灾备不被调用',
+    poolOrder(pricedFetcher) === 'backup',
+    `实际调用 ${poolOrder(pricedFetcher) || '(无)'}`);
+  check('生图池：请求体带命中站点的模型名',
+    JSON.parse(pricedFetcher.calls[0].init.body).model === 'model-backup');
+
+  const carryFetcher = makeMockFetcher([
+    { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  const switchWarns = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => { switchWarns.push(args.map((arg) => String(arg)).join(' ')); };
+  let carriedImage;
+  try {
+    carriedImage = await imagesMod.generateImage({ prompt: '最便宜站 402 顺延' }, {
+      fetchImpl: carryFetcher, config: poolConfig([7, 3, 5]),
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+  check('生图池：最便宜站 402 自动切到下一站出图，更贵的主站不被调用',
+    carriedImage.length > 0 && poolOrder(carryFetcher) === 'backup → b2',
+    `实际调用 ${poolOrder(carryFetcher) || '(无)'}`);
+  const switchWarn = switchWarns.find((line) => line.includes('[anppt-v2][image-upstream]'));
+  check('生图池：切站日志保留既有前缀并带出站点+模型+单价',
+    Boolean(switchWarn)
+      && switchWarn.includes('失败，切换')
+      && switchWarn.includes('backup（model-backup，单价 3 分/张）')
+      && switchWarn.includes('backup2（model-b2，单价 5 分/张）'),
+    `实际日志 ${switchWarn || '(无)'}`);
+
+  for (const status of [400, 413]) {
+    const rejectFetcher = makeMockFetcher([
+      { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+      { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'bad request' } }, status) },
+      { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    ]);
+    let rejectThrew = false;
+    try {
+      await imagesMod.generateImage({ prompt: '最便宜站请求本身非法' }, {
+        fetchImpl: rejectFetcher, config: poolConfig([7, 3, 5]),
+      });
+    } catch {
+      rejectThrew = true;
+    }
+    check(`生图池：最便宜站 ${status} 不触发换站（请求本身的问题）`,
+      rejectThrew && poolOrder(rejectFetcher) === 'backup',
+      `实际调用 ${poolOrder(rejectFetcher) || '(无)'}`);
+  }
+
+  // 已知单价与未知单价混配：已知在前按价升序，未知按配置顺序排其后
+  const mixedFetcher = makeMockFetcher([
+    { match: 'mock-pool-primary', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  await imagesMod.generateImage({ prompt: '已知单价在前' }, {
+    fetchImpl: mixedFetcher, config: poolConfig([0, 3, 0]),
+  });
+  check('生图池：已知单价先试，未知单价的站按配置顺序排其后',
+    poolOrder(mixedFetcher) === 'backup → primary → b2',
+    `实际调用 ${poolOrder(mixedFetcher) || '(无)'}`);
+
+  const partialFetcher = makeMockFetcher([
+    { match: 'mock-pool-primary', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+    { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  let partialThrew = false;
+  try {
+    await imagesMod.generateImage({ prompt: '第二灾备三项不全' }, {
+      fetchImpl: partialFetcher,
+      config: { ...poolConfig([0, 0, 0]), imageBackup2Model: '' },
+    });
+  } catch {
+    partialThrew = true;
+  }
+  check('生图池：第二灾备三项不齐不入池（按两站处理）',
+    partialThrew && poolOrder(partialFetcher) === 'primary → backup',
+    `实际调用 ${poolOrder(partialFetcher) || '(无)'}`);
+
+  // 记账：provider 按站点文案（image / image-backup / image-backup-2），cost_fen 用该站单价。
+  const savedCostEnv = {
+    ANPPT_V2_COST_IMAGE_FEN_PER_CALL: process.env.ANPPT_V2_COST_IMAGE_FEN_PER_CALL,
+    ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL: process.env.ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL,
+    ANPPT_V2_COST_IMAGE_BACKUP2_FEN_PER_CALL: process.env.ANPPT_V2_COST_IMAGE_BACKUP2_FEN_PER_CALL,
+  };
+  process.env.ANPPT_V2_COST_IMAGE_FEN_PER_CALL = '7';
+  process.env.ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL = '3';
+  process.env.ANPPT_V2_COST_IMAGE_BACKUP2_FEN_PER_CALL = '5';
+  let costGroups = [];
+  try {
+    const costScenario = async (tag, handlers) => {
+      const fetcher = makeMockFetcher(handlers);
+      await imagesMod.generateImage({ prompt: `记账场景 ${tag}` }, {
+        fetchImpl: fetcher,
+        config: {
+          ...poolConfig([7, 3, 5]),
+          imageModel: `cost-${tag}-primary`,
+          imageBackupModel: `cost-${tag}-backup`,
+          imageBackup2Model: `cost-${tag}-b2`,
+        },
+      });
+    };
+    await costScenario('backup', [
+      { match: 'mock-pool-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    ]);
+    await costScenario('b2', [
+      { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+      { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    ]);
+    await costScenario('primary', [
+      { match: 'mock-pool-backup', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+      { match: 'mock-pool-b2', payload: jsonResponse({ error: { message: 'insufficient balance' } }, 402) },
+      { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    ]);
+    const financeMod = await import('../src/lib/server/finance-stats.ts');
+    costGroups = (await financeMod.getFinanceStats()).upstreamUsage.byProvider;
+  } finally {
+    for (const [key, value] of Object.entries(savedCostEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  const costGroupOf = (model) => costGroups.find((group) => group.model === model);
+  const backupCostGroup = costGroupOf('cost-backup-backup');
+  check('生图池记账：灾备站记 provider=image-backup、cost_fen 用该站单价 3 分',
+    backupCostGroup?.provider === 'image-backup' && backupCostGroup?.costFen === 3,
+    `实际 ${JSON.stringify(backupCostGroup)}`);
+  const b2CostGroup = costGroupOf('cost-b2-b2');
+  check('生图池记账：第二灾备站记 provider=image-backup-2、cost_fen 用该站单价 5 分',
+    b2CostGroup?.provider === 'image-backup-2' && b2CostGroup?.costFen === 5,
+    `实际 ${JSON.stringify(b2CostGroup)}`);
+  const primaryCostGroup = costGroupOf('cost-primary-primary');
+  check('生图池记账：主站记 provider=image、cost_fen 用该站单价 7 分',
+    primaryCostGroup?.provider === 'image' && primaryCostGroup?.costFen === 7,
+    `实际 ${JSON.stringify(primaryCostGroup)}`);
+
+  // 改图与生图共用同一站点池（imageEndpoints 单点），排序与回退口径不单独分叉
+  const editPoolFetcher = makeMockFetcher([
+    { match: 'mock-pool-primary', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-pool-backup', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+    { match: 'mock-pool-b2', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  await imagesMod.editImage({ image: Buffer.from(PNG_1X1_B64, 'base64'), instruction: '改图同池排序' }, {
+    fetchImpl: editPoolFetcher, config: poolConfig([7, 3, 5]),
+  });
+  check('生图池：改图与生图共用同一排序（最便宜站先）',
+    poolOrder(editPoolFetcher) === 'backup',
+    `实际调用 ${poolOrder(editPoolFetcher) || '(无)'}`);
+
+  // 站内多把 key：先支持逗号分隔，本票只使用第一把（轮换与冷却不在本票范围）
+  const multiKeyFetcher = makeMockFetcher([
+    { match: 'mock-key-site', payload: { data: [{ b64_json: PNG_1X1_B64 }] } },
+  ]);
+  await imagesMod.generateImage({ prompt: '站内多 key 只用第一把' }, {
+    fetchImpl: multiKeyFetcher,
+    config: { ...poolConfig([0, 0, 0]), imageBaseUrl: 'http://mock-key-site', imageApiKey: ' sk-first , sk-second ' },
+  });
+  check('生图池：站内逗号分隔的 key 只使用第一把',
+    multiKeyFetcher.calls[0]?.init.headers?.Authorization === 'Bearer sk-first',
+    `实际 ${multiKeyFetcher.calls[0]?.init.headers?.Authorization || '(无)'}`);
+}
+
 console.log('\n[19] 免费 LLM 动作频控（30 次/10 分钟/用户，共享桶）+ 限流器单元');
 {
   const rlUser = await auth.registerWithPassword(

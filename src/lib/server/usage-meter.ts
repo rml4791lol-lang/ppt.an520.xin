@@ -6,7 +6,15 @@
 import { getDb } from './db';
 import { getGenerationConfig, type GenerationConfig } from './generation/config';
 
-export type UsageProvider = 'llm-primary' | 'llm-backup' | 'image' | 'image-backup' | 'codia' | 'image2ppt' | 'wps';
+export type UsageProvider =
+  | 'llm-primary'
+  | 'llm-backup'
+  | 'image'
+  | 'image-backup'
+  | 'image-backup-2'
+  | 'codia'
+  | 'image2ppt'
+  | 'wps';
 
 export interface UsageRecordInput {
   provider: UsageProvider;
@@ -31,8 +39,12 @@ function estimateCostFen(input: UsageRecordInput, config: GenerationConfig): num
     const completion = Math.max(0, input.completionTokens ?? 0);
     return Math.round((prompt * inRate + completion * outRate) / 1_000_000);
   }
-  if (input.provider === 'image' || input.provider === 'image-backup') {
-    const rate = input.provider === 'image' ? config.costImageFenPerCall : config.costImageBackupFenPerCall;
+  if (input.provider === 'image' || input.provider === 'image-backup' || input.provider === 'image-backup-2') {
+    const rate = {
+      image: config.costImageFenPerCall,
+      'image-backup': config.costImageBackupFenPerCall,
+      'image-backup-2': config.costImageBackup2FenPerCall,
+    }[input.provider];
     if (rate <= 0) return null;
     return rate * Math.max(1, input.units ?? 1);
   }

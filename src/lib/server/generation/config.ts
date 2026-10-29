@@ -47,6 +47,11 @@ export interface GenerationConfig {
   imageBackupApiKey: string;
   imageBackupModel: string;
   imageBackupEditModel: string;
+  /** 第二跨站灾备（可选）：与 backup 同口径，base/key/model 三项齐备才入池 */
+  imageBackup2BaseUrl: string;
+  imageBackup2ApiKey: string;
+  imageBackup2Model: string;
+  imageBackup2EditModel: string;
   imageSize: string;
   imageTimeoutMs: number;
   /** 单套 PPT 内逐页生图并发上限 */
@@ -85,6 +90,7 @@ export interface GenerationConfig {
   costLlmBackupOutputFenPerMtok: number;
   costImageFenPerCall: number;
   costImageBackupFenPerCall: number;
+  costImageBackup2FenPerCall: number;
   costCodiaFenPerCall: number;
   costImage2PptFenPerPage: number;
   /** 项目保留天数（仅作为元信息透出给前端文案用，删除动作一律软删） */
@@ -157,6 +163,11 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     imageBackupModel: trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_MODEL),
     imageBackupEditModel:
       trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_EDIT_MODEL) || trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP_MODEL),
+    imageBackup2BaseUrl: stripTrailingSlash(trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP2_BASE_URL)),
+    imageBackup2ApiKey: trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP2_API_KEY),
+    imageBackup2Model: trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP2_MODEL),
+    imageBackup2EditModel:
+      trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP2_EDIT_MODEL) || trim(effectiveEnv.ANPPT_V2_IMAGE_BACKUP2_MODEL),
     imageSize: trim(effectiveEnv.ANPPT_V2_IMAGE_SIZE) || '1536x864',
     imageTimeoutMs,
     generateConcurrency: Math.min(12, intFrom(effectiveEnv.ANPPT_V2_GENERATE_CONCURRENCY, 6)),
@@ -182,6 +193,7 @@ export function getGenerationConfig(env: NodeJS.ProcessEnv = process.env): Gener
     costLlmBackupOutputFenPerMtok: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_LLM_BACKUP_OUTPUT_FEN_PER_MTOK, 0),
     costImageFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE_FEN_PER_CALL, 0),
     costImageBackupFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL, 0),
+    costImageBackup2FenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE_BACKUP2_FEN_PER_CALL, 0),
     costCodiaFenPerCall: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_CODIA_FEN_PER_CALL, 0),
     costImage2PptFenPerPage: nonNegativeIntFrom(effectiveEnv.ANPPT_V2_COST_IMAGE2PPT_FEN_PER_PAGE, 0),
     projectRetentionDays: intFrom(effectiveEnv.ANPPT_V2_PROJECT_RETENTION_DAYS, 7),
