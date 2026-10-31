@@ -436,7 +436,14 @@ BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实�
   - 余额类判定与代码同一词汇集、**不分大小写**、同时匹配 `message` 与 `detail`；402 保留原行为。
   - 余额类**跳过累积阈值立即告警**（`checks()` 返回 `urgent`，`main()` 里 `urgent or fail_count >= ALERT_AFTER`），邮件标题体注明「余额类立即告警」，正文点名站点：从 `detail` 的结构化 `host`（其次 `site`，带 `model`）提取 → `host=`/`site=` 文本 → `message` 括注；都提不到写「未知站点」，**不猜、不编造**。
   - 通用上游错误仍是「窗口内 ≥5 次」才报；`scripts/test-monitor.py` 用离线 fixture 钉住「Insufficient balance / 余额不足 归余额类」「单独的 HTTP 400 归通用类」「告警点名 host / 未知站点」。
-- **临时排序 shim（生产配置，非代码）**：生产 `.env` 里 `ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL` 暂设 **6**（真价 3 分），让单价 5 分的主站排在池首先跑、灾备只在主站失败时兜底，避免「最便宜站恒排第一 → 一挂就每页先撞一次」。#48 落地（余额类自动切站 + 站熔断）后**改回 3**。改动只动 `.env` 并重启 `anppt-v2`，无需回滚代码；恢复真实价格后池顺序回到 3 分灾备优先，这是预期的省钱排序。
+- **临时排序 shim（生产配置，非代码，已撤销）**：事故当晚曾把生产 `.env` 的 `ANPPT_V2_COST_IMAGE_BACKUP_FEN_PER_CALL` 暂设 **6**（真价 3 分），让 5 分主站排池首先跑、灾备只兜底，避免「最便宜站恒排第一 → 一挂就每页先撞一次」。2026-10-31 22:47 随 release `9792ad7` 上线后**已改回 3**，池顺序回到 3 分灾备优先——这是预期的省钱排序，安全性由站点熔断保证（见下条端到端验证）。
+- **上线与端到端验证（2026-10-31 22:39–22:50，release `9792ad7d2f5d`）**：在池首临时插了一个 mock 站（`ANPPT_V2_IMAGE_BACKUP2_*` → `http://127.0.0.1:8917/v1`，单价 1 分），让它对 `/images/generations` 恒回 `400 + Insufficient balance`，再用一次性探针账号走真实单页生成接口：
+  - 期望与实际一致：mock 站被命中 1 次 →「余额/配额耗尽，按站点故障冷却 600s，剩余可用站点 2/3」→ 切 `primary（gpt-image-2，5 分/张）@api.sqface.sbs` → 页面 `status: succeeded` 并出图（HTTP 201，54.8s）。
+  - 计费不变量成立：探针账号 `credit_ledger` 只有 1 条 `-10`（`单页生成` debit，幂等键 `single-page:e2e-probe-1:job_…`），**无退款行**，余额 100→90。
+  - 问题日志新增结构化一条 `{"site":"backup2","host":"127.0.0.1:8917","model":"mock-tt","status":400,"balance":true,"upstream":…}`；健康接口 `image.pool` 中该站 `cooling=true`。
+  - 收尾：探针站位、mock 进程、探针账号与产物、探针写入的问题日志行全部删除；最终池为 `backup（api.lk888.ai，3 分）→ primary（api.sqface.sbs，5 分）`，`cooling=false`。监控脚本同时升级到 `/usr/local/sbin/anppt-health-monitor.py`（md5 `db5ce78`），空跑输出「全部正常」。
+  - 未覆盖：改图（`/images/edits`）路径的余额切站只有单测覆盖，未在线上实跑（会额外扣上游额度）。
+  - 部署侧顺带修掉的坑：`deploy/deploy-production.sh` 的 stage 段原来漏拷 `scripts/`，`npm ci --omit=dev` 触发 `prepare`（`scripts/setup-hooks.mjs`）直接 MODULE_NOT_FOUND，git-first 部署从 10-28 起必挂；现已与 `deploy-local.sh` 对齐补上 `rsync -a --delete scripts/ "$RELEASE/scripts/"`。
 - 手工操作：
   - 摘站：从生产 `.env` 删除 `ANPPT_V2_IMAGE_BACKUP_BASE_URL` / `_API_KEY` / `_MODEL`（三项缺一即不入池，见 §12），重启 `anppt-v2`；旧值先备份（`/opt/anppt-v2/shared/.env.bak-*`）。
   - 恢复：充值到账后把三项加回、重启；站点冷却到期自动恢复，无需手工清表（急着恢复可重启服务清空内存冷却态）。不要为了「先跑起来」把 `ANPPT_V2_IMAGE_KEY_COOLDOWN_MS` 设 0——那会把欠费站点每页都再打一次。
