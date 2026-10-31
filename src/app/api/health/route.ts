@@ -4,6 +4,7 @@ import { getPluginManifest } from '@/lib/plugin/default';
 import { getDb } from '@/lib/server/db';
 import { getGenerationConfig } from '@/lib/server/generation/config';
 import { getGenDb } from '@/lib/server/generation/db';
+import { imagePoolSnapshot, type ImagePoolStationSnapshot } from '@/lib/server/generation/images';
 import { getProblemLogHealth } from '@/lib/server/problem-log';
 import { releaseId } from '@/lib/server/release-info';
 import { configuredEditableProviders } from '@/modules/editable-export/server/editable';
@@ -21,6 +22,8 @@ export async function GET(): Promise<Response> {
   }
   let llmConfigured = false;
   let imageConfigured = false;
+  // 生图站池只读快照：配置 + 内存冷却表，零上游调用；装配异常时降级为 null，不拖垮探针。
+  let imagePool: ImagePoolStationSnapshot[] | null = null;
   let editable = {
     configured: false,
     provider: '',
@@ -33,6 +36,11 @@ export async function GET(): Promise<Response> {
     const config = getGenerationConfig();
     llmConfigured = Boolean(config.llmApiKey);
     imageConfigured = Boolean(config.imageBaseUrl && config.imageApiKey);
+    try {
+      imagePool = imagePoolSnapshot(config);
+    } catch {
+      imagePool = null;
+    }
     const providers = configuredEditableProviders(config);
     editable = {
       configured: providers.length > 0,
@@ -92,7 +100,7 @@ export async function GET(): Promise<Response> {
     plugins,
     db,
     llm: { configured: llmConfigured },
-    image: { configured: imageConfigured },
+    image: { configured: imageConfigured, pool: imagePool },
     editable,
     logging: {
       ok: logging.ok,

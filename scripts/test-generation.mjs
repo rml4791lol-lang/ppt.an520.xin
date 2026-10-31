@@ -2520,6 +2520,272 @@ console.log('\n[2c2] 生图池：同价轮换与死键冷却');
     `实际调用 ${exhaustedFetcher.calls.length - exhaustedCalls} 次、错误 ${imagesMod.toPublicImageError(exhaustedAgain).code}`);
 }
 
+// 余额耗尽（#48）：2026-10-31 灾备站欠费返回 HTTP 400 + "Insufficient balance"。
+// 旧逻辑把 400 当「请求本身有问题」→ 不切站、不进冷却，每页都撞死站；错误还被映射成「内容太长」。
+// 契约：余额类 = 站点级故障（可切站 + 熔断冷却 + 503 额度语义）；真实 400 仍不切站；
+// 一次付费运行内切站不重复扣费，全池失败扣 1 退 1，熔断跳过与重复收敛都不产生第二笔退款。
+console.log('\n[2c3] 生图池：#48 余额耗尽 = 站点级故障（切站 / 熔断 / 错误映射 / 计费不变量）');
+{
+  const imagesMod = await import('../src/lib/server/generation/images.ts');
+  const chargeKeys = await import('../src/lib/server/generation/charge-keys.ts');
+
+  // 灾备 3 分（便宜先试）→ 主站 5 分：不同价不触发同价轮换，尝试顺序只由单价决定。
+  const balanceConfig = (overrides = {}) => ({
+    ...imageConfig,
+    imageBaseUrl: 'http://mock-bal-healthy',
+    imageApiKey: 'sk-bal-healthy',
+    imageModel: 'model-bal',
+    imageEditModel: 'model-bal',
+    imageBackupBaseUrl: 'http://mock-bal-thin',
+    imageBackupApiKey: 'sk-bal-thin',
+    imageBackupModel: 'model-bal',
+    imageBackupEditModel: 'model-bal',
+    imageBackup2BaseUrl: '',
+    imageBackup2ApiKey: '',
+    imageBackup2Model: '',
+    imageBackup2EditModel: '',
+    costImageFenPerCall: 5,
+    costImageBackupFenPerCall: 3,
+    costImageBackup2FenPerCall: 0,
+    imageKeyCooldownMs: 600_000,
+    ...overrides,
+  });
+  // mock fetch 按 URL 分流；每个场景用独立 host，熔断状态互不串场
+  const stationFetcher = (respond) => {
+    const calls = [];
+    const fetcher = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      return respond(String(url));
+    };
+    fetcher.calls = calls;
+    return fetcher;
+  };
+  const stationOf = (call) => String(call.url).match(/^http:\/\/mock-([^/]+)/)?.[1] ?? String(call.url);
+  const callOrder = (fetcher) => fetcher.calls.map(stationOf).join(',');
+  const timeout = (promise) => Promise.race([
+    promise,
+    new Promise((_, reject) => { setTimeout(() => reject(new Error('生图站点池挂死（超时 3s）')), 3000); }),
+  ]);
+  const okImage = () => jsonResponse({ data: [{ b64_json: PNG_1X1_B64 }] });
+  const balance400 = (message) => jsonResponse({ error: { message } }, 400);
+  const runGenerate = async (prompt, deps) => {
+    try {
+      return { image: await timeout(imagesMod.generateImage({ prompt }, deps)), error: null };
+    } catch (error) {
+      return { image: null, error };
+    }
+  };
+  const countStation = (fetcher, station) => fetcher.calls.filter((call) => stationOf(call) === station).length;
+
+  let failoverImage;
+  let failoverError;
+  const failoverFetcher = stationFetcher((url) => (
+    url.includes('mock-bal-thin') ? balance400('Insufficient balance') : okImage()
+  ));
+  try {
+    failoverImage = await timeout(imagesMod.generateImage({ prompt: '余额不足切站' }, {
+      fetchImpl: failoverFetcher, config: balanceConfig(),
+    }));
+  } catch (error) {
+    failoverError = error;
+  }
+  check('余额切站：灾备站 400 + Insufficient balance → 自动切到健康主站并出图',
+    !failoverError && callOrder(failoverFetcher) === 'bal-thin,bal-healthy'
+      && Buffer.isBuffer(failoverImage) && failoverImage.equals(Buffer.from(PNG_1X1_B64, 'base64')),
+    failoverError ? `抛出 ${failoverError.message}` : `实际调用 ${callOrder(failoverFetcher) || '(无)'}`);
+  check('余额切站：健康站只产出 1 张图（上游只回调一次，不重复生成）',
+    countStation(failoverFetcher, 'bal-healthy') === 1,
+    `实际健康站调用 ${countStation(failoverFetcher, 'bal-healthy')} 次`);
+
+  // 熔断冷却由注入时钟判定：窗口内跳过、到期自动回池，不依赖真实 sleep
+  const clock = { now: 1_700_000_000_000 };
+  const thinDead = { value: true };
+  const cooldownConfig = balanceConfig({
+    imageBaseUrl: 'http://mock-bal-cold-healthy',
+    imageApiKey: 'sk-bal-cold-healthy',
+    imageBackupBaseUrl: 'http://mock-bal-cold-thin',
+    imageBackupApiKey: 'sk-bal-cold-thin',
+  });
+  const cooldownFetcher = stationFetcher((url) => (
+    url.includes('mock-bal-cold-thin') && thinDead.value ? balance400('余额不足') : okImage()
+  ));
+  const cooldownDeps = { fetchImpl: cooldownFetcher, config: cooldownConfig, now: () => clock.now };
+  await runGenerate('余额熔断 1', cooldownDeps);
+  const thinCallsAfterFirst = countStation(cooldownFetcher, 'bal-cold-thin');
+  clock.now += 600_000 - 1;
+  const beforeWindowCalls = cooldownFetcher.calls.length;
+  await runGenerate('余额熔断 2', cooldownDeps);
+  const duringWindow = cooldownFetcher.calls.slice(beforeWindowCalls).map(stationOf).join(',');
+  check('余额熔断：冷却窗口内再次生成直接跳过欠费站（fetch 次数不增加，只打健康站）',
+    duringWindow === 'bal-cold-healthy'
+      && countStation(cooldownFetcher, 'bal-cold-thin') === thinCallsAfterFirst,
+    `实际调用 ${duringWindow || '(无)'}，欠费站累计 ${countStation(cooldownFetcher, 'bal-cold-thin')} 次`);
+  clock.now += 1;
+  thinDead.value = false;
+  const beforeExpiryCalls = cooldownFetcher.calls.length;
+  await runGenerate('余额熔断 3', cooldownDeps);
+  check('余额熔断：窗口到期后欠费站自动回到池中（充值恢复后重新被优先尝试）',
+    cooldownFetcher.calls.slice(beforeExpiryCalls).map(stationOf).join(',') === 'bal-cold-thin',
+    `实际调用 ${cooldownFetcher.calls.slice(beforeExpiryCalls).map(stationOf).join(',') || '(无)'}`);
+
+  // 全池余额耗尽：两站都要尝试过，公开错误必须是 503 额度/可重试语义
+  const exhaustedFetcher = stationFetcher((url) => (
+    url.includes('mock-bal-exhausted-primary') ? balance400('insufficient_quota') : balance400('余额不足')
+  ));
+  const exhaustedRun = await runGenerate('全池余额耗尽', {
+    fetchImpl: exhaustedFetcher,
+    config: balanceConfig({
+      imageBaseUrl: 'http://mock-bal-exhausted-primary',
+      imageApiKey: 'sk-bal-exhausted-primary',
+      imageBackupBaseUrl: 'http://mock-bal-exhausted-backup',
+      imageBackupApiKey: 'sk-bal-exhausted-backup',
+    }),
+  });
+  const exhaustedPublic = exhaustedRun.error ? imagesMod.toPublicImageError(exhaustedRun.error) : null;
+  check('余额耗尽：全池都欠费时两站都被尝试过（不是撞死第一站就放弃）',
+    callOrder(exhaustedFetcher) === 'bal-exhausted-backup,bal-exhausted-primary',
+    `实际调用 ${callOrder(exhaustedFetcher) || '(无)'}`);
+  check('余额耗尽：公开错误是 503 额度/可重试语义（不是 400 请求错误）',
+    Boolean(exhaustedPublic) && exhaustedPublic.status === 503
+      && /IMAGE_(QUOTA_EXHAUSTED|UPSTREAM_UNAVAILABLE)/.test(exhaustedPublic.code),
+    `实际 ${exhaustedPublic ? `${exhaustedPublic.status} ${exhaustedPublic.code}` : '(未抛错)'}`);
+  check('余额耗尽：文案不含「内容太长」，含额度/稍后/重试语义',
+    Boolean(exhaustedPublic)
+      && !/内容|过长|简化/.test(exhaustedPublic.message)
+      && /额度|余额|充值|稍后|重试/.test(exhaustedPublic.message),
+    `实际「${exhaustedPublic?.message ?? '(未抛错)'}」`);
+
+  // 真实 400（非余额文案）仍按请求非法处理：不切站、不冷却
+  const real400Config = balanceConfig({
+    imageBaseUrl: 'http://mock-bal-400-healthy',
+    imageApiKey: 'sk-bal-400-healthy',
+    imageBackupBaseUrl: 'http://mock-bal-400-thin',
+    imageBackupApiKey: 'sk-bal-400-thin',
+  });
+  const real400Fetcher = stationFetcher((url) => (
+    url.includes('mock-bal-400-thin') ? balance400('invalid image size') : okImage()
+  ));
+  const real400Run = await runGenerate('真实 400 不切站', { fetchImpl: real400Fetcher, config: real400Config });
+  const real400Public = real400Run.error ? imagesMod.toPublicImageError(real400Run.error) : null;
+  check('真实 400（非余额文案）：不切站、上游只调用一次',
+    Boolean(real400Run.error) && callOrder(real400Fetcher) === 'bal-400-thin',
+    `实际调用 ${callOrder(real400Fetcher) || '(无)'}`);
+  check('真实 400（非余额文案）：对外仍是「简化内容」语义',
+    real400Public?.status === 400 && real400Public?.code === 'IMAGE_REQUEST_INVALID'
+      && /简化/.test(real400Public?.message ?? ''),
+    `实际 ${real400Public ? `${real400Public.status} ${real400Public.code} ${real400Public.message}` : '(未抛错)'}`);
+  const beforeSecond400 = real400Fetcher.calls.length;
+  await runGenerate('真实 400 不进冷却', { fetchImpl: real400Fetcher, config: real400Config });
+  check('真实 400（非余额文案）：不误进冷却（下个请求仍先尝试该站）',
+    real400Fetcher.calls.slice(beforeSecond400).map(stationOf).join(',') === 'bal-400-thin',
+    `实际调用 ${real400Fetcher.calls.slice(beforeSecond400).map(stationOf).join(',') || '(无)'}`);
+
+  // 计费不变量：走真实付费运行（单页生成 → beginPaidRun → 扣费 → 出图/退款），只读账本断言
+  const billReg = await auth.registerWithPassword(
+    { account: 'balbill48', password: 'password123', confirmPassword: 'password123' },
+    '127.0.0.1',
+  );
+  const billUid = billReg.user.id;
+  const unitPrice = credits.estimateCredits({ action: 'single_page_generate', pages: 1 }).unitPrice;
+  const pageLedger = (pageId) => credits.listLedger(billUid, { pageSize: 50 }).items
+    .filter((item) => item.refId === pageId);
+  const refundRows = (pageId) => pageLedger(pageId).filter((item) => item.eventType === 'refund');
+  const debitRows = (pageId) => pageLedger(pageId).filter((item) => item.eventType === 'debit');
+
+  const billConfig = balanceConfig({
+    imageBaseUrl: 'http://mock-bal-bill-healthy',
+    imageApiKey: 'sk-bal-bill-healthy',
+    imageBackupBaseUrl: 'http://mock-bal-bill-thin',
+    imageBackupApiKey: 'sk-bal-bill-thin',
+  });
+  const billFetcher = stationFetcher((url) => (
+    url.includes('mock-bal-bill-thin') ? balance400('Insufficient balance') : okImage()
+  ));
+  const beforeBill1 = credits.getBalance(billUid);
+  const bill1 = await singlePages.generateSinglePage(billUid, {
+    pageId: 'bal-bill-1', content: '余额切站计费',
+  }, { fetchImpl: billFetcher, config: billConfig });
+  check('计费：切站成功只扣 1 次费（账本 1 条扣费、0 条退款、余额净减 1 个单价）',
+    bill1.status === 'succeeded'
+      && debitRows('bal-bill-1').length === 1 && refundRows('bal-bill-1').length === 0
+      && bill1.balance === beforeBill1 - unitPrice,
+    `status=${bill1.status} 扣费 ${debitRows('bal-bill-1').length} 条、退款 ${refundRows('bal-bill-1').length} 条、余额 ${beforeBill1}→${bill1.balance}（单价 ${unitPrice}）`);
+
+  const billDeadFetcher = stationFetcher(() => balance400('余额不足'));
+  const beforeFail = credits.getBalance(billUid);
+  const billFail = await singlePages.generateSinglePage(billUid, {
+    pageId: 'bal-bill-fail', content: '全池余额耗尽',
+  }, {
+    fetchImpl: billDeadFetcher,
+    config: balanceConfig({
+      imageBaseUrl: 'http://mock-bal-bill-dead-primary',
+      imageApiKey: 'sk-bal-bill-dead-primary',
+      imageBackupBaseUrl: 'http://mock-bal-bill-dead-backup',
+      imageBackupApiKey: 'sk-bal-bill-dead-backup',
+    }),
+  });
+  check('计费：全池失败 = 扣 1 + 退 1，金额相等、净额 0',
+    billFail.status === 'failed'
+      && debitRows('bal-bill-fail').length === 1 && refundRows('bal-bill-fail').length === 1
+      && Math.abs(debitRows('bal-bill-fail')[0].delta) === refundRows('bal-bill-fail')[0].delta
+      && credits.getBalance(billUid) === beforeFail,
+    `扣费 ${debitRows('bal-bill-fail')[0]?.delta ?? '(无)'}、退款 ${refundRows('bal-bill-fail')[0]?.delta ?? '(无)'}、余额 ${beforeFail}→${credits.getBalance(billUid)}`);
+  check('计费：全池失败对外返回 503 额度语义，不含「内容太长」',
+    billFail.status === 'failed'
+      && /额度|余额|稍后|重试/.test(billFail.error) && !/内容|过长|简化/.test(billFail.error),
+    `实际「${billFail.error}」`);
+
+  // 熔断跳过本身不产生退款：同一时钟窗口内连续两页，第二页只打健康站且只扣一次
+  const billClock = { now: 1_700_000_000_000 };
+  const billCoolFetcher = stationFetcher((url) => (
+    url.includes('mock-bal-skip-thin') ? balance400('余额不足') : okImage()
+  ));
+  const billCoolDeps = {
+    fetchImpl: billCoolFetcher,
+    config: balanceConfig({
+      imageBaseUrl: 'http://mock-bal-skip-healthy',
+      imageApiKey: 'sk-bal-skip-healthy',
+      imageBackupBaseUrl: 'http://mock-bal-skip-thin',
+      imageBackupApiKey: 'sk-bal-skip-thin',
+    }),
+    now: () => billClock.now,
+  };
+  const beforeSkip = credits.getBalance(billUid);
+  const skip1 = await singlePages.generateSinglePage(billUid, {
+    pageId: 'bal-skip-1', content: '熔断前第一次',
+  }, billCoolDeps);
+  const skipCallsAfterFirst = billCoolFetcher.calls.length;
+  const skip2 = await singlePages.generateSinglePage(billUid, {
+    pageId: 'bal-skip-2', content: '熔断跳过第二次',
+  }, billCoolDeps);
+  const skip2Order = billCoolFetcher.calls.slice(skipCallsAfterFirst).map(stationOf).join(',');
+  check('计费：熔断跳过欠费站后成功，第二页只扣 1 次费、不产生退款',
+    skip1.status === 'succeeded' && skip2.status === 'succeeded'
+      && skip2Order === 'bal-skip-healthy'
+      && debitRows('bal-skip-2').length === 1 && refundRows('bal-skip-2').length === 0
+      && beforeSkip - skip1.balance === unitPrice && skip1.balance - skip2.balance === unitPrice,
+    `第二页调用 ${skip2Order || '(无)'}，扣费 ${debitRows('bal-skip-2').length} 条、退款 ${refundRows('bal-skip-2').length} 条，余额 ${beforeSkip}→${skip1.balance}→${skip2.balance}（单价 ${unitPrice}）`);
+
+  // 同一失败重复收敛：幂等退款，不再产生第二笔
+  const failChargeKey = chargeKeys.singlePageChargeKey({ pageId: 'bal-bill-fail', jobId: billFail.jobId });
+  const refundsBeforeSettle = refundRows('bal-bill-fail').length;
+  const balanceBeforeSettle = credits.getBalance(billUid);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    paidRun.failPaidRun({
+      userId: billUid,
+      chargeKey: failChargeKey,
+      refundReason: '单页生成失败退回',
+      refType: 'single-page',
+      refId: 'bal-bill-fail',
+      settle() {},
+    });
+  }
+  check('计费：同一失败重复收敛不产生第二笔退款（退款幂等）',
+    refundsBeforeSettle === 1 && refundRows('bal-bill-fail').length === 1
+      && credits.getBalance(billUid) === balanceBeforeSettle,
+    `重复收敛前 ${refundsBeforeSettle} 条退款，重复后 ${refundRows('bal-bill-fail').length} 条，余额 ${balanceBeforeSettle}→${credits.getBalance(billUid)}`);
+}
+
 console.log('\n[19] 免费 LLM 动作频控（30 次/10 分钟/用户，共享桶）+ 限流器单元');
 {
   const rlUser = await auth.registerWithPassword(

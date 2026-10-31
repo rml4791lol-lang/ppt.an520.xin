@@ -1,5 +1,6 @@
 // gpt-image-2 生图上游客户端。站点池（主站 + 两站跨站灾备）按单价升序尝试、失败逐站回退；
-// 同价同模型的站之间按请求轮换起点，站内多把 key 逐请求轮转，401/402/403 的死 key 冷却后跳过；
+// 同价同模型的站之间按请求轮换起点，站内多把 key 逐请求轮转，401/402/403 与余额/配额耗尽（上游可能用 400 表达，
+// 2026-10-31 事故）的死 key 冷却后跳过——整站 key 都在冷却即站点熔断，请求不再打过去；
 // OpenAI 兼容站走 /images/generations + /images/edits；atlascloud 走异步预测 API
 // （/model/generateImage + /model/prediction）。
 // 所有真实请求经过全局并发/启动速率调度，并只对瞬态错误做有限后台恢复。
@@ -17,11 +18,52 @@ export interface ImageDeps {
 
 export class ImageUpstreamError extends Error {
   status: number;
-  constructor(message: string, status = 502) {
+  /** 上游错误体摘要（≤300 字符）：余额类判定与问题日志共用，不扩大保留原始响应体 */
+  detail: string;
+  constructor(message: string, status = 502, detail = '') {
     super(message);
     this.name = 'ImageUpstreamError';
     this.status = status;
+    this.detail = detail;
   }
+}
+
+/** 日志与健康接口只写 host：完整 baseUrl 可能带路径与凭据 */
+function imageHost(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return '';
+  }
+}
+
+// 余额/配额类按文本判定、不按状态码：同一上游会用 400（2026-10-31）/402/403/429 表达欠费。
+// 只匹配短语级模式，避免把普通 400（bad request / invalid image）误判成可切站。
+const BALANCE_EXHAUSTED_RE = new RegExp([
+  'insufficient[_ ]?(?:balance|funds|quota|credits?)',
+  'quota[_ ]?exceeded',
+  'exceeded[_ ]+(?:your )?quota',
+  'billing[_ ]?(?:hard[_ ]?limit|quota|limit|issue|problem)',
+  '\\bcredits?\\b',
+  '余额不足',
+  '余额不够',
+  '余额耗尽',
+  '余额已用尽',
+  '额度不足',
+  '额度耗尽',
+  '额度已用尽',
+  '欠费',
+].join('|'), 'i');
+
+function imageErrorText(error: unknown): string {
+  if (error instanceof ImageUpstreamError) return `${error.message}\n${error.detail}`;
+  return error instanceof Error ? error.message : String(error || '');
+}
+
+/** 上游余额/配额耗尽：站点级故障（欠费换 key 也活不了），与「请求本身非法」的 400 区分 */
+export function isBalanceExhausted(error: unknown): boolean {
+  if (error instanceof ImageUpstreamError && error.status === 402) return true;
+  return BALANCE_EXHAUSTED_RE.test(imageErrorText(error));
 }
 
 interface ScheduledTask<T> {
@@ -163,16 +205,21 @@ export function resetImageSchedulerForTests(): void {
 /** 上游/配置错误 → 对外口径 */
 export function toPublicImageError(error: unknown): { code: string; message: string; status: number } {
   const message = error instanceof Error ? error.message : String(error || '');
+  const status = error instanceof ImageUpstreamError ? error.status : 0;
   if (/未配置/.test(message)) {
     return { code: 'IMAGE_NOT_CONFIGURED', message: '生图服务尚未配置，请联系管理员', status: 503 };
   }
-  if (/401|403/.test(message)) {
+  // 余额/配额耗尽排在 400/413 之前：欠费被上游用 400 表达时不能再落成「内容太长」
+  if (isBalanceExhausted(error)) {
+    return { code: 'IMAGE_QUOTA_EXHAUSTED', message: '生图服务额度暂时不可用，请稍后重试，本次不扣星', status: 503 };
+  }
+  if (status === 401 || status === 403 || (status === 0 && /401|403/.test(message))) {
     return { code: 'IMAGE_UPSTREAM_UNAVAILABLE', message: '图片服务暂时不可用，星星已退回', status: 502 };
   }
-  if (/400|413/.test(message)) {
+  if (status === 400 || status === 413 || (status === 0 && /400|413/.test(message))) {
     return { code: 'IMAGE_REQUEST_INVALID', message: '本页素材或文字内容可能过长，请简化后再生成', status: 400 };
   }
-  if (/429/.test(message)) {
+  if (status === 429 || (status === 0 && /429/.test(message))) {
     return { code: 'IMAGE_RATE_LIMITED', message: '服务器刚刚开了个小差，星星已退回；稍后可继续', status: 429 };
   }
   if (/abort|timeout|超时/i.test(message)) {
@@ -186,9 +233,25 @@ interface ImageResponsePayload {
   error?: { message?: string };
 }
 
+/** 问题日志与切站日志共用的站点身份：site + host + 本次实际使用的模型名 */
+interface ImageStationLog {
+  site: ImageEndpoint['site'];
+  host: string;
+  model: string;
+}
+
+function imageStationLog(endpoint: ImageEndpoint, action: '生图' | '改图'): ImageStationLog {
+  return {
+    site: endpoint.site,
+    host: imageHost(endpoint.baseUrl),
+    model: action === '改图' ? endpoint.editModel : endpoint.model,
+  };
+}
+
 async function parseImageResponse(
   response: Response,
   deps: ImageDeps,
+  station: ImageStationLog,
   signal?: AbortSignal,
 ): Promise<Buffer> {
   const text = await response.text();
@@ -199,16 +262,24 @@ async function parseImageResponse(
     throw new ImageUpstreamError(`HTTP ${response.status}: 上游返回非 JSON`, response.status || 502);
   }
   if (!response.ok) {
+    const error = new ImageUpstreamError(
+      `HTTP ${response.status}: ${cleanString(payload?.error?.message, 300) || 'upstream error'}`,
+      response.status,
+      cleanString(text, 300),
+    );
     logProblem({
       category: 'image-upstream',
       level: 'error',
       message: `生图上游 HTTP ${response.status}`,
-      detail: text.slice(0, 500),
+      // 结构化 detail（落盘是 JSON 字符串）：监控按 host 点名站点，按 balance 走余额类告警
+      detail: {
+        ...station,
+        status: response.status,
+        balance: isBalanceExhausted(error),
+        upstream: cleanString(text, 500),
+      },
     });
-    throw new ImageUpstreamError(
-      `HTTP ${response.status}: ${cleanString(payload?.error?.message, 300) || 'upstream error'}`,
-      response.status,
-    );
+    throw error;
   }
   const item = payload.data?.[0];
   if (item?.b64_json) return Buffer.from(item.b64_json, 'base64');
@@ -323,8 +394,9 @@ function imageKeyCooldownId(endpoint: ImageEndpoint, apiKey: string): string {
   return `${imageEndpointId(endpoint)}\u0000${apiKey}`;
 }
 
-/** 401/402/403 是凭据/额度问题：这把 key 进冷却，换站或换 key 都可能活 */
+/** 401/402/403 与余额/配额耗尽：这把 key 活不了（欠费换 key 也不活），冷却后跳过；整站 key 都冷却即站点熔断 */
 function isDeadImageKeyError(error: unknown): boolean {
+  if (isBalanceExhausted(error)) return true;
   return error instanceof ImageUpstreamError
     && (error.status === 401 || error.status === 402 || error.status === 403);
 }
@@ -404,11 +476,60 @@ function orderByPrice(candidates: ImageEndpoint[]): ImageEndpoint[] {
     .map((item) => item.endpoint);
 }
 
-/** 站点描述：站点 + 模型 + 单价（切站与冷却日志共用，线上口径不变） */
+/**
+ * 剩余可用站点数：站内还有一把非冷却 key 即算可用。只读冷却表（顺带清理过期条目），不推进任何游标。
+ */
+function availableStationCount(endpoints: ImageEndpoint[], now: number): number {
+  return endpoints.filter((endpoint) => endpoint.apiKeys.some((apiKey) => !isImageKeyCooling(endpoint, apiKey, now))).length;
+}
+
+/** 健康检查用的站点快照：只暴露 host，不暴露 baseUrl/apiKeys */
+export interface ImagePoolStationSnapshot {
+  site: 'primary' | 'backup' | 'backup2';
+  /** 仅域名[:端口]；baseUrl 解析失败时为 '' */
+  host: string;
+  model: string;
+  editModel: string;
+  /** 分/张；0 = 单价未配置 */
+  price: number;
+  /** 该站配置的 key 总数 */
+  keys: number;
+  /** 该站当前冷却中的 key 数 */
+  coolingKeys: number;
+  /** 整站熔断：所有 key 都在冷却，请求本轮不会再打过去 */
+  cooling: boolean;
+}
+
+/**
+ * 只读、零网络调用的池快照，顺序即后端候选顺序（单价升序，不含同价轮换偏移）：
+ * 健康检查每分钟调用，不能推进 round-robin 游标扰动真实请求顺序。
+ */
+export function imagePoolSnapshot(config: GenerationConfig = getGenerationConfig(), now = Date.now()): ImagePoolStationSnapshot[] {
+  return imageEndpoints(config).map((endpoint) => {
+    const prefix = `${imageEndpointId(endpoint)}\u0000`;
+    let coolingKeys = 0;
+    for (const [id, cooldown] of imagePool.keyCooldowns) {
+      if (id.startsWith(prefix) && cooldown.until > now) coolingKeys += 1;
+    }
+    return {
+      site: endpoint.site,
+      host: imageHost(endpoint.baseUrl),
+      model: endpoint.model,
+      editModel: endpoint.editModel,
+      price: endpoint.price,
+      keys: endpoint.apiKeys.length,
+      coolingKeys,
+      cooling: endpoint.apiKeys.length > 0 && coolingKeys >= endpoint.apiKeys.length,
+    };
+  });
+}
+
+/** 站点描述：站点 + 模型 + 单价 + host（切站与冷却日志共用，线上口径不变） */
 function describeImageStation(action: '生图' | '改图', endpoint: ImageEndpoint): string {
   const model = action === '改图' ? endpoint.editModel : endpoint.model;
   const price = endpoint.price > 0 ? `单价 ${endpoint.price} 分/张` : '单价未配置';
-  return `${endpoint.site}（${model}，${price}）`;
+  const host = imageHost(endpoint.baseUrl);
+  return `${endpoint.site}（${model}，${price}）${host ? `@${host}` : ''}`;
 }
 
 /** 日志只写 key 指纹：完整 key 不进任何日志 */
@@ -416,43 +537,58 @@ function imageKeyFingerprint(apiKey: string): string {
   return apiKey.length <= 4 ? `#len${apiKey.length}` : `#${apiKey.slice(-4)}`;
 }
 
-/** 切站日志：站点 + 模型 + 单价（既有 [anppt-v2][image-upstream] 前缀不变），便于线上核对命中顺序与每张成本 */
-function logImageSwitch(action: '生图' | '改图', from: ImageEndpoint, to: ImageEndpoint, error: unknown): void {
+/** 切站日志：站点 + 模型 + 单价 + host（既有 [anppt-v2][image-upstream] 前缀不变），便于线上核对命中顺序与每张成本 */
+function logImageSwitch(
+  action: '生图' | '改图',
+  from: ImageEndpoint,
+  to: ImageEndpoint,
+  error: unknown,
+  stations: { available: number; total: number },
+): void {
   console.warn(
     `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, from)}失败，切换 ${describeImageStation(action, to)}：${
       error instanceof Error ? error.message : String(error)
-    }`,
+    }（剩余可用站点 ${stations.available}/${stations.total}）`,
   );
 }
 
-/** 死 key 冷却：只写 key 指纹与上游状态码，线上定位不用翻完整密钥 */
+/** 死 key 冷却：只写 key 指纹与上游状态码，线上定位不用翻完整密钥；余额类额外点名并给秒数 */
 function logImageKeyCooldown(
   action: '生图' | '改图',
   endpoint: ImageEndpoint,
   apiKey: string,
   error: unknown,
   cooldownMs: number,
+  stations: { available: number; total: number },
 ): void {
   const status = error instanceof ImageUpstreamError ? error.status : 0;
+  const reason = isBalanceExhausted(error) ? '（余额/配额耗尽，按站点故障冷却）' : '';
   console.warn(
-    `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, endpoint)} key ${imageKeyFingerprint(apiKey)} 上游 HTTP ${status} 失败，冷却 ${cooldownMs}ms`,
+    `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, endpoint)} key ${imageKeyFingerprint(apiKey)} 上游 HTTP ${status}${reason} 失败，冷却 ${cooldownMs}ms（${Math.round(cooldownMs / 1000)}s），剩余可用站点 ${stations.available}/${stations.total}`,
   );
 }
 
-function logImageStationBlocked(action: '生图' | '改图', endpoint: ImageEndpoint): void {
+function logImageStationBlocked(
+  action: '生图' | '改图',
+  endpoint: ImageEndpoint,
+  stations: { available: number; total: number },
+): void {
   console.warn(
-    `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, endpoint)} 全部 key 冷却中，本轮跳过`,
+    `[anppt-v2][image-upstream] ${action}站 ${describeImageStation(action, endpoint)} 全部 key 冷却中，本轮跳过（剩余可用站点 ${stations.available}/${stations.total}）`,
   );
 }
 
-/** 400/413 是请求本身的问题，换站也必败，不浪费灾备费用；其余（402/401/429/5xx/网络/超时）都可切站 */
+/** 400/413 是请求本身的问题，换站也必败，不浪费灾备费用；余额/配额耗尽例外（站点级故障，400 也要切） */
 function isFailoverWorthy(error: unknown): boolean {
+  if (isBalanceExhausted(error)) return true;
   if (error instanceof ImageUpstreamError && (error.status === 400 || error.status === 413)) return false;
   return true;
 }
 
 function isRetryableImageError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === 'AbortError') return false;
+  // 余额类不重试：同一站重试只会再撞一次墙（2026-10-31 事故）
+  if (isBalanceExhausted(error)) return false;
   if (error instanceof ImageUpstreamError) return error.status === 429 || error.status >= 500;
   return error instanceof TypeError || (error instanceof Error && /network|socket|fetch failed|ECONN|EAI_AGAIN/i.test(error.message));
 }
@@ -499,7 +635,8 @@ async function atlasHttp<T>(
   path: string,
   init: { method: string; body?: unknown },
   timeoutMs: number,
-  deps: ImageDeps = {},
+  deps: ImageDeps,
+  station: ImageStationLog,
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -520,16 +657,23 @@ async function atlasHttp<T>(
     }
     // atlascloud 业务错误也可能以 HTTP 200 + code!==200 返回
     if (!response.ok || (typeof payload.code === 'number' && payload.code !== 200)) {
+      const error = new ImageUpstreamError(
+        `HTTP ${response.status}: ${cleanString(payload?.message, 300) || 'atlascloud upstream error'}`,
+        response.status || 502,
+        cleanString(text, 300),
+      );
       logProblem({
         category: 'image-upstream',
         level: 'error',
         message: `atlas 生图上游 HTTP ${response.status}${typeof payload.code === 'number' ? ` code=${payload.code}` : ''}`,
-        detail: text.slice(0, 500),
+        detail: {
+          ...station,
+          status: response.status,
+          balance: isBalanceExhausted(error),
+          upstream: cleanString(text, 500),
+        },
       });
-      throw new ImageUpstreamError(
-        `HTTP ${response.status}: ${cleanString(payload?.message, 300) || 'atlascloud upstream error'}`,
-        response.status || 502,
-      );
+      throw error;
     }
     if (!payload.data) throw new ImageUpstreamError('atlascloud 返回缺少 data', 502);
     return payload.data;
@@ -544,8 +688,9 @@ async function atlasRunImageJob(
   body: Record<string, unknown>,
   config: GenerationConfig,
   deps: ImageDeps,
+  station: ImageStationLog,
 ): Promise<Buffer> {
-  const created = await atlasHttp<{ id?: string }>(ep, apiKey, '/model/generateImage', { method: 'POST', body }, 90_000, deps);
+  const created = await atlasHttp<{ id?: string }>(ep, apiKey, '/model/generateImage', { method: 'POST', body }, 90_000, deps, station);
   if (!created.id) throw new ImageUpstreamError('atlascloud 未返回任务 id', 502);
   const deadline = Date.now() + config.imageTimeoutMs;
   for (;;) {
@@ -558,6 +703,7 @@ async function atlasRunImageJob(
       { method: 'GET' },
       30_000,
       deps,
+      station,
     );
     const status = String(prediction.status || '').toLowerCase();
     if (status === 'completed' || status === 'succeeded') {
@@ -590,8 +736,9 @@ interface ImagePoolFailure {
 }
 
 /**
- * 站点池唯一入口：同价同模型轮转起点 → 站内 key 轮转 → 死 key 冷却跳过 → 逐站按单价回退。
- * 400/413 是请求本身的问题，不换 key 也不换站；整池都在冷却时用最近一次冷却错误对外报错（不新造错误码）。
+ * 站点池唯一入口：同价同模型轮转起点 → 站内 key 轮转 → 死 key/余额耗尽冷却跳过 → 逐站按单价回退。
+ * 400/413 通常是请求本身的问题，不换 key 也不换站；余额/配额耗尽例外，按站点故障切站并冷却该 key。
+ * 整池都在冷却时用最近一次冷却错误对外报错。
  */
 async function runImagePool(
   config: GenerationConfig,
@@ -606,6 +753,10 @@ async function runImagePool(
   }
   const cooldownMs = Math.max(0, config.imageKeyCooldownMs);
   const clock = deps.now ?? Date.now;
+  const stationCounts = (): { available: number; total: number } => ({
+    available: availableStationCount(endpoints, clock()),
+    total: endpoints.length,
+  });
   let lastError: unknown;
   let blockedError: unknown;
   let failed: ImagePoolFailure | null = null;
@@ -613,12 +764,12 @@ async function runImagePool(
     const triedKeys = new Set<string>();
     let currentKey = takeNextImageKey(endpoint, clock(), triedKeys);
     if (!currentKey) {
-      logImageStationBlocked(action, endpoint);
+      logImageStationBlocked(action, endpoint, stationCounts());
       blockedError ??= firstCoolingError(endpoint);
       continue;
     }
     if (failed) {
-      logImageSwitch(action, failed.endpoint, endpoint, failed.error);
+      logImageSwitch(action, failed.endpoint, endpoint, failed.error, stationCounts());
       failed = null;
     }
     for (;;) {
@@ -636,7 +787,7 @@ async function runImagePool(
               until: clock() + cooldownMs,
               error,
             });
-            logImageKeyCooldown(action, endpoint, apiKey, error, cooldownMs);
+            logImageKeyCooldown(action, endpoint, apiKey, error, cooldownMs, stationCounts());
           }
           const nextKey = takeNextImageKey(endpoint, clock(), triedKeys);
           if (nextKey) {
@@ -677,6 +828,7 @@ export async function generateImage(input: GenerateImageInput, deps: ImageDeps =
           },
           config,
           deps,
+          imageStationLog(ep, '生图'),
         );
         recordUpstreamUsage({
           provider, kind: 'image-generate', model: ep.model,
@@ -709,7 +861,7 @@ export async function generateImage(input: GenerateImageInput, deps: ImageDeps =
         }),
         signal: controller.signal,
       });
-      const image = await parseImageResponse(response, deps, controller.signal);
+      const image = await parseImageResponse(response, deps, imageStationLog(ep, '生图'), controller.signal);
       recordUpstreamUsage({
         provider, kind: 'image-generate', model: ep.model,
         status: 'ok', units: 1, durationMs: Date.now() - startedAt,
@@ -778,6 +930,7 @@ export async function editImage(input: EditImageInput, deps: ImageDeps = {}): Pr
           },
           config,
           deps,
+          imageStationLog(ep, '改图'),
         );
         recordUpstreamUsage({
           provider, kind: 'image-edit', model: ep.editModel,
@@ -802,7 +955,7 @@ export async function editImage(input: EditImageInput, deps: ImageDeps = {}): Pr
         body: form,
         signal: controller.signal,
       });
-      const image = await parseImageResponse(response, deps, controller.signal);
+      const image = await parseImageResponse(response, deps, imageStationLog(ep, '改图'), controller.signal);
       recordUpstreamUsage({
         provider, kind: 'image-edit', model: ep.editModel,
         status: 'ok', units: 1, durationMs: Date.now() - startedAt,
