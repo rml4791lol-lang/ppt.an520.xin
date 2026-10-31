@@ -40,6 +40,10 @@ yarn-error.log*
 # local sqlite data
 /data/
 
+# local-only scratch (backups / agent memory), never public
+/_backups/
+/.dsh-project-memory/
+
 # user's global gitignore excludes lib/ — re-include our server lib
 !src/lib/
 !src/lib/**
