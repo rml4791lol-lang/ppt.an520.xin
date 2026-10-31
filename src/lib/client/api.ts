@@ -325,5 +325,7 @@ export const api = {
       password: string;
       confirmPassword: string;
     }): Promise<AuthResult> => postAuth("/api/auth/register", input),
+    logout: (): Promise<void> =>
+      apiFetch<unknown>("/api/auth/logout", { method: "POST" }).then(() => undefined),
   },
 };
