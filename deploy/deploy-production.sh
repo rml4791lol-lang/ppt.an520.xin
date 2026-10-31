@@ -56,6 +56,8 @@ mkdir -p "$RELEASE"
 rsync -a --delete --exclude 'cache/' .next/ "$RELEASE/.next/"
 rsync -a --delete public/ "$RELEASE/public/"
 install -m 0644 package.json package-lock.json next.config.ts "$RELEASE/"
+# Whole scripts/ dir: npm ci runs `prepare` (scripts/setup-hooks.mjs) inside the release.
+rsync -a --delete scripts/ "$RELEASE/scripts/"
 (cd "$RELEASE" && npm ci --omit=dev --no-audit --no-fund)
 printf '%s\n' "$COMMIT" > "$RELEASE/.deploy-commit"
 
