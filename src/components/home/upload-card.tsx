@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -13,7 +13,12 @@ import {
   TrashIcon,
 } from "@/components/icons";
 import { Dropzone } from "@/components/dropzone";
-import { ApiClientError } from "@/lib/client/api";
+import { ApiClientError, getSession } from "@/lib/client/api";
+import {
+  clearUploadDraft,
+  readUploadDraft,
+  saveUploadDraft,
+} from "@/lib/client/upload-draft";
 import { createPagedCopyDeck, parseDeckDocument } from "@/lib/client/deck-api";
 import { useGatedStylePacks } from "@/components/use-gated-style-packs";
 import { PluginSlotPanel, pluginIcon, usePluginEntries } from "@/components/plugin-ui";
@@ -38,6 +43,12 @@ const QUALITY_OPTIONS = [
   { value: "standard", label: "标准生图模式", note: null, disabled: false },
   { value: "fine", label: "精细生图模式", note: "即将上线", disabled: true },
 ];
+
+const QUALITY_SHORT: Record<string, string> = {
+  light: "轻量画质",
+  standard: "标准画质",
+  fine: "精细画质",
+};
 
 type PlatformTabKey = "import" | "paged";
 
@@ -194,19 +205,32 @@ function StylePicker({
 
 export function UploadCard({ packs }: { packs: StylePack[] }) {
   const router = useRouter();
+  // 未登录时选好的文档：登录跳转是 SPA 导航，组件会重挂，
+  // 草稿在首次渲染时用初始化器同步读出，避免先渲染一帧空表单。
+  const [draft] = useState(() => readUploadDraft());
   const [tab, setTab] = useState<string>(
     () =>
-      (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab")) ||
-      "import",
+      draft?.tab ??
+      ((typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("tab")) ||
+        "import"),
   );
-  const [style, setStyle] = useState<StylePack | null>(null);
-  const [duration, setDuration] = useState("15");
-  const [customPages, setCustomPages] = useState("20");
-  const [quality, setQuality] = useState("standard");
-  const [docFile, setDocFile] = useState<File | null>(null);
-  const [pages, setPages] = useState<string[]>([""]);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [style, setStyle] = useState<StylePack | null>(draft?.style ?? null);
+  const [duration, setDuration] = useState(draft?.duration ?? "15");
+  const [customPages, setCustomPages] = useState(draft?.customPages ?? "20");
+  const [quality, setQuality] = useState(draft?.quality ?? "standard");
+  const [docFile, setDocFile] = useState<File | null>(draft?.file ?? null);
+  const [pages, setPages] = useState<string[]>(
+    draft && draft.pages.length > 0 ? draft.pages : [""],
+  );
+  const [notice, setNotice] = useState<string | null>(() => {
+    if (!draft) return null;
+    const label =
+      draft.file?.name ?? (draft.pages.some((p) => p.trim()) ? "逐页文案" : null);
+    return label ? `已保留你刚才的「${label}」，直接继续即可` : null;
+  });
   const [submitting, setSubmitting] = useState<null | "import" | "paged">(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const pluginTabs = usePluginEntries("upload-card");
   const gatedPacks = useGatedStylePacks();
   const allPacks = useMemo(
@@ -242,10 +266,45 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
     return () => window.clearTimeout(timer);
   }, [allPacks]);
 
-  const flash = (msg: string) => {
-    setNotice(msg);
-    window.setTimeout(() => setNotice(null), 4000);
+  const flash = (msg: string) => setNotice(msg);
+
+  // 恢复草稿时提示条停留久一点（6s），普通提示 4s
+  useEffect(() => {
+    if (!notice) return;
+    const stays = notice.startsWith("已保留") ? 6000 : 4000;
+    const timer = window.setTimeout(() => setNotice(null), stays);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  // 从登录页回来时把用户带回生成器，否则恢复的草稿在首屏下面看不见
+  const restored = draft !== null;
+  useEffect(() => {
+    if (!restored) return;
+    document.getElementById("start")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // 只在挂载时执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 未登录时选好的文档：登录跳转是 SPA 导航，组件会重挂，
+  // 这里把草稿放进模块级存储，用户登录回来不用再选一次文件。
+  const persistDraft = () => {
+    if (!docFile && pages.every((p) => !p.trim())) return;
+    saveUploadDraft({ tab: activeTab, style, duration, customPages, quality, pages, file: docFile });
   };
+
+  // 首次渲染先跳过，避免用默认值覆盖刚恢复的草稿
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (!syncedRef.current) {
+      syncedRef.current = true;
+      return;
+    }
+    if (!docFile && pages.every((p) => !p.trim())) {
+      clearUploadDraft();
+      return;
+    }
+    saveUploadDraft({ tab: activeTab, style, duration, customPages, quality, pages, file: docFile });
+  }, [activeTab, style, duration, customPages, quality, pages, docFile]);
 
   // 自定义页数：4-40；汇报时长按比例派生（对齐四档的 1.5 分钟/页），引擎只需要一个时长语义
   const isCustomDuration = duration === "custom";
@@ -262,11 +321,13 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
   const selectedDurationMinutes = isCustomDuration
     ? Math.max(1, Math.round(selectedPageCount * 1.5))
     : Number(duration);
+  const filledPageCount = pages.filter((p) => p.trim()).length;
 
   // 统一错误处理：401 → 跳登录（回跳首页）；402 → 提示充值；其余直接展示文案
   const handleSubmitError = (error: unknown, fallback: string) => {
     const err = error instanceof ApiClientError ? error : null;
     if (err?.isUnauthorized) {
+      persistDraft();
       router.push(`/login?next=${encodeURIComponent("/")}`);
       return;
     }
@@ -275,6 +336,15 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
       return;
     }
     flash(err?.message ?? fallback);
+  };
+
+  // 未登录先跳登录（文件已进草稿），避免白传一次大文件再吃 401
+  const ensureSignedIn = async () => {
+    const session = await getSession().catch(() => null);
+    if (session?.authenticated) return true;
+    persistDraft();
+    router.push(`/login?next=${encodeURIComponent("/")}`);
+    return false;
   };
 
   // 导入文档 → POST /api/deck/parse（FormData）→ 跳工作台
@@ -288,6 +358,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
       flash(`请输入 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 之间的页数`);
       return;
     }
+    if (!(await ensureSignedIn())) return;
     setSubmitting("import");
     try {
       const result = await parseDeckDocument({
@@ -298,6 +369,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
         qualityTier: quality,
         stylePackId: style?.id ?? null,
       });
+      clearUploadDraft();
       router.push(`/deck/${result.deckId}`);
     } catch (error) {
       handleSubmitError(error, "创建项目失败，请重新尝试");
@@ -313,6 +385,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
       return;
     }
     if (submitting) return;
+    if (!(await ensureSignedIn())) return;
     setSubmitting("paged");
     try {
       const result = await createPagedCopyDeck({
@@ -320,6 +393,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
         qualityTier: quality,
         stylePackId: style?.id ?? null,
       });
+      clearUploadDraft();
       router.push(`/deck/${result.deckId}`);
     } catch (error) {
       handleSubmitError(error, "创建项目失败，请重新尝试");
@@ -352,13 +426,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
         <div className="min-w-0 flex-1">
           {activeTab === "import" && (
             <div>
-              <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-                <p className="text-sm text-ink-3">
-                  适合已有完整文档，需要 AI 规划结构并生成整套 PPT
-                </p>
-                <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />
-              </div>
-              <div className="mt-4">
+              <div className="mt-1">
                 <Dropzone
                   accept={DOC_ACCEPT}
                   file={docFile}
@@ -367,58 +435,78 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                   hint="TXT · MD · PDF · DOCX · 单文件最大 30MB · 内容上限 100,000 字"
                 />
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Dropdown
-                  value={duration}
-                  options={DURATION_OPTIONS}
-                  onChange={setDuration}
-                  className="w-full sm:w-auto sm:min-w-56"
-                />
-                {isCustomDuration && (
-                  <label className="flex items-center gap-1.5 rounded-full border border-line bg-card px-4 py-2 text-sm text-ink-2 transition focus-within:border-brand-line">
-                    <input
-                      type="number"
-                      min={CUSTOM_PAGE_MIN}
-                      max={CUSTOM_PAGE_MAX}
-                      value={customPages}
-                      onChange={(e) => setCustomPages(e.target.value)}
-                      aria-label="自定义页数"
-                      className="w-12 bg-transparent text-center outline-none"
-                    />
-                    页
-                  </label>
-                )}
-                <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />
+                <button
+                  type="button"
+                  aria-expanded={settingsOpen}
+                  aria-controls="upload-settings"
+                  onClick={() => setSettingsOpen((v) => !v)}
+                  className="flex items-center gap-1.5 rounded-full border border-line bg-card px-4 py-2 text-sm text-ink-3 transition hover:border-brand-line hover:text-ink"
+                >
+                  约 {selectedPageCount} 页 · {QUALITY_SHORT[quality] ?? "标准画质"}
+                  <ChevronDownIcon
+                    width={14}
+                    height={14}
+                    className={`shrink-0 transition ${settingsOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </div>
+              {settingsOpen && (
+                <div
+                  id="upload-settings"
+                  className="mt-3 grid gap-2 rounded-xl border border-line bg-page p-3 sm:grid-cols-2"
+                >
+                  <Dropdown
+                    value={duration}
+                    options={DURATION_OPTIONS}
+                    onChange={setDuration}
+                    className="w-full"
+                  />
+                  {isCustomDuration && (
+                    <label className="flex items-center gap-1.5 self-start rounded-full border border-line bg-card px-4 py-2 text-sm text-ink-2 transition focus-within:border-brand-line">
+                      <input
+                        type="number"
+                        min={CUSTOM_PAGE_MIN}
+                        max={CUSTOM_PAGE_MAX}
+                        value={customPages}
+                        onChange={(e) => setCustomPages(e.target.value)}
+                        aria-label="自定义页数"
+                        className="w-12 bg-transparent text-center outline-none"
+                      />
+                      页
+                    </label>
+                  )}
                   <Dropdown
                     value={quality}
                     options={QUALITY_OPTIONS}
                     onChange={setQuality}
-                    className="min-w-0 flex-1 sm:flex-none sm:min-w-60"
+                    className="w-full"
                   />
-                  <button
-                    type="button"
-                    onClick={() => void submitImport()}
-                    disabled={submitting !== null}
-                    className="shrink-0 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {submitting === "import" ? "上传解析中…" : "开始生成大纲"}
-                  </button>
                 </div>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <p className="text-xs text-ink-4">
+                  {isCustomDuration && customPageCount === null
+                    ? `自定义页数范围 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 页`
+                    : "按页计费，确认前显示估价"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void submitImport()}
+                  disabled={submitting !== null}
+                  className="shrink-0 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto"
+                >
+                  {submitting === "import" ? "上传解析中…" : "开始生成大纲"}
+                </button>
               </div>
-              <p className="mt-2 px-1 text-xs text-ink-4">
-                {isCustomDuration && customPageCount === null
-                  ? `自定义页数范围 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 页`
-                  : `预计约 ${selectedPageCount} 页 · 生成按页计费，确认前显示估价`}
-              </p>
             </div>
           )}
 
           {activeTab === "paged" && (
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-                <p className="text-sm text-ink-3">
-                  已有逐页文案？逐页粘贴文字，AI 按你的分页直接生成
-                </p>
+                <p className="text-sm text-ink-3">逐页粘贴文字，AI 按你的分页直接生成</p>
                 <StylePicker packs={allPacks} selected={style} onSelect={setStyle} />
               </div>
               <div className="mt-4 space-y-3">
@@ -472,16 +560,38 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 <PlusIcon width={14} height={14} />
                 添加页面
               </button>
-              <p className="mt-2 px-1 text-xs text-ink-4">
-                单页上限 1,500 字 · 图片粘贴上传即将开放
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  aria-expanded={settingsOpen}
+                  aria-controls="upload-settings"
+                  onClick={() => setSettingsOpen((v) => !v)}
+                  className="flex items-center gap-1.5 rounded-full border border-line bg-card px-4 py-2 text-sm text-ink-3 transition hover:border-brand-line hover:text-ink"
+                >
+                  {filledPageCount} 页 · {QUALITY_SHORT[quality] ?? "标准画质"}
+                  <ChevronDownIcon
+                    width={14}
+                    height={14}
+                    className={`shrink-0 transition ${settingsOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                <p className="text-xs text-ink-4">单页上限 1,500 字</p>
+              </div>
+              {settingsOpen && (
+                <div
+                  id="upload-settings"
+                  className="mt-3 rounded-xl border border-line bg-page p-3"
+                >
+                  <Dropdown
+                    value={quality}
+                    options={QUALITY_OPTIONS}
+                    onChange={setQuality}
+                    className="w-full sm:max-w-60"
+                  />
+                </div>
+              )}
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Dropdown
-                  value={quality}
-                  options={QUALITY_OPTIONS}
-                  onChange={setQuality}
-                  className="min-w-60"
-                />
+                <p className="text-xs text-ink-4">按页计费，确认前显示估价</p>
                 <button
                   type="button"
                   onClick={() => void submitPaged()}

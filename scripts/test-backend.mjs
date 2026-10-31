@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { registerTsHooks } from './ts-hooks.mjs';
 import { acquireTestLock, releaseTestLock } from './test-lock.mjs';
 import { runClientApiTests } from './tests/client-api.test.mjs';
+import { runUploadDraftTests } from './tests/upload-draft.test.mjs';
 import { runAdminIntentTests } from './tests/surface-intents.test.mjs';
 import { runAdminSurfaceIntentParserTests } from './tests/surface-intent-parsers.test.mjs';
 
@@ -973,6 +974,9 @@ console.log('\n[12d] 问题日志：追踪 / 脱敏 / 健康 / 滚动 / 过期�
 
 console.log('\n[13] 前端统一客户端：能力命名（URL 不出客户端层）');
 await runClientApiTests({ check });
+
+console.log('\n[13b] 生成器草稿：跨登录保留 + 30 分钟过期');
+await runUploadDraftTests({ check });
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败${failed ? ` — 失败项: ${failures.join('、')}` : ''}`);
 rmSync(tmpDir, { recursive: true, force: true });
