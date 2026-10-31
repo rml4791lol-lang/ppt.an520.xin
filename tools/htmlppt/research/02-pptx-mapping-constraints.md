@@ -648,4 +648,3 @@ mutool draw -o out/page-%d.png -r 110 out/deck.pdf
 - `ctrl.pptx`/`ctrl.pdf` + `measure.html`：同串在 Chrome 与 LO 的宽度差（字体替换 ≈12%）
 - `spc2.pptx` + `mspc2.html`：letter-spacing n−1 vs n；CJK↔拉丁 LO 额外 0.237em
 - `feat.pptx`/`feat.pdf`/`feat.png`：normAutofit 被 LO 自动缩排、`wrap="none"` 被折行、numCol 生效、gradFill/blur/outerShdw/roundRect 渲染
-

@@ -43,23 +43,23 @@ python3 cli/htmlppt.py --help
 $ python3 cli/htmlppt.py doctor
 htmlppt doctor · Darwin 27.0.0 · CLI Python 3.12.14
 
-检查项    必需  状态  版本 / 说明                                                  
+检查项    必需  状态  版本 / 说明
 --------  ----  ----  -------------------------------------------------------------
-python    是    ✓     Python 3.12.14                                               
-node      是    ✓     v26.10.0                                                     
+python    是    ✓     Python 3.12.14
+node      是    ✓     v26.10.0
 soffice   是    ✓     LibreOffice 26.8.0.3 bce0998afefdbc355585ca324285661a2170ba77
-chrome    是    ✓     Google Chrome 155.0.8059.85                                  
-pdftoppm  是    ✓     pdftoppm version 26.08.0                                     
-fc-match  否    ✓     fontconfig version 2.18.3                                    
+chrome    是    ✓     Google Chrome 155.0.8059.85
+pdftoppm  是    ✓     pdftoppm version 26.08.0
+fc-match  否    ✓     fontconfig version 2.18.3
 
-关键字体        状态  实际匹配                   
+关键字体        状态  实际匹配
 --------------  ----  ---------------------------
 PingFang SC     ✓     PingFang SC,蘋方-簡,苹方-简
-Noto Sans SC    ✓     Noto Sans SC               
-Songti SC       ✓     Songti SC,宋體-簡,宋体-简  
-Arial           ✓     Arial                      
-Helvetica Neue  ✓     Helvetica Neue             
-Inter           ✓     Inter                      
+Noto Sans SC    ✓     Noto Sans SC
+Songti SC       ✓     Songti SC,宋體-簡,宋体-简
+Arial           ✓     Arial
+Helvetica Neue  ✓     Helvetica Neue
+Inter           ✓     Inter
 
 ✓ 必需工具齐全
   耗时 0.8s
@@ -124,11 +124,11 @@ $ python3 cli/htmlppt.py verify \
 
 页  MAE    diff>16%  diff>48%
 --  -----  --------  --------
-1   7.66   5.05      3.76    
-2   3.99   3.83      2.46    
-3   3.98   4.05      2.53    
-4   5.06   4.26      3.14    
-5   10.86  9.92      7.55    
+1   7.66   5.05      3.76
+2   3.99   3.83      2.46
+3   3.98   4.05      2.53
+4   5.06   4.26      3.14
+5   10.86  9.92      7.55
 
   合计  5 页 · 平均 MAE 6.31 · >16 5.42% · >48 3.89%
   对比图 cli/.runs/verify/compare.png
@@ -148,14 +148,14 @@ $ python3 cli/htmlppt.py bench
 bench · 引擎基准矩阵（bench/runs/*/score.json）
 引擎         页数  覆盖  a:t  p:sp  p:pic  表  cust  grad  整页图  MAE    >16%   闸门  耗时s
 -----------  ----  ----  ---  ----  -----  --  ----  ----  ------  -----  -----  ----  -----
-ours         5/5   100%  89   108   2      1   5     1     0       7.03   6.96   6/6   10.5 
+ours         5/5   100%  89   108   2      1   5     1     0       7.03   6.96   6/6   10.5
 hasasasa     5/5   100%  72   96    7      0   0     0     1       21.14  14.85  5/6   536.7
-gx           5/5   100%  107  196   0      0   15    0     0       19.7   24.71  6/6   1.81 
-yuna78       5/5   100%  107  196   0      0   15    0     0       17.23  17.06  6/6   2.02 
-mmoollee     5/5   100%  89   100   5      1   0     0     2       16.59  18.62  4/6   2.0  
-designarena  5/5   100%  81   111   4      0   0     1     0       22.54  16.65  5/6   4.0  
-junyuaini    5/5   100%  83   101   4      1   0     1     1       56.08  26.04  5/6   7.14 
-abdelkrimkr  5/5   100%  99   104   1      0   0     0     0       25.11  30.22  4/6   1.15 
+gx           5/5   100%  107  196   0      0   15    0     0       19.7   24.71  6/6   1.81
+yuna78       5/5   100%  107  196   0      0   15    0     0       17.23  17.06  6/6   2.02
+mmoollee     5/5   100%  89   100   5      1   0     0     2       16.59  18.62  4/6   2.0
+designarena  5/5   100%  81   111   4      0   0     1     0       22.54  16.65  5/6   4.0
+junyuaini    5/5   100%  83   101   4      1   0     1     1       56.08  26.04  5/6   7.14
+abdelkrimkr  5/5   100%  99   104   1      0   0     0     0       25.11  30.22  4/6   1.15
 
   8 个引擎有分数 · 矩阵 bench/matrix.json
 ```
@@ -167,14 +167,14 @@ $ python3 cli/htmlppt.py bench --quick
 bench · 引擎基准矩阵（bench/runs/*/score.json）
 引擎         页数  MAE    >16%   闸门  耗时s
 -----------  ----  -----  -----  ----  -----
-ours         5/5   7.03   6.96   6/6   10.5 
+ours         5/5   7.03   6.96   6/6   10.5
 hasasasa     5/5   21.14  14.85  5/6   536.7
-gx           5/5   19.7   24.71  6/6   1.81 
-yuna78       5/5   17.23  17.06  6/6   2.02 
-mmoollee     5/5   16.59  18.62  4/6   2.0  
-designarena  5/5   22.54  16.65  5/6   4.0  
-junyuaini    5/5   56.08  26.04  5/6   7.14 
-abdelkrimkr  5/5   25.11  30.22  4/6   1.15 
+gx           5/5   19.7   24.71  6/6   1.81
+yuna78       5/5   17.23  17.06  6/6   2.02
+mmoollee     5/5   16.59  18.62  4/6   2.0
+designarena  5/5   22.54  16.65  5/6   4.0
+junyuaini    5/5   56.08  26.04  5/6   7.14
+abdelkrimkr  5/5   25.11  30.22  4/6   1.15
 
   8 个引擎有分数 · 矩阵 bench/matrix.json
 ```
