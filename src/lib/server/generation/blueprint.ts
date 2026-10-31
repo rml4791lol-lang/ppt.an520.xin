@@ -49,9 +49,12 @@ function saveDeckBlueprint(deckId: string, cache: BlueprintCache, config: Genera
   }
 }
 
-/** 蓝图失效指纹：风格包 + 页型/标题序列任一变化即重算。 */
+/** 蓝图提示词版本：提示词口径改写后递增，让旧缓存自动重算。 */
+const BLUEPRINT_PROMPT_VERSION = '2026-10-31'
+
+/** 蓝图失效指纹：提示词版本 + 风格包 + 页型/标题序列任一变化即重算。 */
 function fingerprintOf(deck: DeckRow, slides: DeckSlideRow[]): string {
-  const text = `${deck.stylePackId}|${deck.title}|${slides.map((s) => `${s.pageType}:${s.title}`).join('|')}`
+  const text = `${BLUEPRINT_PROMPT_VERSION}|${deck.stylePackId}|${deck.title}|${slides.map((s) => `${s.pageType}:${s.title}`).join('|')}`
   let hash = 2166136261
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index)
@@ -75,11 +78,11 @@ function buildBlueprintPrompt(deck: DeckRow, slides: DeckSlideRow[], pack: Resol
       : '用户未指定风格包，按通用专业演示风处理。',
     `页面大纲（共 ${slides.length} 页，以下列出前 ${Math.min(slides.length, 8)} 页）：\n${pageLines}`,
     '',
-    '请直接输出规范正文，分四节，每节 2-4 条具体、可执行的规则；不要解释、不要复述题目、不要使用占位符：',
-    '一、画面氛围：整体气质、光照与空间感的统一基调。',
-    '二、色彩与材质：背景、主色、强调色、辅助色的分工与质感倾向（描述色彩倾向与关系，不堆色值）。',
-    '三、版式与内容元素：标题层级、正文容器形态、图标与配图的风格边界。',
-    '四、渲染方式：摄影、扁平插画或 3D 的选用规则与禁区。',
+    '请直接输出规范正文，分四节，每节 2-4 条具体、可执行的规则；规则必须写成可落笔的数值或可判定的选择，禁止形容词堆砌与氛围描写；不要解释、不要复述题目、不要使用占位符：',
+    '一、画面基调：底色、面、线三层的层级关系与对比度，写清哪层压哪层。',
+    '二、色彩与材质：主色、强调色、中性色各给 1-2 个 hex 色值；材质只用纯色、1px 细边、单层轻投影，不用光效与半透明叠加。',
+    '三、版式与内容元素：栅格列数、页边距、标题区高度占比、正文区块数量上限、四级字号阶梯（pt）。',
+    '四、渲染方式：明确选用扁平矢量、实拍或线稿中的哪一种，并写明禁用项（发光、渐变光带、粒子、3D 玻璃拟态、霓虹描边）。',
   ].filter(Boolean).join('\n')
 }
 

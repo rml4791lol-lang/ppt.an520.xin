@@ -523,6 +523,33 @@ console.log('\n[2b] 页型归一 + 场景推断 + 原创风格 DNA + 逐页参�
     bareStages.length === 8 && bareStages.filter((stage) => stage.text.length > 0).length === 6);
   check('styleDirective 注入视觉关键词行', stylePacks.styleDirective(pack).includes('现有样张视觉关键词：'));
   check('resolveStylePack 透出包数据视觉关键词', Array.isArray(pack.visualKeywords) && pack.visualKeywords.length >= 6);
+  // 反「AI 味」回归面：提示词必须给可落笔的版面数值，风格关键词不得回到光效/渐变空词。
+  check('提示词含可量化版面规格（字号阶梯/安全边距/栅格），不再只给形容词',
+    p1.includes('版面规格（硬性数值') && p1.includes('字号阶梯固定四级')
+      && p1.includes('安全边距 6%') && p1.includes('留白面积不低于全页 25%')
+      && p1.includes('行高为字号的 1.6 倍') && p1.includes('每行 18-26 字')
+      && p1.includes('圆角统一在 4-8px'));
+  const contentPrompt = stylePacks.buildSlideImagePrompt(
+    { ...slide, pageType: '痛点分析', title: '痛点分析' }, pack,
+  );
+  check('提示词保留否定式画法清单与人味许可',
+    p1.includes('避免这些一眼假的画法') && p1.includes('三张等宽卡')
+      && p1.includes('每段标题配 emoji') && p1.includes('允许人做的痕迹'));
+  check('页型协议附带版式坐标数值',
+    p1.includes('本组版式坐标：') && contentPrompt.includes('标题区固定占顶部 12%-15%'));
+  const slopTokens = ['渐变', '光效', '发光', '霓虹', '玻璃拟态', '弥散', '磨砂', '粒子', '全息', '光带', '光晕', '光斑', '光线'];
+  const slopHits = STYLE_PACKS.flatMap((item) => item.visualKeywords
+    .filter((keyword) => slopTokens.some((token) => keyword.includes(token)))
+    .map((keyword) => `${item.name}:${keyword}`));
+  check('风格关键词不含光效/渐变类空词（AI 味源头）', slopHits.length === 0, slopHits.slice(0, 5).join(' | '));
+  const blueprintSrc = readFileSync(new URL('../src/lib/server/generation/blueprint.ts', import.meta.url), 'utf8');
+  check('全局视觉规范要求 hex 色值与禁用项，不产出形容词氛围',
+    blueprintSrc.includes('各给 1-2 个 hex 色值') && blueprintSrc.includes('禁用项（发光、渐变光带、粒子、3D 玻璃拟态、霓虹描边）')
+      && !blueprintSrc.includes('画面氛围：整体气质'));
+  const engineSrc = readFileSync(new URL('../src/lib/server/engine.ts', import.meta.url), 'utf8');
+  check('大纲提示词内置反 AI 腔文案纪律（标题结论句/要点不再固定 3 条/套话配额）',
+    engineSrc.includes('可被反驳的结论句') && engineSrc.includes('全篇不得固定在 3 条或 4 条')
+      && engineSrc.includes('不得进入 title'));
   check('每个公开风格包都有原创设计 DNA 和有效封面样张', STYLE_PACKS.every((item) => {
     const dna = styleDna.getStyleDesignDna(item.id);
     return dna.palette.length >= 4 && dna.grid.length > 20 && existsSync(path.join(process.cwd(), 'public', item.previewUrl.replace(/^\/+/, '')));

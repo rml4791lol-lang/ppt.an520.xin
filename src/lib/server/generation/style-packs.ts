@@ -19,6 +19,11 @@ import { cleanString } from './types'
 export const EDITABLE_FRIENDLY_CLAUSE =
   '中文统一使用 Noto Sans SC（思源黑体同源字形），英文与数字统一使用 Inter；只使用清晰可读的常规无衬线字形，水平排版，不得混用装饰字体，不得使用艺术字、变形字或竖排特效；文字只出现在纯色或低噪背景上，保持高对比度，不得压盖照片或复杂纹理；标题、正文、数字、图表和照片分别占用独立且边界清楚的矩形区域，照片区域不得承载文字，装饰线不得穿过文字；单页不超过 5 个主要文本组；版式遵循清晰栅格，内容块边界分明、边缘对齐、留白充足；图表与图示使用扁平纯色矢量风格；避免多层透明叠加、复杂蒙版、过细描边和跨区斜切文字；每段文案只出现一次；不得渲染任何设计说明、坐标、字号、色值等元信息；不得出现水印、占位符或虚构 UI 元素。'
 
+// 版面规格：把「专业排版」翻译成模型能落笔的数值。缺少这些数值时模型只能退回海报式
+// 居中大标题 + 光效背景，这是站内被反馈「AI 味重」的主要成因之一。
+export const SLIDE_LAYOUT_SPEC =
+  '版面规格（硬性数值，不是建议）：画布 16:9；四边安全边距 6%（按短边计），任何文字不越界；基础栅格 12 栏，内容页只用 2-4 个主区块，区块间距取 24 或 32px 的整数倍；字号阶梯固定四级——页标题 40-48pt、二级小标题 22-26pt、正文 16-20pt、标注 12-14pt，同级字号全页一致；正文行高为字号的 1.6 倍，中文每行 18-26 字，行宽超了就收窄文本框而不是缩字号；一页 1 个视觉重心（最多 2 处强调）、最多 5 个文本组、2 个主色 + 1 个中性色，强调色每页不超过 2 处；背景单一实色，需要层次时用同色系三级明度；圆角统一在 4-8px 且同页一种，分隔只用 1px 细线，平光照明、无投影无高光；正文左对齐，同类元素等宽等高且边缘互相对齐；留白面积不低于全页 25% 且集中成块，标题四周至少留一个字号高度的空白；装饰只用细线、色块与编号三种，每类都要对应一处内容分组。'
+
 export const CONTENT_RELEVANCE_CLAUSE =
   '每一张配图、图标、图表和装饰都必须服务于本页标题与正文中的具体实体或关系；若没有直接相关且可信的图像，就使用可解释的扁平结构图、流程图或留白，不得用通用 AI 大脑、发光机器人、全息圆环、随机粒子、无关城市天际线、握手照或“科技蓝光人物”填充。不得生成页面文案未提供的 Logo、二维码、奖项、证书、专利号、政策文件、公章、人名、机构名、客户、案例或数据；不得把参考图中的文字、品牌、数字、人物和主题复制进本页。'
 
@@ -165,7 +170,7 @@ export function styleDirective(pack: ResolvedStylePack | null): string {
   const parts = [
     pack.stylePrompt ? `已有视觉摘要：${pack.stylePrompt}` : '',
     pack.blueprint ? `补充视觉规范：${pack.blueprint}` : '',
-    `AnPPT 原创设计 DNA：\n- 适用场景：${dna.scenarioLabels.join('、')}\n- 色彩系统：${pack.palette.join('、')}\n- 栅格系统：${dna.grid}\n- 图形母题：${dna.motif}\n- 配图策略：${dna.imagery}\n- 数据表达：${dna.dataVisualization}\n- 信息密度：${dna.density}\n- 禁止项：${dna.avoid.join('、')}`,
+    `AnPPT 原创设计规范：\n- 色板（只用这几个色值）：${pack.palette.join('、')}\n- 栅格与密度：${dna.grid} ${dna.density}\n- 图形母题：${dna.motif}\n- 配图与数据：${dna.imagery} ${dna.dataVisualization}\n- 禁止：${dna.avoid.join('、')}`,
     pack.visualKeywords.length > 0 ? `现有样张视觉关键词：${pack.visualKeywords.join('、')}` : '',
     '风格包名称仅用于用户识别；不得复刻任何具体品牌的 Logo、产品界面、专属图形或受保护版式。',
   ]
@@ -446,7 +451,10 @@ export function buildSlideImagePromptStages(
   const context = inferPresentationContext(slide, pack, deck)
   const texts: Record<SlidePromptStageKey, string> = {
     'context-task': [
-      '为一张 16:9 专业演示 PPT 幻灯片生成完整的最终视觉图（整页一张图，含全部排版与文字）。目标不是“好看的通用海报”，而是让真实学校、企业或工作单位可以直接用于汇报与评审。',
+      '为一张 16:9 专业演示 PPT 幻灯片生成完整的最终视觉图（整页一张图，含全部排版与文字）。产物是能直接投屏与打印的页面版式，不是海报：层级由字号、位置与留白决定，背景用单一实色，层次用同色系明度区分，装饰只用细线与色块。',
+      SLIDE_LAYOUT_SPEC,
+      '避免这些一眼假的画法：居中大标题 + 顶部小标签 + 三张等宽卡的三段式、所有卡片同半径圆角配软投影、每段标题配 emoji、玻璃拟态与弥散光晕、无意义粒子与科技光带、每页一模一样的装饰页眉、纯黑正文配纯白底。',
+      '允许人做的痕迹：真实摄影、手写批注、轻微不对称与实物纹理，主观表达优先于机械对称。',
       `主题语境：${context.audienceLabel} · ${context.domainLabel}\n${context.audienceDirective}\n${context.imageryDirective}\n${context.evidenceDirective}`,
     ].join('\n\n'),
     'deck-consistency': [
@@ -468,7 +476,7 @@ export function buildSlideImagePromptStages(
         ? `页面文案（必须逐字完整呈现，不得增删、不得改写；同一句只出现一次）：\n${copy.map((line) => `- ${line}`).join('\n')}`
         : '',
       copy.length > 0
-        ? '防幻觉约束：本页只允许出现上方「页面标题」与「页面文案」给出的文字；参考样张中的任何文字块、数字、Logo 一律视为版式占位，严禁带入本页；严禁虚构标语、单位、注释或任何装饰性字符。'
+        ? '防幻觉约束：本页只允许出现上方「页面标题」与「页面文案」给出的文字；参考样张中的文字块、数字、Logo 一律视为版式占位，不得带入本页。'
         : '',
     ].filter(Boolean).join('\n\n'),
     'layout-imagery': slide.visualNote ? `版式/配图建议（只能在上述信息任务与页型框架内执行）：${slide.visualNote}` : '',
