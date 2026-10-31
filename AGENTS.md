@@ -10,6 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # 项目约定（先于一切编码动作阅读）
 
+- **目录铁律**：所有开发只在本目录 `/Users/an/Desktop/Atlas/ppt.an520.xin网站` 以下——代码、分支、worktree、实验副本、产物脚本都在这里；不得在 `~`、`~/Desktop`、`~/ZCodeProject`、`~/.cursor/worktrees`、`~/.config/superpowers/worktrees` 等处新建 anppt 副本。并行开发用 `npm run worktree -- <name>`（生成目录内的 `.worktrees/<name>`）。
 - 系统全貌唯一权威入口：`docs/DEBUG-HANDBOOK.md`（部署/链路/计费/恢复/禁区）；改完代码必须同步更新对应小节。
 - 架构与开发流程：`docs/DEVELOPMENT.md`（金字塔分层、最小改动、开关板三步、注释纪律、测试与提交）。
 - 动手前先 grep 现有实现：扣费/退星/幂等键/懒恢复/配置快照/功能开关均已成例，照抄模式，不另发明。
