@@ -42,7 +42,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 生图：配 `ANPPT_V2_IMAGE_BASE_URL` / `ANPPT_V2_IMAGE_API_KEY` / `ANPPT_V2_IMAGE_MODEL`（以及灾备 `ANPPT_V2_IMAGE_BACKUP_*`）。类型用 **Runtime Secret**。
 - LLM：不要把本机隧道地址带上云。若 `ANPPT_V2_LLM_BASE_URL` 含 `127.0.0.1`/`localhost`，`scripts/cloud-dev.sh` 会改走 `ANPPT_V2_LLM_BACKUP_*`（DeepSeek 官方）。
 - 转可编辑：另配 `ANPPT_V2_CODIA_API_KEY`（本机 `.env.local` 目前也没有这项）。
-- 禁止把 `.env.local` 提交进 Git；本仓库是 **private**（2026-10-26 迁至 `rml4791lol-lang/ppt.an520.xin`，本地唯一开发目录 `/Users/an/Desktop/Atlas/ppt.an520.xin网站`）。
+- 禁止把 `.env.local` 提交进 Git；本仓库自 2026-10-31 起 **public**（Apache-2.0，`rml4791lol-lang/ppt.an520.xin`，本地唯一开发目录 `/Users/an/Desktop/Atlas/ppt.an520.xin网站`）——任何提交都会立刻公开，商户号/密钥/服务器凭据一律不入库。
 - 日常验证用 mock 测试：`node scripts/test-backend.mjs` 与 `node scripts/test-generation.mjs`。真实生图/Codia 会扣上游额度，用户没点名就不要打付费接口。
 - 密钥注入发生在 Agent **启动时**；改完 Secrets 要新开一轮 Cloud Agent。
 - 未 git push 的本地改动不会出现在云端会话里。
