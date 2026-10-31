@@ -1,68 +1,116 @@
-# AnPPT v2（ppt.an520.xin）
+# AnPPT v2
 
-AI PPT 生成工作台：上传文档 / 按页录入 → 大纲 → 内容梳理 → 选风格 → 逐页生图 → 导出图片版 PPTX。
-Next.js 16 全栈单体（App Router + Route Handlers + node:sqlite），无外部服务依赖，单机房部署。
+**把文档变成能直接讲、还能改的 PPT。**
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) · 线上服务 <https://ppt.an520.xin>
+上传 Word / PDF / Markdown，或按页录入要点 —— 经过大纲、内容梳理、风格选择，逐页生成配图，最后导出可直接放映的 PPTX，或继续在 Office / WPS 里二次编辑的可编辑档。
 
-> 本项目以 [Apache License 2.0](LICENSE) 开源：可自由使用、修改、分发（含商业用途），保留版权与许可声明即可。
-> 线上服务由维护者独立运营；`.env`、支付证书、服务器凭据不入库。
+Next.js 16 全栈单体（App Router + Route Handlers + `node:sqlite`），不依赖 Redis / MQ / 对象存储，**一台机器就能跑起来**。
 
-## 业务规则（已冻结）
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) · [在线体验](https://ppt.an520.xin) · [文档](docs/) · [路线图](ROADMAP.md) · [变更日志](CHANGELOG.md)
 
-- 注册送 100🌟；登录支持邮箱 OTP + 账号密码
-- 计费：逐页生成 10🌟/页，**失败自动退还**；大纲 / 内容梳理 / 解析 / 图片版导出免费
-- 套餐：¥9.9/100🌟、¥39.9/500🌟（推荐）、¥79.9/1000🌟、¥149.9/2000🌟；支持兑换码
-- 支付：微信 Native 扫码 + 支付宝（epay 收银台），回调验签 + 金额校验 + 幂等履约
-- 可编辑导出双档：WPS 免费通道优先、Image2PPT / Codia 自动回退，20🌟/页（全量开放），单次最多 50 页且上限取决于当前可用转换通道（>20 页自动跳过 Codia，21–50 页来源先转 JPEG）；轻量文字可编辑档 5🌟/页、产品上限 50 页（VLM 文字覆盖层，beta 开关，仅测试用户）
-- 新功能走功能开关板：off/beta/public 三态，测试用户先行验收，见 `docs/DEVELOPMENT.md` §4
+---
 
-## 目录
+## 为什么做这个
+
+从素材到能讲的 PPT，通常要花几个小时：找模板、排大纲、配图、调字号、导 PDF 再导 PPTX。现有 AI 工具多数止步于「生成大纲和文字」，交到你手里的还是需要重排的半成品。
+
+AnPPT 的目标是把 **文档 → 逐页配图 → 可编辑 PPTX** 这条链路做成可自部署、可扩展的基础设施：生成要能中断续跑、失败要退币、导出要能在 Office 里接着改。
+
+## 核心能力
+
+| 能力       | 说明                                                                                                              |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| 多形态输入 | 上传文档解析成页，或按页手工录入；单页工作台与整套工作台共用同一套视觉计划                                        |
+| 生成链路   | 大纲 → 内容梳理 → 风格选择 → 逐页配图 → 图片版 PPTX                                                               |
+| 可编辑导出 | WPS / Image2PPT / Codia 多通道按页数与能力自动选择、失败回退；另有轻量文字可编辑档（beta）                        |
+| 账户与计费 | 邮箱 OTP + 密码登录、星币台账、逐页扣费、**失败自动退币**、套餐与兑换码、微信 Native / 支付宝回调履约             |
+| 任务可靠性 | deck 状态机、幂等重放、崩溃窗口恢复、恢复源注册表、读路径懒恢复 —— 断点续跑不重复扣费                             |
+| 插件运行时 | 价格表、模型清单、UI 入口收敛为插件；平台只依赖 `ctx` 契约（[ADR-0001](docs/adr/0001-plugin-runtime-advance.md)） |
+| 生图池     | 按单价排序 + 同价轮换 + 逐站回退 + 站内多 key 轮换 + 死 key 冷却 + 站点记账                                       |
+| 运营与排障 | 功能开关板（off/beta/public）、问题日志落盘、健康自查、60 个 Route Handler                                        |
+
+## 生成链路
 
 ```
-src/
-  app/                    页面（(main) 布局组：首页/风格库/充值/积分/项目/工作台/单页/美化）
-  app/api/                Route Handlers（auth/credits/recharge/deck/single-page/projects/exports/tools）
-  instrumentation.ts      进程启动钩子：服务就绪前装配插件 profile（缺服务键即启动失败）
-  modules/                功能模块（自包含目录：server/+client/+README）：ppt-replicate / editable-export
-  plugins/                插件（plugin.ts+README，ctx 服务协作）：pricing / models + default-profile.ts
-  components/             平台级共享客户端组件
-  data/                   风格包/套餐/规则等静态数据
-  lib/plugin/             插件运行时：types(契约) / ctx(服务注册表) / profile(配置单 boot + 启动期装配) / default(启动期组合根)
-  lib/server/             服务端平台件：auth(OTP+会话) credits(台账幂等) recharge(订单履约)
-                          payments/(wechat native + epay) documents(解析) exports(pptx)
-                          generation/(deck 状态机/DSL/生图/单页运行时/项目) problem-log(问题日志落盘/读取)
-scripts/
-  tests/                  模块测试（由两套主套件注入 ctx 调用）
-  test-backend.mjs        B 层：184 项（注册/OTP/积分/订单/回调/兑换码/开关板/客户端IP口径/mock生产硬拒/页数上限/问题日志追踪与健康/共享组件复用）
-  test-generation.mjs     C 层：1019 项（解析/DSL/引擎+兜底/状态机/扣费退还/计费运行模块（整套+单页+转底座+可编辑导出，顺序+重放不退款+多单位+崩溃窗口+失败文案映射）/恢复运行源注册表（假源+注入时钟+四域同轮收敛+续跑不退星）/恢复两个入口（整批扫描 + 读路径单条收敛共享同一结算）/可编辑导出续跑（心跳+在飞判活、480s 上传窗口、推进既有上游任务）/视觉计划（页型单源+参考优先级+读取顺延+复刻模式+改图意图话术+蓝图降级与缓存；单页/复刻共用）/导出/可编辑单入口（deck/单页/上传 source 适配器+可序列化 view+临时源文件清理+唯一页数上限门与文案）/可编辑通道接口（能力声明+registry 页数过滤+通道能力上限与发起页数门+JPEG 大套压缩+假通道）/WPS+Image2PPT+Codia 多通道/轻量文字档/生图池（按单价排序 + 同价同模型轮换 + 逐站回退 + 站内多 key 轮换 + 死 key 冷却 + 站点记账）/图片级编辑工具/复刻PPT 批量任务/幂等重放/LLM频控/插件运行时/typed intent 工作台与解析器/deck 分派处理器注册表（运行时断言）/客户端动作执行器（deck + 单页，收费动作全登记+承诺单源）/整套与单页扣费键（归一与账本同键）/转底座接入（在飞键与崩溃窗口））
-  ts-hooks.mjs            node 直跑 TS 的 resolve 钩子（含 @/ 别名）
-docs/                     DEBUG-HANDBOOK（系统全貌）/ DEVELOPMENT（架构与流程）/ LOGGING（日志变更、上线与监控）
-deploy/                   systemd 单元 / 部署脚本 / Caddy 切换块 / Runbook
+文档 / 手工录入
+    │  解析成页（documents）
+    ▼
+大纲 ── 内容梳理 ── 风格选择
+    │
+    ▼  视觉计划（visual plan）
+逐页配图 ── 生图池调度（按单价、逐站回退）
+    │
+    ├── 图片版 PPTX（合成即用）
+    └── 可编辑导出（WPS → Image2PPT → Codia 自动降级）
 ```
 
-## 生成链状态机
+每一页的生成与计费都挂在同一套幂等键上：进程崩溃、用户刷新、任务重跑都不会重复扣星币。
 
-`parse → outlined → structured → confirmed(内容冻结) → generating → generated|partial`
+## 技术架构
 
-- 冻结后内容类 action 一律 409（CONTENT_LOCKED），需 unlock-structure 解锁（作废旧图）
-- 按页录入（paged-copy-v2）跳过 LLM 大纲，直接 outlined → structure
-- 大纲/梳理优先走 PPT 引擎内部 API，不可达时降级本地 LLM 兜底
-  （契约：`image2-studio-v2/docs/ANPPT-V2-INTEGRATION-CONTRACT.md`，schema/DSL v1 已冻结）
+- **运行时**：Next.js 16.3（App Router + Route Handlers）、React 19.2、TypeScript、`node:sqlite`
+- **部署**：Ubuntu 单机 + systemd + Caddy 反代；`deploy/` 下有一键脚本
+- **分层**：
 
-## 开发
+```
+src/app          页面与 API（(main) 布局组 + 60 个 route.ts）
+src/modules      自包含功能模块：server/ + client/ + README + 契约测试
+src/plugins      插件：plugin.ts + README（pricing / models / default-profile）
+src/lib/plugin   插件运行时：types 契约 / ctx 服务注册表 / profile 启动期装配
+src/lib/server   平台件：auth / credits / recharge / payments / documents / exports / generation / problem-log
+```
+
+平台与功能之间只通过契约通信：换报价、换模型、加一个导出通道，都只写插件，不动平台代码。
+
+## 快速开始
 
 ```bash
-npm install                 # prepare 钩子把 core.hooksPath 指向 .githooks，提交前自动跑快集
-npm run dev                 # http://localhost:3000
-npm run gate                # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build
-npm run gate:fast           # 迭代快集：跳过 build 与两套测试
+node -v                       # 需要 Node 22+
+npm ci
+cp .env.example .env.local    # 按注释填；不填则生图 / LLM / 支付相关接口不可用
+npm run dev
 ```
 
-本地联调常用 env（见 `.env.example` 全量注释）：
-`OTP_DEV_ECHO=true`（验证码回显）、`WECHAT_PAY_MOCK=true`（假码+mock 回调）、
-`ANPPT_V2_LLM_*`（DeepSeek 官方）、`ANPPT_V2_IMAGE_*`（sqface 生图，与 LLM 密钥分开）。
+打开 <http://localhost:3000>。只想看页面与流程，不接真实生图，可以先用 mock 测试跑通：
 
-## 部署
+```bash
+node scripts/test-backend.mjs
+node scripts/test-generation.mjs
+```
 
-见 `deploy/README.md`（Git production 分支 + 不可变 release 发布 + Caddy 切换/回滚）。本地与远端历史分叉、`deploy.sh` 的 push 推不动时用 `npm run release -- --dry-run` 先确认基线（补丁上传 + 校验和 + 树哈希比对，见手册 §2）。
+## 工程门禁
+
+```bash
+npm run gate:fast   # 迭代用：分支检查 / 标记扫描 / lint / typegen / tsc
+npm run gate        # 收尾用：再加护栏夹具 + B 层 184 项 + C 层 1019 项断言
+```
+
+提交前钩子与 CI 跑的是同一条命令，门不过就不提交。护栏夹具自带「会红」用例，证明门真的会拦住问题，而不是摆设。
+
+## 文档索引
+
+| 文档                                               | 内容                                                          |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| [`docs/DEBUG-HANDBOOK.md`](docs/DEBUG-HANDBOOK.md) | 系统全貌：部署、链路、计费、恢复、禁区                        |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)       | 架构分层、最小改动原则、功能开关三步、注释纪律                |
+| [`docs/TIMELINE.md`](docs/TIMELINE.md)             | 真实项目时间线（2026-07 立项 → 2026-10 v2 重构 → 10-31 开源） |
+| [`docs/adr/`](docs/adr/)                           | 架构决策记录（插件运行时等）                                  |
+| [`docs/migration/`](docs/migration/)               | 迁移记录与资产盘点                                            |
+
+## 项目演进
+
+项目自 **2026-07** 起持续开发：v1 用于国赛路演与课程汇报材料生产，2026-10 完成 v2 架构重构并开源。完整历程见 [docs/TIMELINE.md](docs/TIMELINE.md)，未来计划见 [ROADMAP.md](ROADMAP.md)，版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 参与贡献
+
+欢迎 issue 与 PR，先读 [CONTRIBUTING.md](CONTRIBUTING.md) 与上述三份文档。改动请保持最小 diff，收尾跑 `npm run gate`。
+
+## 许可
+
+[Apache License 2.0](LICENSE) —— 可自由使用、修改、分发（含商业用途），保留版权与许可声明即可。
+
+线上服务 <https://ppt.an520.xin> 由维护者独立运营；`.env`、支付证书、服务器凭据不入库。
+
+## 免责声明
+
+本项目按「现状」提供，不承诺任何明示或默示担保。使用者需自行承担部署、计费、支付合规与生成内容的法律责任；生成内容请遵守所在地区法规与平台规范。
