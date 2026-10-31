@@ -26,7 +26,7 @@ if ! git push origin "HEAD:refs/heads/$BRANCH"; then
 fi
 
 echo "== 2/3 server pull, build, stage, restart =="
-ssh "$SERVER" "sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production '$BRANCH'"
+ssh "$SERVER" "sudo -n -u ubuntu /opt/anppt-v2/bin/deploy-production '$BRANCH' '$(git rev-parse HEAD)'"
 
 echo "== 3/3 verify deployed commit and public health =="
 LOCAL_COMMIT="$(git rev-parse HEAD)"

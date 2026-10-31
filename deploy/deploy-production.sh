@@ -7,6 +7,9 @@ REPO=/opt/anppt-v2/source
 CURRENT=/opt/anppt-v2/current
 RELEASES=/opt/anppt-v2/releases
 BRANCH="${1:-production}"
+# 可选：调用方期望部署的 commit。origin 落后于本地时（push 失败、拉取失败），
+# 服务器会安静地构建旧 commit 并报成功——这里在构建前就拦下。
+EXPECTED="${2:-}"
 LOCK=/var/lock/anppt-v2-deploy.lock
 
 exec 9>"$LOCK"
@@ -30,13 +33,25 @@ else
 fi
 git merge --ff-only "origin/$BRANCH"
 
+RESOLVED="$(git rev-parse HEAD)"
+ADVERTISED="$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)"
+if [[ -n "$ADVERTISED" && "$ADVERTISED" != "$RESOLVED" ]]; then
+  echo "refusing deploy: origin/$BRANCH advertises ${ADVERTISED:0:12} but the checkout resolved to ${RESOLVED:0:12}" >&2
+  echo "the push probably did not reach origin; re-push and retry" >&2
+  exit 1
+fi
+if [[ -n "$EXPECTED" && "$EXPECTED" != "$RESOLVED" ]]; then
+  echo "refusing deploy: expected commit ${EXPECTED:0:12} but origin/$BRANCH is ${RESOLVED:0:12}" >&2
+  exit 1
+fi
+
 INSTALLED_HELPER=/opt/anppt-v2/bin/deploy-production
 if [[ -f "$REPO/deploy/deploy-production.sh" ]] && ! cmp -s "$REPO/deploy/deploy-production.sh" "$INSTALLED_HELPER"; then
   echo "== update installed deploy helper for future runs =="
   sudo -n install -m 0755 "$REPO/deploy/deploy-production.sh" "$INSTALLED_HELPER"
 fi
 
-COMMIT="$(git rev-parse HEAD)"
+COMMIT="$RESOLVED"
 SHORT="${COMMIT:0:12}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 RELEASE="$RELEASES/${SHORT}-${STAMP}"
