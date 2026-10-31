@@ -82,7 +82,7 @@ node scripts/test-generation.mjs
 
 ```bash
 npm run gate:fast   # 迭代用：分支检查 / 标记扫描 / lint / typegen / tsc
-npm run gate        # 收尾用：再加护栏夹具 + B 层 184 项 + C 层 1019 项断言
+npm run gate        # 收尾用：再加护栏夹具 + B 层 184 项 + C 层 1034 项断言
 ```
 
 提交前钩子与 CI 跑的是同一条命令，门不过就不提交。护栏夹具自带「会红」用例，证明门真的会拦住问题，而不是摆设。

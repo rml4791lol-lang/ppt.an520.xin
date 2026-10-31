@@ -122,7 +122,7 @@ NODE
 npm run gate         # 完整门：分支范围空白/冲突标记 → lint → typegen+tsc → 两套测试 → build（全 mock，零真实付费调用）
 npm run gate:fast    # 快集：跳过 build 与两套测试
 npm run test:guardrails  # 护栏自检：用坏夹具证明门/钩子/工作树/发布脚本会红
-# 单跑某一层（排查用）：node scripts/test-generation.mjs（1019 断言）/ node scripts/test-backend.mjs（184 断言）
+# 单跑某一层（排查用）：node scripts/test-generation.mjs（1034 断言）/ node scripts/test-backend.mjs（184 断言）
 node scripts/e2e-ui-audit.mjs        # Playwright 真机 UI 审查（需要登录态，见脚本头注释）
 BASE_URL=http://localhost:3000 node scripts/e2e-fullchain.mjs  # ⚠️ 真实生图扣费（约 $0.08），慎用
 ```
