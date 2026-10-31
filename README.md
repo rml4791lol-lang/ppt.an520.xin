@@ -3,6 +3,11 @@
 AI PPT 生成工作台：上传文档 / 按页录入 → 大纲 → 内容梳理 → 选风格 → 逐页生图 → 导出图片版 PPTX。
 Next.js 16 全栈单体（App Router + Route Handlers + node:sqlite），无外部服务依赖，单机房部署。
 
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) · 线上服务 <https://ppt.an520.xin>
+
+> 本项目以 [Apache License 2.0](LICENSE) 开源：可自由使用、修改、分发（含商业用途），保留版权与许可声明即可。
+> 线上服务由维护者独立运营；`.env`、支付证书、服务器凭据不入库。
+
 ## 业务规则（已冻结）
 
 - 注册送 100🌟；登录支持邮箱 OTP + 账号密码

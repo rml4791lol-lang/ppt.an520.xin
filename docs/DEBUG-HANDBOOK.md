@@ -76,7 +76,7 @@ NODE
   - **epay 支付宝收银台（活）**
   - **微信支付 Native 直连（2026-08-20 已上线）**
     - 密钥目录 `/opt/anppt-v2/shared/secrets/`（`600 ubuntu:ubuntu`）：`wechat-pay-private.pem`（商户私钥）、`wechat-pay-platform-public.pem`（平台公钥）。**绝不打印/提交/外传。**
-    - `.env`：`WECHAT_PAY_ENABLED=true`，`WECHAT_PAY_*_PATH`/`_FILE` 指向上述 secrets；商户号 `1747212050`、APP `wxeb7e1885c25df663`、证书序列与 APIv3 已为真值（值本身勿入手册）。
+    - `.env`：`WECHAT_PAY_ENABLED=true`，`WECHAT_PAY_*_PATH`/`_FILE` 指向上述 secrets；商户号 `1747******`、APP `wx*************`、证书序列与 APIv3 已为真值（值本身勿入手册；本仓库公开，真值只在服务器 `.env`）。
     - 回调：`POST /api/recharge/notify/wechat`（平台公钥验签 → 幂等入账）。
     - **mock 硬拒（2026-08-24）**：`NODE_ENV=production` 时 `WECHAT_PAY_MOCK`/`EPAY_MOCK` 被强制关闭（加载期大字告警），免验签回调只存在于非生产，误开不会变免费充值。
 - 频控（进程内固定窗）：登录/注册按 IP+账号；下单/兑换按用户+IP 20/h；**免费 LLM 动作（outline 重生成/structure/拆页）按用户 30 次/10min**（`llm-free`，复用路径不计）；**复刻拆文案**单独走 `replicate-plan` 30 次/10min，不占用大纲桶；**上传按用户 60 次/h**（2026-08-24 加，防零成本刷上游与磁盘）。
