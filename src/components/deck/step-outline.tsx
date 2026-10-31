@@ -3,15 +3,8 @@
 // Step 1 编辑大纲（WORKBENCH-UI-SPEC §4）。
 // 章节/页面卡片、增/删页（撤销 toast）、拖拽重排、拆页 2–5、章节管理、重新生成大纲。
 // 在线编辑标题/原文走 update-slide action（后端该 action 待补，见交接报告风险清单）。
-import { useMemo, useRef, useState } from "react";
-import {
-  CheckIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  PencilIcon,
-  PlusIcon,
-  TrashIcon,
-} from "@/components/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckIcon, PlusIcon } from "@/components/icons";
 import type { DeckSlide, DeckSlideDraft, DeckSlidePatch, SlideRole } from "@/lib/client/deck-api";
 import type { DeckCtx } from "@/components/deck/deck-workbench";
 import { GripIcon, Modal, Spinner } from "@/components/deck/ui";
@@ -36,6 +29,9 @@ interface ChapterGroup {
   name: string;
   slides: DeckSlide[];
 }
+
+/** 内容页缺原文 → 卡片上打「待补原文」，不阻断进入内容梳理 */
+const needsRawText = (slide: DeckSlide) => slide.role === "content" && !slide.rawText.trim();
 
 /** 连续同章节名的页面聚合成章节组 */
 function groupByChapter(slides: DeckSlide[]): ChapterGroup[] {
@@ -67,6 +63,7 @@ export function StepOutline({
     [state.slides],
   );
   const chapters = useMemo(() => groupByChapter(slides), [slides]);
+  const pendingRawCount = useMemo(() => slides.filter(needsRawText).length, [slides]);
   const readOnly = !ctx.availability.contentEditable;
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -193,6 +190,9 @@ export function StepOutline({
           结构总览
           <span className="ml-2 text-sm font-normal text-ink-3">
             {chapters.filter((c) => c.name).length} 章 · {slides.length} 页 · 点击卡片即可编辑内容
+            {pendingRawCount > 0 && (
+              <span className="text-amber-600"> · {pendingRawCount} 页待补原文</span>
+            )}
           </span>
         </h2>
       </div>
@@ -220,59 +220,59 @@ export function StepOutline({
                 </span>
                 <span className="shrink-0 text-xs text-ink-4">{chapter.slides.length} 页</span>
                 {!readOnly && (
-                  <span className="ml-auto flex shrink-0 items-center gap-1">
-                    {chapter.name && (
-                      <>
-                        <button
-                          type="button"
-                          title="重命名章节"
-                          className="rounded-lg p-1.5 text-ink-3 transition hover:bg-card hover:text-ink"
-                          onClick={() => setChapterModal({ kind: "rename", chapter: chapter.name })}
-                        >
-                          <PencilIcon width={13} height={13} />
-                        </button>
-                        <button
-                          type="button"
-                          title="删除章节"
-                          className="rounded-lg p-1.5 text-ink-3 transition hover:bg-card hover:text-danger"
-                          onClick={() => setChapterModal({ kind: "delete", chapter: chapter.name })}
-                        >
-                          <TrashIcon width={13} height={13} />
-                        </button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      title="添加章节过渡页"
-                      onClick={() =>
-                        void withLock(async () => {
-                          await run({
-                            kind: "addSlide",
-                            params: {
-                              atIndex: chapter.slides[0]?.pageIndex ?? slides.length,
-                              slide: { role: "section", chapter: chapter.name, title: chapter.name },
-                            },
-                          });
-                        })
-                      }
-                      className="rounded-lg px-2 py-1 text-xs text-ink-3 transition hover:bg-card hover:text-brand"
-                    >
-                      ＋ 过渡页
-                    </button>
-                    <button
-                      type="button"
-                      title="在该章节末尾新增内容页"
-                      onClick={() =>
-                        void addSlideAfter(
-                          chapter.slides[chapter.slides.length - 1]?.pageIndex ?? slides.length - 1,
-                          chapter.name,
-                        )
-                      }
-                      className="rounded-lg px-2 py-1 text-xs text-ink-3 transition hover:bg-card hover:text-brand"
-                    >
-                      ＋ 内容页
-                    </button>
-                  </span>
+                  <div className="ml-auto flex shrink-0 items-center">
+                    <CardMenu
+                      label="章节操作"
+                      width="w-40"
+                      triggerClassName="rounded-lg px-2 py-1 text-base leading-none text-ink-3 transition hover:bg-card hover:text-ink"
+                      items={[
+                        // 未分章（章节名为空）时保持原语义：不提供重命名/删除
+                        ...(chapter.name
+                          ? [
+                              {
+                                label: "重命名章节",
+                                onSelect: () =>
+                                  setChapterModal({ kind: "rename", chapter: chapter.name }),
+                              },
+                              {
+                                label: "删除章节",
+                                danger: true,
+                                onSelect: () =>
+                                  setChapterModal({ kind: "delete", chapter: chapter.name }),
+                              },
+                            ]
+                          : []),
+                        {
+                          label: "添加过渡页",
+                          title: "添加章节过渡页",
+                          onSelect: () =>
+                            void withLock(async () => {
+                              await run({
+                                kind: "addSlide",
+                                params: {
+                                  atIndex: chapter.slides[0]?.pageIndex ?? slides.length,
+                                  slide: {
+                                    role: "section",
+                                    chapter: chapter.name,
+                                    title: chapter.name,
+                                  },
+                                },
+                              });
+                            }),
+                        },
+                        {
+                          label: "添加内容页",
+                          title: "在该章节末尾新增内容页",
+                          onSelect: () =>
+                            void addSlideAfter(
+                              chapter.slides[chapter.slides.length - 1]?.pageIndex ??
+                                slides.length - 1,
+                              chapter.name,
+                            ),
+                        },
+                      ]}
+                    />
+                  </div>
                 )}
               </div>
 
@@ -305,14 +305,75 @@ export function StepOutline({
                       <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] ${ROLE_TONE[slide.role]}`}>
                         {ROLE_LABEL[slide.role]}
                       </span>
-                      <span className="text-xs text-ink-4">P{slide.pageIndex + 1}</span>
-                      {!readOnly && (
-                        <span
-                          className="ml-auto cursor-grab text-ink-4 opacity-0 transition group-hover:opacity-100"
-                          title="拖动调整顺序"
-                        >
-                          <GripIcon />
+                      <span className="shrink-0 text-xs text-ink-4">P{slide.pageIndex + 1}</span>
+                      {needsRawText(slide) && (
+                        <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                          待补原文
                         </span>
+                      )}
+                      {!readOnly && (
+                        <div className="ml-auto flex shrink-0 items-center gap-1">
+                          <span
+                            className="cursor-grab text-ink-4 opacity-0 transition group-hover:opacity-100"
+                            title="拖动调整顺序"
+                          >
+                            <GripIcon />
+                          </span>
+                          <CardMenu
+                            label="页面操作"
+                            items={[
+                              {
+                                label: "前移",
+                                title:
+                                  slide.pageIndex === 0
+                                    ? "已是第一页，无法前移"
+                                    : "与前一张页面交换位置",
+                                disabled: slide.pageIndex === 0 || operating,
+                                onSelect: () => void moveSlide(slide, -1),
+                              },
+                              {
+                                label: "后移",
+                                title:
+                                  slide.pageIndex === slides.length - 1
+                                    ? "已是最后一页，无法后移"
+                                    : "与后一张页面交换位置",
+                                disabled: slide.pageIndex === slides.length - 1 || operating,
+                                onSelect: () => void moveSlide(slide, 1),
+                              },
+                              {
+                                label: "新增页面",
+                                title: operating ? "正在处理中，请稍候" : "在此页之后新增一页",
+                                disabled: operating,
+                                onSelect: () => void addSlideAfter(slide.pageIndex, slide.chapter),
+                              },
+                              {
+                                label: "AI 拆页",
+                                title: !slide.rawText
+                                  ? "原文为空，无法拆页"
+                                  : operating
+                                    ? "正在处理中，请稍候"
+                                    : "AI 拆分为 2–5 页",
+                                disabled: readOnly || !slide.rawText || operating,
+                                onSelect: () => setSplitTarget(slide),
+                              },
+                              {
+                                label: "删除此页",
+                                title:
+                                  slide.role === "cover"
+                                    ? "封面页不可删除"
+                                    : slides.length <= 1
+                                      ? "至少保留一页"
+                                      : operating
+                                        ? "正在处理中，请稍候"
+                                        : "删除此页",
+                                danger: true,
+                                disabled:
+                                  slide.role === "cover" || slides.length <= 1 || operating,
+                                onSelect: () => void deleteSlide(slide),
+                              },
+                            ]}
+                          />
+                        </div>
                       )}
                     </div>
                     <button
@@ -330,60 +391,6 @@ export function StepOutline({
                           ? "原文缺失"
                           : "—"}
                     </p>
-
-                    {!readOnly && (
-                      <div className="mt-3 flex items-center gap-0.5 border-t border-line pt-2.5 text-ink-3">
-                        <button
-                          type="button"
-                          title="前移"
-                          disabled={slide.pageIndex === 0 || operating}
-                          onClick={() => void moveSlide(slide, -1)}
-                          className="rounded-md p-1.5 transition hover:bg-page hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          <ChevronLeftIcon width={13} height={13} />
-                        </button>
-                        <button
-                          type="button"
-                          title="后移"
-                          disabled={slide.pageIndex === slides.length - 1 || operating}
-                          onClick={() => void moveSlide(slide, 1)}
-                          className="rounded-md p-1.5 transition hover:bg-page hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          <ChevronRightIcon width={13} height={13} />
-                        </button>
-                        <button
-                          type="button"
-                          title="新增页面"
-                          disabled={operating}
-                          onClick={() => void addSlideAfter(slide.pageIndex, slide.chapter)}
-                          className="rounded-md p-1.5 transition hover:bg-page hover:text-ink disabled:opacity-30"
-                        >
-                          <PlusIcon width={13} height={13} />
-                        </button>
-                        <button
-                          type="button"
-                          title={
-                            slide.rawText
-                              ? "AI 拆分为 2–5 页"
-                              : "原文为空，无法拆页"
-                          }
-                          disabled={!slide.rawText || operating}
-                          onClick={() => setSplitTarget(slide)}
-                          className="rounded-md px-1.5 py-1 text-xs transition hover:bg-page hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          ⧉ 拆页
-                        </button>
-                        <button
-                          type="button"
-                          title={slide.role === "cover" ? "封面页不可删除" : "删除页面"}
-                          disabled={slide.role === "cover" || slides.length <= 1 || operating}
-                          onClick={() => void deleteSlide(slide)}
-                          className="ml-auto rounded-md p-1.5 transition hover:bg-danger-soft hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          <TrashIcon width={13} height={13} />
-                        </button>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -578,6 +585,104 @@ export function StepOutline({
             })
           }
         />
+      )}
+    </div>
+  );
+}
+
+/* ---------------- 「⋯」操作菜单 ---------------- */
+
+interface CardMenuItem {
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  title?: string;
+  danger?: boolean;
+}
+
+/**
+ * 卡片/章节头的「⋯」菜单：把常驻图标操作收进菜单以降低噪音。
+ * a11y：trigger 带 aria-haspopup/aria-expanded，菜单 role=menu、项 role=menuitem；
+ * 打开后焦点落到第一个可用项，Escape / 点击外部关闭（Escape 归还焦点给 trigger）。
+ */
+function CardMenu({
+  label,
+  items,
+  width = "w-36",
+  triggerClassName = "rounded-md px-1 text-base leading-none text-ink-3 transition hover:bg-page hover:text-ink",
+}: {
+  label: string;
+  items: CardMenuItem[];
+  width?: string;
+  triggerClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen((v) => !v)}
+        className={triggerClassName}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={label}
+          className={`absolute right-0 top-full z-30 mt-1 ${width} overflow-hidden rounded-xl border border-line bg-card py-1 text-left text-xs shadow-pop`}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              disabled={item.disabled}
+              title={item.title}
+              onClick={() => {
+                setOpen(false);
+                item.onSelect();
+              }}
+              className={`block w-full px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:text-ink-4 ${
+                item.danger
+                  ? "text-danger hover:bg-danger-soft"
+                  : "text-ink-2 hover:bg-page hover:text-ink"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
