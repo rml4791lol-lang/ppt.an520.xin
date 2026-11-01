@@ -65,7 +65,9 @@ export function ProjectsClient() {
   return (
     <div id="recent" className="space-y-5">
       {error && (
-        <p className="rounded-xl bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p>
+        <p role="alert" className="rounded-xl bg-danger-soft px-4 py-2.5 text-sm text-danger">
+          {error}
+        </p>
       )}
       {unauthorized && (
         <div className="flex items-center justify-between rounded-2xl border border-danger/20 bg-danger-soft px-5 py-4">

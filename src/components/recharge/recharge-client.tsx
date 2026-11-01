@@ -432,7 +432,7 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="请输入兑换码"
-              className="min-w-0 flex-1 rounded-xl border border-line px-4 py-2.5 text-sm uppercase outline-none transition placeholder:normal-case placeholder:text-ink-3 focus:border-brand"
+              className="min-w-0 flex-1 rounded-xl border border-line-control px-4 py-2.5 text-sm uppercase outline-none transition placeholder:normal-case placeholder:text-ink-3 focus:border-brand"
             />
             <button
               type="button"
@@ -453,6 +453,7 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
 
       {(notice || error) && (
         <p
+          role={error ? "alert" : "status"}
           className={`mt-4 rounded-xl px-4 py-2.5 text-sm ${
             error ? "bg-danger-soft text-danger" : "bg-brand-softer text-brand"
           }`}

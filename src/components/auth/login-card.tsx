@@ -105,7 +105,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
   };
 
   const inputCls =
-    "w-full rounded-xl border border-line bg-card px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand";
+    "w-full rounded-xl border border-line-control bg-card px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand";
 
   return (
     <div className="flex h-full flex-col justify-center p-6 sm:p-10">
@@ -225,11 +225,18 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
           />
         )}
 
-        {error && (
-          <p className="rounded-xl bg-danger-soft px-3 py-2 text-xs leading-5 text-danger">
-            {error}
-          </p>
-        )}
+        {/* 常驻 live region：插入式渲染的 role=alert 在部分读屏下不播报，空时用 sr-only 收起来 */}
+        <p
+          role="alert"
+          aria-live="assertive"
+          className={
+            error
+              ? "rounded-xl bg-danger-soft px-3 py-2 text-xs leading-5 text-danger"
+              : "sr-only"
+          }
+        >
+          {error}
+        </p>
 
         <button
           type="submit"

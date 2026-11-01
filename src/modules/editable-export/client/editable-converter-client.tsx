@@ -293,7 +293,11 @@ export function EditableConverterClient() {
           </div>
         )}
 
-        {error && <p className="mt-5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
+            {error}
+          </p>
+        )}
         {notice && <p className="mt-5 rounded-xl bg-brand-soft px-4 py-3 text-sm text-brand">{notice}</p>}
 
         {record && (running || record.status === "succeeded" || record.status === "failed") && (

@@ -841,7 +841,7 @@ export function BeautifyClient() {
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
             placeholder="例如：妇科门诊护士岗前培训（有大纲时可留空）"
-            className="mt-1.5 w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none focus:border-brand-line"
+            className="mt-1.5 w-full rounded-xl border border-line-control bg-card px-3 py-2.5 text-sm text-ink outline-none focus:border-brand-line"
           />
         </label>
         <label className="mt-4 block text-sm text-ink-2">
@@ -851,7 +851,7 @@ export function BeautifyClient() {
             onChange={(event) => setOutline(event.target.value)}
             rows={6}
             placeholder={"有大纲请贴在这里，例如：\n1. 封面：岗前培训\n2. 接诊流程\n也支持 AnPPT 大纲或 Markdown 标题。"}
-            className="mt-1.5 w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none focus:border-brand-line"
+            className="mt-1.5 w-full resize-y rounded-xl border border-line-control bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none focus:border-brand-line"
           />
         </label>
         <label className="mt-2 flex items-center gap-2 text-sm text-ink-3">
@@ -865,7 +865,7 @@ export function BeautifyClient() {
             onChange={(event) => setSource(event.target.value)}
             rows={8}
             placeholder="粘贴讲义、制度、操作规范……越详细，替换越详细。"
-            className="mt-1.5 w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none focus:border-brand-line"
+            className="mt-1.5 w-full resize-y rounded-xl border border-line-control bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none focus:border-brand-line"
           />
         </label>
         <label className="mt-2 flex items-center gap-2 text-sm text-ink-3">
@@ -888,7 +888,7 @@ export function BeautifyClient() {
           <select
             value={gapPolicy}
             onChange={(event) => setGapPolicy(event.target.value as BeautifyGapPolicy)}
-            className="mt-1.5 rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand-line"
+            className="mt-1.5 rounded-xl border border-line-control bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand-line"
           >
             <option value="topic">按主题补全结构（默认）</option>
             <option value="brief">只写标题和一句</option>

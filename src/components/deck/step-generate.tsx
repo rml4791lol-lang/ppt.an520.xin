@@ -875,7 +875,7 @@ function SlideEditor({
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             placeholder="例如：标题更突出、配色换成红色系、图表区域放大一点…"
-            className="mt-2 w-full resize-y rounded-xl border border-line bg-card px-3 py-2 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
+            className="mt-2 w-full resize-y rounded-xl border border-line-control bg-card px-3 py-2 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
           />
           <button
             type="button"
@@ -966,7 +966,7 @@ function SlideEditor({
                     value={textEdit}
                     onChange={(e) => setTextEdit(e.target.value)}
                     placeholder="图上改字，例如：把标题改成「2025 年度报告」"
-                    className="w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
+                    className="w-full rounded-xl border border-line-control bg-card px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
                   />
                   <button
                     type="button"
@@ -984,7 +984,7 @@ function SlideEditor({
                   <select
                     value={fusionPackId}
                     onChange={(e) => setFusionPackId(e.target.value)}
-                    className="w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink outline-none transition focus:border-brand-line"
+                    className="w-full rounded-xl border border-line-control bg-card px-3 py-2 text-sm text-ink outline-none transition focus:border-brand-line"
                   >
                     <option value="">选择要融合的模板风格…</option>
                     {fusionPacks.map((p) => (

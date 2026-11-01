@@ -120,13 +120,6 @@ export function AddPageModal({
       {tab === "image" ? (
         <div className="mt-4">
           <div
-            role="button"
-            tabIndex={0}
-            aria-label="上传图片"
-            onClick={() => inputRef.current?.click()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-            }}
             onDragOver={(e) => {
               e.preventDefault();
               setDragOver(true);
@@ -137,15 +130,20 @@ export function AddPageModal({
               setDragOver(false);
               pickFiles(e.dataTransfer.files);
             }}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center transition ${
-              dragOver ? "border-brand bg-brand-softer" : "border-line-strong bg-page hover:border-brand-line"
-            }`}
           >
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-soft text-brand">
-              <UploadIcon width={20} height={20} />
-            </span>
-            <p className="mt-3 text-sm font-medium text-ink">点击上传 图片，或拖拽到此处</p>
-            <p className="mt-1 text-xs text-ink-3">支持一次多张，一张图片追加一页 · 单张 ≤15MB</p>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center transition ${
+                dragOver ? "border-brand bg-brand-softer" : "border-line-control bg-page hover:border-brand-line"
+              }`}
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+                <UploadIcon width={20} height={20} />
+              </span>
+              <p className="mt-3 text-sm font-medium text-ink">点击上传 图片，或拖拽到此处</p>
+              <p className="mt-1 text-xs text-ink-3">支持一次多张，一张图片追加一页 · 单张 ≤15MB</p>
+            </button>
           </div>
           <input
             ref={inputRef}

@@ -191,7 +191,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
               <select
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
+                className="rounded-lg border border-line-control bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
               >
                 <option value="">全部类别</option>
                 {categoryOptions.map((value) => (
@@ -206,7 +206,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
               <select
                 value={level}
                 onChange={(event) => setLevel(event.target.value)}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
+                className="rounded-lg border border-line-control bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
               >
                 <option value="">全部级别</option>
                 <option value="error">错误</option>
@@ -218,7 +218,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
               <select
                 value={days}
                 onChange={(event) => setDays(event.target.value)}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
+                className="rounded-lg border border-line-control bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
               >
                 <option value="1">最近 1 天</option>
                 <option value="3">最近 3 天</option>

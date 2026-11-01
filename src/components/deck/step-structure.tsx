@@ -598,7 +598,7 @@ function DslEditor({
                       value={block.arg}
                       maxLength={120}
                       onChange={(event) => updateBlock(index, { arg: event.target.value })}
-                      className="mt-1 w-full rounded-lg border border-line bg-page/50 px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+                      className="mt-1 w-full rounded-lg border border-line-control bg-page/50 px-3 py-2 text-sm text-ink outline-none focus:border-brand"
                       placeholder="例如：左侧协同机制"
                     />
                   </label>
@@ -610,7 +610,7 @@ function DslEditor({
                         value={block.content}
                         maxLength={300}
                         onChange={(event) => updateBlock(index, { content: event.target.value })}
-                        className="mt-1 w-full rounded-lg border border-line bg-page/50 px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+                        className="mt-1 w-full rounded-lg border border-line-control bg-page/50 px-3 py-2 text-sm text-ink outline-none focus:border-brand"
                       />
                     </label>
                     <label className="block text-xs text-ink-3">
@@ -619,7 +619,7 @@ function DslEditor({
                         value={editableTableText(block.tableRows)}
                         onChange={(event) => updateBlock(index, { tableRows: tableRowsFromText(event.target.value) })}
                         rows={4}
-                        className="mt-1 w-full resize-y rounded-lg border border-line bg-page/50 px-3 py-2 font-mono text-xs leading-5 text-ink outline-none focus:border-brand"
+                        className="mt-1 w-full resize-y rounded-lg border border-line-control bg-page/50 px-3 py-2 font-mono text-xs leading-5 text-ink outline-none focus:border-brand"
                         placeholder={"项目 | 内容\nAI初筛 | 9928项自动评分"}
                       />
                     </label>
@@ -636,7 +636,7 @@ function DslEditor({
                       maxLength={2000}
                       onChange={(event) => updateBlock(index, { content: event.target.value })}
                       rows={block.tag === "正文" || block.tag === "重点正文" || block.tag === "注释" ? 3 : 2}
-                      className="mt-1 w-full resize-y rounded-lg border border-line bg-page/50 px-3 py-2 text-sm leading-6 text-ink outline-none focus:border-brand"
+                      className="mt-1 w-full resize-y rounded-lg border border-line-control bg-page/50 px-3 py-2 text-sm leading-6 text-ink outline-none focus:border-brand"
                       placeholder={block.tag === "数据组" ? "多个数据可用分号分隔" : `请输入${TAG_LABELS[block.tag]}`}
                     />
                   </label>
