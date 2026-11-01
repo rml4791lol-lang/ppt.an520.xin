@@ -351,7 +351,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
                       ? "bg-brand font-medium text-white"
                       : done
                         ? "text-ink-2 hover:bg-brand-soft hover:text-brand"
-                        : "cursor-not-allowed text-ink-4"
+                        : "cursor-not-allowed text-ink-3"
                   }`}
                 >
                   <span
@@ -370,7 +370,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             );
           })}
         </ol>
-        <p className="mt-1.5 text-center text-xs text-ink-4 sm:hidden">
+        <p className="mt-1.5 text-center text-xs text-ink-3 sm:hidden">
           第 {activeStep + 1} 步 / 共 {DECK_STEPS.length} 步 · {DECK_STEPS[activeStep]}
         </p>
       </nav>
@@ -484,7 +484,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             <li>重新生成后，当前大纲及你的修改内容将被覆盖。</li>
             <li>重新生成大纲不消耗 🌟 星星；之后的内容梳理同样免费。</li>
           </ul>
-          <p className="mt-3 text-xs text-ink-4">*页面生成阶段才按页计费</p>
+          <p className="mt-3 text-xs text-ink-3">*页面生成阶段才按页计费</p>
           <div className="mt-5 flex justify-end gap-3">
             <button
               type="button"
@@ -651,7 +651,7 @@ function EditableTitle({
         className="min-w-0 max-w-72 truncate rounded-lg px-2 py-1 text-left text-sm font-medium text-ink transition hover:bg-page"
       >
         {title || "未命名项目"}
-        {saving && <span className="ml-2 text-xs text-ink-4">保存中…</span>}
+        {saving && <span className="ml-2 text-xs text-ink-3">保存中…</span>}
       </button>
     );
   }

@@ -95,7 +95,7 @@ function Dropdown({
                 }}
                 className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
                   opt.disabled
-                    ? "cursor-not-allowed text-ink-4"
+                    ? "cursor-not-allowed text-ink-3"
                     : opt.value === value
                       ? "bg-brand-soft font-medium text-brand"
                       : "text-ink-2 hover:bg-page"
@@ -193,7 +193,7 @@ function StylePicker({
                 );
               })}
             </div>
-            <p className="mt-3 text-xs text-ink-4">
+            <p className="mt-3 text-xs text-ink-3">
               不选择时，AI 将按内容自动匹配推荐风格
             </p>
           </div>
@@ -486,7 +486,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 </div>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <p className="text-xs text-ink-4">
+                <p className="text-xs text-ink-3">
                   {isCustomDuration && customPageCount === null
                     ? `自定义页数范围 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 页`
                     : "按页计费，确认前显示估价"}
@@ -520,14 +520,14 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                         第 {i + 1} 页
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-ink-4">
+                        <span className="text-xs text-ink-3">
                           {content.length}/{MAX_PAGE_CHARS}
                         </span>
                         {pages.length > 1 && (
                           <button
                             type="button"
                             aria-label={`删除第 ${i + 1} 页`}
-                            className="rounded-md p-1 text-ink-4 hover:text-danger"
+                            className="rounded-md p-1 text-ink-3 hover:text-danger"
                             onClick={() =>
                               setPages((prev) => prev.filter((_, idx) => idx !== i))
                             }
@@ -547,7 +547,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                           prev.map((p, idx) => (idx === i ? e.target.value : p)),
                         )
                       }
-                      className="w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+                      className="w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
                     />
                   </div>
                 ))}
@@ -575,7 +575,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                     className={`shrink-0 transition ${settingsOpen ? "rotate-180" : ""}`}
                   />
                 </button>
-                <p className="text-xs text-ink-4">单页上限 1,500 字</p>
+                <p className="text-xs text-ink-3">单页上限 1,500 字</p>
               </div>
               {settingsOpen && (
                 <div
@@ -591,7 +591,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 </div>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <p className="text-xs text-ink-4">按页计费，确认前显示估价</p>
+                <p className="text-xs text-ink-3">按页计费，确认前显示估价</p>
                 <button
                   type="button"
                   onClick={() => void submitPaged()}

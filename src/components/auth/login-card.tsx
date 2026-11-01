@@ -105,7 +105,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
   };
 
   const inputCls =
-    "w-full rounded-xl border border-line bg-card px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-4 focus:border-brand";
+    "w-full rounded-xl border border-line bg-card px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand";
 
   return (
     <div className="flex h-full flex-col justify-center p-6 sm:p-10">
@@ -186,7 +186,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
                   type="button"
                   disabled={sending || countdown > 0}
                   onClick={() => void sendCode()}
-                  className="shrink-0 rounded-xl border border-brand-line px-3 text-sm text-brand transition hover:bg-brand-softer disabled:cursor-not-allowed disabled:border-line disabled:text-ink-4"
+                  className="shrink-0 rounded-xl border border-brand-line px-3 text-sm text-brand transition hover:bg-brand-softer disabled:cursor-not-allowed disabled:border-line disabled:text-ink-3"
                 >
                   {countdown > 0 ? `${countdown}s 后重发` : sending ? "发送中…" : "发送验证码"}
                 </button>

@@ -106,7 +106,7 @@ export function Dropzone({
         </span>
         <p className="mt-4 text-base font-semibold text-ink">{title}</p>
         <p className="mt-1.5 text-sm text-ink-3">点击此处选择文件</p>
-        <p className="mt-3 text-xs leading-5 text-ink-4">{hint}</p>
+        <p className="mt-3 text-xs leading-5 text-ink-3">{hint}</p>
       </div>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
       <input

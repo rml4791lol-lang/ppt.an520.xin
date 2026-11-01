@@ -27,7 +27,7 @@ const STATUS_LABEL: Record<string, string> = {
 function statusChipClass(status: string): string {
   switch (status) {
     case "ok":
-      return "bg-emerald-50 text-emerald-600";
+      return "bg-emerald-50 text-emerald-700";
     case "failed":
       return "bg-danger-soft text-danger";
     case "running":
@@ -212,7 +212,7 @@ export function StepStructure({
         )}
       </div>
 
-      <p className="mt-2 text-xs leading-5 text-ink-4">
+      <p className="mt-2 text-xs leading-5 text-ink-3">
         AI 不会添加原文中没有的事实、结论或建议；重复、空泛或弱相关信息可能不再呈现。失败页可单独重试。
       </p>
 
@@ -226,7 +226,7 @@ export function StepStructure({
               className="rounded-2xl border border-line bg-card shadow-card"
             >
               <header className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
-                <span className="text-xs font-medium text-ink-4">P{slide.pageIndex + 1}</span>
+                <span className="text-xs font-medium text-ink-3">P{slide.pageIndex + 1}</span>
                 <span className="rounded-md bg-page px-2 py-0.5 text-[11px] text-ink-2">
                   {slide.chapter || "未分章"}
                 </span>
@@ -305,7 +305,7 @@ export function StepStructure({
                     （可单独重试本页）
                   </p>
                 ) : (
-                  <p className="py-4 text-sm text-ink-4">
+                  <p className="py-4 text-sm text-ink-3">
                     点击上方「开始梳理本页」立即开始
                   </p>
                 )}
@@ -529,7 +529,7 @@ function DslEditor({
       {draft.mode === "visual" ? (
         <div className="mt-4 space-y-3">
           {draft.blocks.length === 0 && (
-            <p className="rounded-lg border border-dashed border-line-strong bg-card px-3 py-6 text-center text-xs text-ink-4">
+            <p className="rounded-lg border border-dashed border-line-strong bg-card px-3 py-6 text-center text-xs text-ink-3">
               暂无内容模块，请点击下方按钮添加。
             </p>
           )}
@@ -558,7 +558,7 @@ function DslEditor({
                       </option>
                     ))}
                   </select>
-                  <span className="text-[11px] text-ink-4">内容块 {index + 1}</span>
+                  <span className="text-[11px] text-ink-3">内容块 {index + 1}</span>
                   <div className="ml-auto flex items-center gap-1">
                     <button
                       type="button"
@@ -665,7 +665,7 @@ function DslEditor({
               className="mt-1.5 w-full resize-y rounded-xl border border-line-strong bg-card px-3 py-2 font-mono text-xs leading-6 text-ink outline-none transition focus:border-brand"
             />
           </label>
-          <p className="mt-1.5 text-[11px] leading-5 text-ink-4">
+          <p className="mt-1.5 text-[11px] leading-5 text-ink-3">
             高级模式适合熟悉标签格式的用户；切回可视化编辑时会先检查内容格式。
           </p>
         </div>
@@ -732,11 +732,11 @@ function DslPreview({ text }: { text: string }) {
       ))}
 
       {tree.annotation && (
-        <p className="border-t border-line pt-3 text-xs text-ink-4">注：{tree.annotation}</p>
+        <p className="border-t border-line pt-3 text-xs text-ink-3">注：{tree.annotation}</p>
       )}
 
       {errors.length > 0 && (
-        <details className="text-xs text-ink-4">
+        <details className="text-xs text-ink-3">
           <summary className="cursor-pointer">DSL 解析提示（{errors.length}）</summary>
           <pre className="mt-1 whitespace-pre-wrap">{errors.join("\n")}</pre>
         </details>

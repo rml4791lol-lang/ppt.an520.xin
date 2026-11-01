@@ -72,7 +72,7 @@ export function SiteFooter({
           </p>
           <a
             href={`mailto:${serviceEmail}`}
-            className="mt-3 inline-block text-xs text-ink-4 transition hover:text-brand"
+            className="mt-3 inline-block text-xs text-ink-3 transition hover:text-brand"
           >
             {serviceEmail}
           </a>
@@ -116,7 +116,7 @@ export function SiteFooter({
       </div>
 
       <div className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-5 text-xs text-ink-4 sm:flex-row sm:items-center sm:justify-between lg:px-0">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-5 text-xs text-ink-3 sm:flex-row sm:items-center sm:justify-between lg:px-0">
           <p>
             © {new Date().getFullYear()} {companyName} · AI 生成内容可能存在偏差，请在正式使用前人工核验。
           </p>

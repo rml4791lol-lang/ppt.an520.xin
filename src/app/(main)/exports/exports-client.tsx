@@ -10,7 +10,7 @@ import { listExportRecords, type ExportRecord } from "@/lib/client/deck-api";
 
 function statusChip(item: ExportRecord) {
   if (item.status === "succeeded") {
-    return <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-600">已完成</span>;
+    return <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">已完成</span>;
   }
   if (item.status === "failed") {
     return (
@@ -101,7 +101,7 @@ export function ExportsClient() {
         </div>
       ) : unauthorized ? null : items && items.length > 0 ? (
         <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-card">
-          <div className="hidden grid-cols-[1.35fr_88px_64px_96px_96px] gap-3 border-b border-line bg-page px-5 py-2.5 text-xs text-ink-4 sm:grid">
+          <div className="hidden grid-cols-[1.35fr_88px_64px_96px_96px] gap-3 border-b border-line bg-page px-5 py-2.5 text-xs text-ink-3 sm:grid">
             <span>文件 / 时间</span>
             <span>类型</span>
             <span>页数</span>
@@ -116,7 +116,7 @@ export function ExportsClient() {
               >
                 <span className="min-w-0 text-ink-2">
                   {item.sourceName && <span className="block truncate font-medium text-ink" title={item.sourceName}>{item.sourceName}</span>}
-                  <span className={item.sourceName ? "mt-0.5 block text-xs text-ink-4" : ""}>{new Date(item.createdAt).toLocaleString("zh-CN")}</span>
+                  <span className={item.sourceName ? "mt-0.5 block text-xs text-ink-3" : ""}>{new Date(item.createdAt).toLocaleString("zh-CN")}</span>
                   {item.status === "failed" && item.error && (
                     <span className="mt-0.5 block truncate text-xs text-danger" title={item.error}>
                       {item.error}
@@ -124,7 +124,7 @@ export function ExportsClient() {
                   )}
                   {(item.status === "pending" || item.status === "processing") && (
                     <span className="mt-1.5 block max-w-xs" role="status">
-                      <span className="flex items-center justify-between text-[11px] text-ink-4">
+                      <span className="flex items-center justify-between text-[11px] text-ink-3">
                         <span>
                           {item.completedPages > 0
                             ? `已完成 ${item.completedPages} / ${item.totalPages || item.pageCount} 页`
@@ -154,7 +154,7 @@ export function ExportsClient() {
                       <DownloadIcon width={12} height={12} /> 下载
                     </a>
                   ) : (
-                    <span className="text-xs text-ink-4">{item.status === "failed" ? "不可用" : "完成后可下载"}</span>
+                    <span className="text-xs text-ink-3">{item.status === "failed" ? "不可用" : "完成后可下载"}</span>
                   )}
                 </span>
               </li>

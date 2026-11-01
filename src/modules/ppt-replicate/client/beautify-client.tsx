@@ -990,7 +990,7 @@ export function BeautifyClient() {
             <BeautifyBannerView kind={runBanner.kind} text={runBanner.text} />
           </div>
         )}
-        <p className="mt-3 text-xs leading-5 text-ink-4">
+        <p className="mt-3 text-xs leading-5 text-ink-3">
           图片版 PPTX 免费，生成完成后可直接下载；可编辑版按页计费，转换完成后在下载中心获取。
         </p>
         {exportJobs.length > 0 && (

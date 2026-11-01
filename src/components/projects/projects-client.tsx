@@ -106,7 +106,7 @@ export function ProjectsClient() {
                 }
                 className="block rounded-2xl border border-line bg-card p-4 shadow-card transition hover:shadow-pop"
               >
-                <div className="flex aspect-[16/9] items-center justify-center rounded-xl bg-page text-ink-4">
+                <div className="flex aspect-[16/9] items-center justify-center rounded-xl bg-page text-ink-3">
                   {p.coverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -122,7 +122,7 @@ export function ProjectsClient() {
                   {p.source === "replicate" ? "美化 · " : ""}
                   {p.title || "未命名项目"}
                 </p>
-                <p className="mt-1 text-xs text-ink-4">
+                <p className="mt-1 text-xs text-ink-3">
                   {p.updatedAt
                     ? `更新于 ${new Date(p.updatedAt).toLocaleString("zh-CN")}`
                     : ""}
@@ -142,7 +142,7 @@ export function ProjectsClient() {
                   <button
                     type="button"
                     onClick={() => setConfirmingId(null)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-ink-4 transition hover:text-ink"
+                    className="rounded-full px-2 py-0.5 text-[11px] text-ink-3 transition hover:text-ink"
                   >
                     取消
                   </button>
@@ -152,7 +152,7 @@ export function ProjectsClient() {
                   type="button"
                   aria-label={`删除项目 ${p.title}`}
                   onClick={() => setConfirmingId(p.id)}
-                  className="absolute right-2 top-2 z-10 rounded-full border border-line bg-card/95 px-2.5 py-1 text-[11px] text-ink-4 shadow-card transition hover:border-danger/30 hover:text-danger"
+                  className="absolute right-2 top-2 z-10 rounded-full border border-line bg-card/95 px-2.5 py-1 text-[11px] text-ink-3 shadow-card transition hover:border-danger/30 hover:text-danger"
                 >
                   删除
                 </button>

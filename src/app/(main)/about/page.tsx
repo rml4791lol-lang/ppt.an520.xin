@@ -122,7 +122,7 @@ export default function AboutPage() {
         </Link>
       </section>
 
-      <div className="mt-8 flex flex-wrap gap-4 text-xs text-ink-4">
+      <div className="mt-8 flex flex-wrap gap-4 text-xs text-ink-3">
         <Link href="/help" className="transition hover:text-brand">帮助中心</Link>
         <Link href="/legal/privacy" className="transition hover:text-brand">隐私政策</Link>
         <Link href="/legal/terms" className="transition hover:text-brand">服务条款</Link>

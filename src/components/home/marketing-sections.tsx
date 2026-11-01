@@ -118,7 +118,7 @@ export function WorkflowSection() {
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand">
                 <step.icon width={17} height={17} />
               </span>
-              <span className="text-xs font-semibold tracking-[0.18em] text-ink-4">
+              <span className="text-xs font-semibold tracking-[0.18em] text-ink-3">
                 0{index + 1}
               </span>
             </div>
@@ -266,7 +266,7 @@ export function HomeFaqSection() {
             <summary className="cursor-pointer list-none text-sm font-medium text-ink marker:hidden">
               <span className="flex items-center justify-between gap-4">
                 {item.q}
-                <span className="text-lg leading-none text-ink-4 transition group-open:rotate-45">+</span>
+                <span className="text-lg leading-none text-ink-3 transition group-open:rotate-45">+</span>
               </span>
             </summary>
             <p className="mt-3 border-t border-line pt-3 text-sm leading-7 text-ink-3">

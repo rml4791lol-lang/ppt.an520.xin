@@ -45,7 +45,7 @@ export function BeautifyTab() {
           开始美化
         </button>
       </div>
-      <p className="mt-2 px-1 text-xs text-ink-4">
+      <p className="mt-2 px-1 text-xs text-ink-3">
         不选文件也可进入工作台。生成与转可编辑均按页计费，进入工作台后可看到实际单价。
       </p>
     </div>

@@ -269,9 +269,9 @@ export function PptToBaseClient() {
           if (file) void onShotFile(file);
         }}
       >
-        <UploadIcon className="h-8 w-8 text-ink-4" />
+        <UploadIcon className="h-8 w-8 text-ink-3" />
         <p className="mt-3 text-sm text-ink-2">点击或拖拽上传 PPT 截图（PNG / JPG / WebP，最大 10MB）</p>
-        <p className="mt-2 text-xs leading-5 text-ink-4">上传后会在本地整理成 1536×864 白底再提交；文件只用于本次生成</p>
+        <p className="mt-2 text-xs leading-5 text-ink-3">上传后会在本地整理成 1536×864 白底再提交；文件只用于本次生成</p>
         <input
           ref={shotInputRef}
           type="file"
@@ -352,8 +352,8 @@ export function PptToBaseClient() {
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={result.imageUrl} alt="通用模版底图" className="mt-4 w-full rounded-lg border border-line" />
-          <p className="mt-3 flex items-center gap-2 text-xs text-ink-4">
-            <CheckIcon className="h-4 w-4 text-emerald-600" />
+          <p className="mt-3 flex items-center gap-2 text-xs text-ink-3">
+            <CheckIcon className="h-4 w-4 text-emerald-700" />
             底图上的「标题/正文/要点/图片/数据」都是位置占位词，生成新 PPT 时直接替换成你的内容并套用新风格即可。
           </p>
         </div>
@@ -382,9 +382,9 @@ export function PptToBaseClient() {
             if (file) void onPptxFile(file);
           }}
         >
-          <UploadIcon className="h-7 w-7 text-ink-4" />
+          <UploadIcon className="h-7 w-7 text-ink-3" />
           <p className="mt-2 text-sm text-ink-2">{pptxBusy ? "正在解析渲染…" : "点击或拖拽上传 .pptx（一次最多 40 页）"}</p>
-          <p className="mt-1 text-xs leading-5 text-ink-4">
+          <p className="mt-1 text-xs leading-5 text-ink-3">
             纯浏览器本地解析，不上传不扣星；表格/图表/SmartArt 不渲染，未识别图形按矩形近似
           </p>
           <input
@@ -404,7 +404,7 @@ export function PptToBaseClient() {
 
         {loaded && (
           <p className="mt-4 flex items-center gap-2 text-sm text-ink-2">
-            <FileIcon className="h-4 w-4 text-ink-4" />
+            <FileIcon className="h-4 w-4 text-ink-3" />
             {loaded.name}.pptx · {loaded.deck.slides.length} 页
           </p>
         )}
@@ -424,7 +424,7 @@ export function PptToBaseClient() {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={thumbs[i]} alt={`第 ${i + 1} 页`} className="block h-[72px] w-[128px] object-cover" />
                 ) : (
-                  <span className="flex h-[72px] w-[128px] items-center justify-center bg-card text-xs text-ink-4">第 {i + 1} 页</span>
+                  <span className="flex h-[72px] w-[128px] items-center justify-center bg-card text-xs text-ink-3">第 {i + 1} 页</span>
                 )}
               </button>
             ))}

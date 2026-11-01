@@ -22,7 +22,7 @@ const ROLE_TONE: Record<SlideRole, string> = {
   toc: "bg-brand-soft text-brand",
   section: "bg-[#eef4ff] text-[#3b6fd4]",
   content: "bg-page text-ink-2",
-  ending: "bg-emerald-50 text-emerald-600",
+  ending: "bg-emerald-50 text-emerald-700",
 };
 
 interface ChapterGroup {
@@ -218,7 +218,7 @@ export function StepOutline({
                 <span className="min-w-0 truncate text-sm font-semibold text-ink">
                   {chapter.name || "未分章"}
                 </span>
-                <span className="shrink-0 text-xs text-ink-4">{chapter.slides.length} 页</span>
+                <span className="shrink-0 text-xs text-ink-3">{chapter.slides.length} 页</span>
                 {!readOnly && (
                   <div className="ml-auto flex shrink-0 items-center">
                     <CardMenu
@@ -305,7 +305,7 @@ export function StepOutline({
                       <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] ${ROLE_TONE[slide.role]}`}>
                         {ROLE_LABEL[slide.role]}
                       </span>
-                      <span className="shrink-0 text-xs text-ink-4">P{slide.pageIndex + 1}</span>
+                      <span className="shrink-0 text-xs text-ink-3">P{slide.pageIndex + 1}</span>
                       {needsRawText(slide) && (
                         <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
                           待补原文
@@ -314,7 +314,7 @@ export function StepOutline({
                       {!readOnly && (
                         <div className="ml-auto flex shrink-0 items-center gap-1">
                           <span
-                            className="cursor-grab text-ink-4 opacity-0 transition group-hover:opacity-100"
+                            className="cursor-grab text-ink-3 opacity-0 transition group-hover:opacity-100"
                             title="拖动调整顺序"
                           >
                             <GripIcon />
@@ -673,7 +673,7 @@ function CardMenu({
                 setOpen(false);
                 item.onSelect();
               }}
-              className={`block w-full px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:text-ink-4 ${
+              className={`block w-full px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:text-ink-3 ${
                 item.danger
                   ? "text-danger hover:bg-danger-soft"
                   : "text-ink-2 hover:bg-page hover:text-ink"
@@ -761,12 +761,12 @@ function EditPageModal({
           setTitle(e.target.value);
           dirtyRef.current = true;
         }}
-        className="mt-1.5 w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+        className="mt-1.5 w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
       />
 
       <div className="mt-4 flex items-center justify-between">
         <label className="text-xs font-medium text-ink-3">本页原文</label>
-        <span className="text-xs text-ink-4">请核对本页内容，后续 AI 将基于此内容继续梳理</span>
+        <span className="text-xs text-ink-3">请核对本页内容，后续 AI 将基于此内容继续梳理</span>
       </div>
       <textarea
         value={rawText}
@@ -777,7 +777,7 @@ function EditPageModal({
           setRawText(e.target.value);
           dirtyRef.current = true;
         }}
-        className="mt-1.5 w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+        className="mt-1.5 w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
       />
       {slide.role === "content" && !rawText.trim() && (
         <p className="mt-1.5 text-xs text-danger">内容页原文不能为空，确认大纲前需补充</p>
@@ -785,7 +785,7 @@ function EditPageModal({
 
       {!readOnly && (
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4 text-sm">
-          <span className="text-xs text-ink-4">本页操作：</span>
+          <span className="text-xs text-ink-3">本页操作：</span>
           <button
             type="button"
             disabled={index === 0 || operating}
@@ -840,7 +840,7 @@ function EditPageModal({
         >
           ← 上一页
         </button>
-        <span className="text-xs text-ink-4">
+        <span className="text-xs text-ink-3">
           {saving ? "保存中…" : "修改在切换或完成时自动保存"}
         </span>
         {index < slides.length - 1 ? (
@@ -980,7 +980,7 @@ function ChapterNameModal({
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
         }}
-        className="mt-3 w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+        className="mt-3 w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
       />
       {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
       <div className="mt-5 flex justify-end gap-3">

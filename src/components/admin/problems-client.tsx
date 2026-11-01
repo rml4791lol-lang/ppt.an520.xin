@@ -307,7 +307,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] leading-4 text-ink-3">
                         <div title={item.requestId || "旧记录无请求号"}>{item.requestId ? item.requestId.slice(0, 16) : "—"}</div>
-                        <div className="mt-1 text-[10px] text-ink-4" title={item.release || "旧记录无发布版本"}>
+                        <div className="mt-1 text-[10px] text-ink-3" title={item.release || "旧记录无发布版本"}>
                           {item.release ? item.release.slice(0, 12) : "—"}
                         </div>
                       </td>

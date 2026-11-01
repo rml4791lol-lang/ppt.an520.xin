@@ -168,7 +168,7 @@ export function SidebarNav({
                 active
                   ? "bg-brand-soft font-medium text-brand"
                   : item.disabled
-                    ? "cursor-not-allowed text-ink-4"
+                    ? "cursor-not-allowed text-ink-3"
                     : "text-ink-2 hover:bg-page hover:text-ink",
                 collapsed ? "justify-center px-0" : "",
               ].join(" ");
@@ -252,7 +252,7 @@ export function SidebarNav({
           </a>
         ) : (
           <div
-            className={`flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-[14px] text-ink-4 ${
+            className={`flex cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2 text-[14px] text-ink-3 ${
               collapsed ? "justify-center px-0" : ""
             }`}
             title="使用指南整理中"

@@ -51,7 +51,7 @@ export default function LoginPage() {
         </div>
       </main>
 
-      <footer className="px-5 pb-6 text-center text-xs leading-6 text-ink-4 sm:px-8">
+      <footer className="px-5 pb-6 text-center text-xs leading-6 text-ink-3 sm:px-8">
         登录即表示你同意 AnPPT 的
         <Link href="/legal/terms" className="mx-1 text-ink-3 underline-offset-2 hover:text-brand hover:underline">
           服务条款

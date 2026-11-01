@@ -40,7 +40,7 @@ export function StylePanel({
       <h2 className="px-1 text-sm font-semibold text-ink">风格包</h2>
 
       <div className="mt-3 px-1">
-        <p className="text-xs text-ink-4">当前已选风格</p>
+        <p className="text-xs text-ink-3">当前已选风格</p>
         {selected ? (
           <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-brand-line bg-brand-softer p-2.5">
             <span className="relative h-10 w-16 shrink-0 overflow-hidden rounded-lg bg-page">
@@ -60,9 +60,9 @@ export function StylePanel({
       </div>
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto px-1">
-        <p className="text-xs text-ink-4">
+        <p className="text-xs text-ink-3">
           请挑选风格包
-          <span className="ml-1 text-ink-4">· 风格包会影响生成的PPT页面的风格倾向</span>
+          <span className="ml-1 text-ink-3">· 风格包会影响生成的PPT页面的风格倾向</span>
         </p>
         <div className="mt-2 grid grid-cols-2 gap-2.5">
           {recommended.map((pack) => {
@@ -129,7 +129,7 @@ export function StylePanel({
             </>
           )}
         </button>
-        <p className="mt-2 text-center text-[11px] leading-4 text-ink-4">
+        <p className="mt-2 text-center text-[11px] leading-4 text-ink-3">
           正在调用生图模型，请稍候（可能需要十几秒到数十秒）
           <br />
           每个版本按次计费，失败自动退还
@@ -185,7 +185,7 @@ export function RefineBar({
           }
         }}
         placeholder="描述如何重新设计此页面，例如：把标题放大、突出利润数据、背景更简洁…"
-        className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-4"
+        className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3"
       />
       <button
         type="button"
@@ -281,7 +281,7 @@ export function ExportPanel({
   return (
     <div className="flex h-full flex-col">
       <h2 className="px-1 text-sm font-semibold text-ink">导出选项</h2>
-      <p className="mt-1 px-1 text-xs text-ink-4">整套 {doneCount}/{pages.length} 页已生成</p>
+      <p className="mt-1 px-1 text-xs text-ink-3">整套 {doneCount}/{pages.length} 页已生成</p>
 
       <div className="mt-4 space-y-2.5 px-1">
         <button
@@ -313,7 +313,7 @@ export function ExportPanel({
           <button
             type="button"
             onClick={onReconvertEditable}
-            className="w-full py-1 text-xs text-ink-4 underline decoration-dotted underline-offset-4 transition hover:text-brand"
+            className="w-full py-1 text-xs text-ink-3 underline decoration-dotted underline-offset-4 transition hover:text-brand"
           >
             重新转换（将再次扣星）
           </button>
@@ -324,7 +324,7 @@ export function ExportPanel({
         <div className="mt-4 rounded-xl border border-brand-line bg-brand-softer px-3 py-2.5" role="status">
           <p className="text-xs font-medium text-brand">{editableProgressLabel || "转换中"}</p>
           <p className="mt-1 text-[11px] leading-4 text-ink-3">{editableWaitingCopy}</p>
-          <p className="mt-1 text-[10px] text-ink-4">可以安全刷新或离开，完成后会出现在下载中心。</p>
+          <p className="mt-1 text-[10px] text-ink-3">可以安全刷新或离开，完成后会出现在下载中心。</p>
         </div>
       )}
 
@@ -338,7 +338,7 @@ export function ExportPanel({
         </button>
       </div>
 
-      <p className="mt-auto px-1 pt-4 text-[11px] leading-4 text-ink-4">
+      <p className="mt-auto px-1 pt-4 text-[11px] leading-4 text-ink-3">
         图片版 PPTX 将生成的页面图逐页嵌入，免费导出；文字不可编辑。
       </p>
     </div>

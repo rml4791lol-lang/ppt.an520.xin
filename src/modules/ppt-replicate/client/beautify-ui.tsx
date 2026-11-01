@@ -110,7 +110,7 @@ export function BeautifyPageCard({
             改图
           </button>
         </div>
-        <p className={`mt-2 text-xs ${page.error ? "text-danger" : page.imageUrl ? "text-emerald-600" : "text-ink-3"}`}>
+        <p className={`mt-2 text-xs ${page.error ? "text-danger" : page.imageUrl ? "text-emerald-700" : "text-ink-3"}`}>
           {page.status}
         </p>
       </div>

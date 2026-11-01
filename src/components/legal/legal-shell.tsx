@@ -21,7 +21,7 @@ export function LegalShell({
 }) {
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-0">
-      <nav className="text-xs text-ink-4" aria-label="面包屑">
+      <nav className="text-xs text-ink-3" aria-label="面包屑">
         <Link href="/" className="transition hover:text-brand">
           首页
         </Link>
@@ -35,12 +35,12 @@ export function LegalShell({
         <p className="text-sm font-semibold tracking-[0.16em] text-brand">ANPPT LEGAL</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">{title}</h1>
         <p className="mt-3 text-sm leading-7 text-ink-3">{summary}</p>
-        <p className="mt-3 text-xs text-ink-4">最后更新：{updatedAt}</p>
+        <p className="mt-3 text-xs text-ink-3">最后更新：{updatedAt}</p>
       </header>
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[220px_1fr]">
         <aside className="h-fit rounded-2xl border border-line bg-card p-3 shadow-card lg:sticky lg:top-6">
-          <p className="px-3 py-2 text-xs font-medium text-ink-4">规则导航</p>
+          <p className="px-3 py-2 text-xs font-medium text-ink-3">规则导航</p>
           <ul className="space-y-1">
             {LEGAL_NAV.map((item) => (
               <li key={item.href}>
@@ -58,7 +58,7 @@ export function LegalShell({
 
         <article className="legal-prose rounded-2xl border border-line bg-card px-5 py-6 shadow-card sm:px-8 sm:py-8">
           {children}
-          <div className="mt-10 rounded-xl border border-line bg-page px-4 py-3 text-xs leading-6 text-ink-4">
+          <div className="mt-10 rounded-xl border border-line bg-page px-4 py-3 text-xs leading-6 text-ink-3">
             本页面为 AnPPT 产品规则说明。若与运营主体正式签署的协议或适用法律存在冲突，以正式协议和适用法律为准。
           </div>
         </article>

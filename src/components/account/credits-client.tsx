@@ -95,7 +95,7 @@ export function CreditsClient() {
             <p className="mt-2 text-2xl font-bold tracking-tight text-ink">
               {summary?.[card.key] ?? "—"}
             </p>
-            <p className="mt-2 text-xs text-ink-4">{card.hint}</p>
+            <p className="mt-2 text-xs text-ink-3">{card.hint}</p>
           </div>
         ))}
       </div>
@@ -122,14 +122,14 @@ export function CreditsClient() {
                     {entry.reason || "星星变动"}
                   </p>
                   {entry.createdAt && (
-                    <p className="mt-0.5 text-xs text-ink-4">
+                    <p className="mt-0.5 text-xs text-ink-3">
                       {new Date(entry.createdAt).toLocaleString("zh-CN")}
                     </p>
                   )}
                 </div>
                 <span
                   className={`text-sm font-semibold ${
-                    entry.delta >= 0 ? "text-emerald-600" : "text-ink"
+                    entry.delta >= 0 ? "text-emerald-700" : "text-ink"
                   }`}
                 >
                   {entry.delta >= 0 ? "+" : ""}

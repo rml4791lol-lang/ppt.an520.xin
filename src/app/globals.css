@@ -1,30 +1,31 @@
 @import "tailwindcss";
 
 @theme {
-  /* AnPPT 品牌主色 */
-  --color-brand: #f2571a;
-  --color-brand-strong: #d9440c;
+  /* AnPPT 品牌主色：文字与填充都用它，白底 5.33:1、品牌浅底 4.81:1，过 WCAG AA */
+  --color-brand: #c23c05;
+  --color-brand-strong: #a13203;
   --color-brand-soft: #fef1e9;
   --color-brand-softer: #fff8f3;
   --color-brand-line: #fdd9c4;
 
-  /* 墨色文字 */
+  /* 墨色文字：ink-2/ink-3 承载正文与次要信息，均在所有底色上过 4.5:1 */
   --color-ink: #1f2329;
   --color-ink-2: #4e5562;
-  --color-ink-3: #8a919e;
-  --color-ink-4: #b6bcc7;
+  --color-ink-3: #646c7a;
 
   /* 背景与描边 */
   --color-page: #f6f7f9;
   --color-card: #ffffff;
   --color-line: #eceef2;
   --color-line-strong: #dfe2e8;
+  /* 表单控件的可感知边界：白底 3.17:1，过 WCAG 1.4.11 的 3:1 */
+  --color-line-control: #8a919e;
 
   /* 深色按钮（登录按钮） */
   --color-dark: #2b2f36;
 
-  /* 告警红 */
-  --color-danger: #e5484d;
+  /* 告警红：文字与填充都用它，浅红底 5.84:1、白底 6.57:1 */
+  --color-danger: #b42318;
   --color-danger-soft: #fdeeee;
 
   --radius-card: 1rem;

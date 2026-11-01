@@ -23,7 +23,7 @@ export default function GlobalError({
         }}
       >
         <main style={{ maxWidth: 560, padding: 32, textAlign: "center" }}>
-          <p style={{ color: "#f2571a", fontSize: 13, fontWeight: 700, letterSpacing: "0.16em" }}>
+          <p style={{ color: "#c23c05", fontSize: 13, fontWeight: 700, letterSpacing: "0.16em" }}>
             ANPPT ERROR
           </p>
           <h1 style={{ margin: "12px 0 0", fontSize: 30, lineHeight: 1.3 }}>
@@ -44,7 +44,7 @@ export default function GlobalError({
               marginTop: 28,
               border: 0,
               borderRadius: 999,
-              background: "#f2571a",
+              background: "#c23c05",
               color: "#fff",
               padding: "12px 26px",
               fontSize: 14,

@@ -578,7 +578,7 @@ export function SinglePageClient() {
         <aside className="shrink-0 border-b border-line bg-card px-4 py-4 lg:w-60 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-sm font-semibold text-ink">页面队列</h2>
-            <span className="text-xs text-ink-4">{pages.length} 页</span>
+            <span className="text-xs text-ink-3">{pages.length} 页</span>
           </div>
           <div className="mt-3 flex gap-3 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
             {pages.map((page, i) => {
@@ -601,7 +601,7 @@ export function SinglePageClient() {
                     }}
                     className="block w-full"
                   >
-                    <span className="flex aspect-[16/9] items-center justify-center overflow-hidden rounded-lg bg-page text-xs text-ink-4">
+                    <span className="flex aspect-[16/9] items-center justify-center overflow-hidden rounded-lg bg-page text-xs text-ink-3">
                       {thumb ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={thumb} alt={`Page ${i + 1}`} className="h-full w-full object-cover" />
@@ -618,10 +618,10 @@ export function SinglePageClient() {
                           page.status === "error"
                             ? "text-danger"
                             : page.status === "done"
-                              ? "text-emerald-600"
+                              ? "text-emerald-700"
                               : page.status === "generating" || page.status === "uploading"
                                 ? "text-brand"
-                                : "text-ink-4"
+                                : "text-ink-3"
                         }`}
                       >
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
@@ -667,7 +667,7 @@ export function SinglePageClient() {
                 }
               }}
             />
-            <span className="flex items-center gap-1 text-xs text-emerald-600">
+            <span className="flex items-center gap-1 text-xs text-emerald-700">
               <CheckIcon width={12} height={12} /> 已保存
             </span>
           </div>
@@ -690,7 +690,7 @@ export function SinglePageClient() {
                           ? "bg-brand font-medium text-white"
                           : clickable
                             ? "bg-card text-ink-2 hover:text-brand"
-                            : "cursor-not-allowed bg-card text-ink-4"
+                            : "cursor-not-allowed bg-card text-ink-3"
                       }`}
                     >
                       <span
@@ -807,7 +807,7 @@ export function SinglePageClient() {
             />
           )}
           {!showStylePanel && !showExportPanel && (
-            <div className="px-1 text-xs leading-6 text-ink-4">
+            <div className="px-1 text-xs leading-6 text-ink-3">
               <p className="font-medium text-ink-3">如何开始</p>
               <p className="mt-1">1. 在中间画布粘贴文本，或通过「添加页面」上传 PPT 原图。</p>
               <p className="mt-1">2. 选择风格后开始生成（每版按次计费，失败自动退还）。</p>
@@ -948,7 +948,7 @@ function Canvas({
             粘贴文本
           </button>
         </div>
-        <p className="mt-4 text-xs text-ink-4">支持一次上传多张图片，一张图片追加一页</p>
+        <p className="mt-4 text-xs text-ink-3">支持一次上传多张图片，一张图片追加一页</p>
       </div>
     );
   }
@@ -979,10 +979,10 @@ function Canvas({
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && page.text.trim()) onAnalyze();
           }}
           placeholder="在此粘贴文本内容，AI 会自动提炼标题、要点与结构…（Ctrl/⌘+Enter 分析）"
-          className="w-full resize-y rounded-xl border border-line bg-page px-3.5 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+          className="w-full resize-y rounded-xl border border-line bg-page px-3.5 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
         />
         <div className="mt-3 flex items-center justify-between">
-          <span className="text-xs text-ink-4">{page.text.replace(/\s/g, "").length} 字</span>
+          <span className="text-xs text-ink-3">{page.text.replace(/\s/g, "").length} 字</span>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -1072,7 +1072,7 @@ function Canvas({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={activeVersion.imageUrl} alt="生成结果" className="h-full w-full object-contain" />
         ) : (
-          <span className="flex h-full items-center justify-center text-sm text-ink-4">
+          <span className="flex h-full items-center justify-center text-sm text-ink-3">
             该版本没有可显示的图片
           </span>
         )}
@@ -1119,7 +1119,7 @@ function TitleEditor({ title, onSave }: { title: string; onSave: (title: string)
         className="flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-0.5 text-lg font-semibold text-ink transition hover:bg-card"
       >
         <span className="truncate">{title}</span>
-        <PencilIcon width={13} height={13} className="shrink-0 text-ink-4" />
+        <PencilIcon width={13} height={13} className="shrink-0 text-ink-3" />
       </button>
     );
   }

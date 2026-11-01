@@ -44,7 +44,7 @@ export function getSiteConfig(): SiteConfig {
     announcement: {
       enabled: (env.ANPPT_ANNOUNCEMENT_ENABLED ?? 'true') !== 'false',
       html: env.ANPPT_ANNOUNCEMENT_HTML ?? DEFAULT_ANNOUNCEMENT_HTML,
-      backgroundColor: env.ANPPT_ANNOUNCEMENT_BG ?? '#F2571A',
+      backgroundColor: env.ANPPT_ANNOUNCEMENT_BG ?? '#C23C05',
       textColor: env.ANPPT_ANNOUNCEMENT_COLOR ?? '#ffffff',
       revision: Number(env.ANPPT_ANNOUNCEMENT_REVISION ?? 1),
     },

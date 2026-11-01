@@ -256,7 +256,7 @@ export function EditableConverterClient() {
             <UploadIcon width={22} height={22} />
           </span>
           <p className="mt-4 font-semibold text-ink">拖入文件，或点击选择</p>
-          <p className="mt-2 text-xs leading-5 text-ink-4">PDF 单独上传 · PNG/JPG 可多选 · 合计不超过 30MB</p>
+          <p className="mt-2 text-xs leading-5 text-ink-3">PDF 单独上传 · PNG/JPG 可多选 · 合计不超过 30MB</p>
           <input
             ref={inputRef}
             type="file"
@@ -271,25 +271,25 @@ export function EditableConverterClient() {
           <div className="mt-5">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-ink">已选择 {files.length} 个文件</p>
-              <button type="button" className="text-xs text-ink-4 hover:text-danger" onClick={() => setFiles([])}>清空</button>
+              <button type="button" className="text-xs text-ink-3 hover:text-danger" onClick={() => setFiles([])}>清空</button>
             </div>
             <ol className="mt-3 space-y-2">
               {files.map((file, index) => (
                 <li key={`${file.name}-${file.size}-${index}`} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5">
                   <span className="text-brand">{sourceIsPdf ? <FileIcon width={17} height={17} /> : <ImageIcon width={17} height={17} />}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-ink-2"><span className="mr-2 text-ink-4">{index + 1}.</span>{file.name}</span>
-                  <span className="shrink-0 text-xs text-ink-4">{humanSize(file.size)}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink-2"><span className="mr-2 text-ink-3">{index + 1}.</span>{file.name}</span>
+                  <span className="shrink-0 text-xs text-ink-3">{humanSize(file.size)}</span>
                   {!sourceIsPdf && files.length > 1 && (
                     <span className="flex shrink-0 gap-1">
                       <button type="button" aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} className="rounded px-1.5 text-xs text-ink-3 disabled:opacity-25">↑</button>
                       <button type="button" aria-label="下移" disabled={index === files.length - 1} onClick={() => move(index, 1)} className="rounded px-1.5 text-xs text-ink-3 disabled:opacity-25">↓</button>
                     </span>
                   )}
-                  <button type="button" aria-label={`移除 ${file.name}`} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="shrink-0 text-xs text-ink-4 hover:text-danger">移除</button>
+                  <button type="button" aria-label={`移除 ${file.name}`} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="shrink-0 text-xs text-ink-3 hover:text-danger">移除</button>
                 </li>
               ))}
             </ol>
-            <p className="mt-3 text-right text-xs text-ink-4">合计 {humanSize(totalSize)}</p>
+            <p className="mt-3 text-right text-xs text-ink-3">合计 {humanSize(totalSize)}</p>
           </div>
         )}
 
@@ -305,12 +305,12 @@ export function EditableConverterClient() {
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-brand-soft">
               <div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${progress}%` }} />
             </div>
-            {running && <p className="mt-3 text-xs text-ink-4">可以安全刷新或离开，后台不会重复提交；完成后可在下载中心看到。</p>}
+            {running && <p className="mt-3 text-xs text-ink-3">可以安全刷新或离开，后台不会重复提交；完成后可在下载中心看到。</p>}
           </div>
         )}
 
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs leading-5 text-ink-4">20 🌟/页；服务器识别真实页数后一次扣除。重复提交同一文件会复用任务，不重复扣星。</p>
+          <p className="text-xs leading-5 text-ink-3">20 🌟/页；服务器识别真实页数后一次扣除。重复提交同一文件会复用任务，不重复扣星。</p>
           {record?.status === "succeeded" && record.url ? (
             <a href={record.url} download className="inline-flex justify-center gap-2 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white">
               <DownloadIcon width={16} height={16} /> 下载可编辑 PPTX
@@ -360,7 +360,7 @@ export function EditableConverterClient() {
         })}
       </section>
 
-      <p className="mt-8 text-center text-xs text-ink-4">转换效果受源文件清晰度和排版复杂度影响。需要继续修改时，可前往 <Link href="/tools/onlyoffice" className="font-medium text-brand">免费 PPT 编辑器</Link>。</p>
+      <p className="mt-8 text-center text-xs text-ink-3">转换效果受源文件清晰度和排版复杂度影响。需要继续修改时，可前往 <Link href="/tools/onlyoffice" className="font-medium text-brand">免费 PPT 编辑器</Link>。</p>
     </div>
   );
 }

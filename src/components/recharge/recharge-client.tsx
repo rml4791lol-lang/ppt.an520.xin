@@ -84,7 +84,7 @@ function PlanCard({
         <span className="text-2xl font-bold text-ink">
           ¥{plan.price.toFixed(2).replace(/\.00$/, "")}
         </span>
-        <span className="text-sm text-ink-4 line-through">
+        <span className="text-sm text-ink-3 line-through">
           ¥{plan.originalPrice.toFixed(2).replace(/\.00$/, "")}
         </span>
       </div>
@@ -103,7 +103,7 @@ function PlanCard({
       </button>
 
       <div className="mt-4 rounded-xl bg-page p-3">
-        <p className="text-xs text-ink-4">适用场景</p>
+        <p className="text-xs text-ink-3">适用场景</p>
         <p className="mt-1 text-xs leading-5 text-ink-2">{plan.suitableFor}</p>
       </div>
     </div>
@@ -235,7 +235,7 @@ function PaymentPanel({
               type="button"
               onClick={() => onClose(false)}
               aria-label="返回套餐"
-              className="rounded-lg px-2 py-1 text-lg leading-none text-ink-4 transition hover:bg-page hover:text-ink"
+              className="rounded-lg px-2 py-1 text-lg leading-none text-ink-3 transition hover:bg-page hover:text-ink"
             >
               ×
             </button>
@@ -247,7 +247,7 @@ function PaymentPanel({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={qr} alt="支付二维码" className="h-full w-full" />
               ) : (
-                <span className="text-xs text-ink-4">二维码生成中…</span>
+                <span className="text-xs text-ink-3">二维码生成中…</span>
               )}
             </div>
           ) : null}
@@ -266,19 +266,19 @@ function PaymentPanel({
           <p className="mt-4 text-sm text-ink-3">
             {isWechat ? "请使用微信扫一扫完成支付" : "请使用支付宝扫码或跳转收银台完成支付"}
           </p>
-          <p className="mt-2 flex items-center justify-center gap-2 text-xs text-ink-4">
+          <p className="mt-2 flex items-center justify-center gap-2 text-xs text-ink-3">
             <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-brand" />
             等待支付结果…支付成功后自动到账
           </p>
           {mock && (
-            <p className="mt-2 rounded-lg bg-page px-3 py-1.5 text-xs text-ink-4">
+            <p className="mt-2 rounded-lg bg-page px-3 py-1.5 text-xs text-ink-3">
               Mock 模式：扫码不会真实扣款，仅用于联调
             </p>
           )}
           {pollError && (
             <p className="mt-2 text-xs text-danger">状态刷新异常，请保持网络畅通</p>
           )}
-          <p className="mt-4 text-xs text-ink-4">订单号 {order.orderNo}</p>
+          <p className="mt-4 text-xs text-ink-3">订单号 {order.orderNo}</p>
         </>
       )}
     </div>
@@ -432,7 +432,7 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="请输入兑换码"
-              className="min-w-0 flex-1 rounded-xl border border-line px-4 py-2.5 text-sm uppercase outline-none transition placeholder:normal-case placeholder:text-ink-4 focus:border-brand"
+              className="min-w-0 flex-1 rounded-xl border border-line px-4 py-2.5 text-sm uppercase outline-none transition placeholder:normal-case placeholder:text-ink-3 focus:border-brand"
             />
             <button
               type="button"
@@ -443,7 +443,7 @@ export function RechargeClient({ plans }: { plans: RechargePlan[] }) {
               {redeeming ? "兑换中…" : "兑换"}
             </button>
           </div>
-          <ul className="mt-5 space-y-1.5 text-xs leading-5 text-ink-4">
+          <ul className="mt-5 space-y-1.5 text-xs leading-5 text-ink-3">
             <li>· 兑换码区分大小写，请注意不要输入多余空格</li>
             <li>· 每个兑换码仅可使用一次，兑换后立即生效</li>
             <li>· 星星有效期与购买星星一致，生成失败自动退回</li>
