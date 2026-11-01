@@ -308,7 +308,7 @@ export function PptToBaseClient() {
         <div className="mt-4 rounded-[28px] border border-line bg-card p-5 shadow-card sm:p-6">
           <p className="mb-3 text-sm text-ink-2">待转换截图（已整理为 1536×864）</p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={shotPreview} alt="待转换截图" className="w-full rounded-lg border border-line" />
+          <img src={shotPreview} alt="待转换截图" className="aspect-video w-full rounded-lg border border-line object-contain" />
           <div className="mt-4 flex items-center justify-end gap-3">
             <button type="button" onClick={resetShot} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:border-brand">
               换一张
@@ -354,7 +354,7 @@ export function PptToBaseClient() {
             </div>
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={result.imageUrl} alt="通用模版底图" className="mt-4 w-full rounded-lg border border-line" />
+          <img src={result.imageUrl} alt="通用模版底图" className="mt-4 aspect-video w-full rounded-lg border border-line object-contain" />
           <p className="mt-3 flex items-center gap-2 text-xs text-ink-3">
             <CheckIcon className="h-4 w-4 text-emerald-700" />
             底图上的「标题/正文/要点/图片/数据」都是位置占位词，生成新 PPT 时直接替换成你的内容并套用新风格即可。

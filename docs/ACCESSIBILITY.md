@@ -26,6 +26,7 @@ npm run ui-check -- --no-server --port 3100   # 复用已起的 dev
 | `form-error-announced` | 登录页提交失败后有 `role="alert"` 或 `aria-live` 承载错误文本 |
 | 标题 | 每页恰好一个 `h1` |
 | 触控 | 移动端可点元素不得小于 24×24（统计数，做棘轮） |
+| LCP/CLS | 每页记录 LCP 元素（文本还是图、多 src）与累计布局偏移；CLS > 0.1 判失败 |
 
 axe 看不见键盘与焦点（它是静态 DOM 审），所以那三件事必须真按键盘，写成行为断言。
 

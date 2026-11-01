@@ -17,6 +17,9 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 800 },
   { name: 'mobile', width: 390, height: 844 },
 ];
+/** 累计布局偏移上限（Core Web Vitals 的 good 阈值） */
+const CLS_LIMIT = 0.1;
+
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
 // 键盘用户能否完成页数/画质选择；抽屉焦点是否被囚在对话框内；表单错误是否被播报。
@@ -280,6 +283,37 @@ async function auditRoute(page, axeModule, route, viewport) {
 
   const touches = viewport.name === 'mobile' ? await collectTouchTargets(page) : [];
 
+  // 首屏真实体验：LCP 元素（谁最大就是谁，不按文件名猜）与累计布局偏移
+  const vitals = await page.evaluate(async () => {
+    const lcp = await new Promise((resolve) => {
+      let entry = null;
+      try {
+        const observer = new PerformanceObserver((list) => {
+          const last = list.getEntries().at(-1);
+          if (last) entry = last;
+        });
+        observer.observe({ type: 'largest-contentful-paint', buffered: true });
+      } catch {
+        /* 浏览器不支持时按没有 LCP 处理 */
+      }
+      setTimeout(() => resolve(entry), 300);
+    });
+    const shift = performance
+      .getEntriesByType('layout-shift')
+      .reduce((sum, e) => sum + (e.hadRecentInput ? 0 : e.value), 0);
+    return {
+      cls: Math.round(shift * 10000) / 10000,
+      lcp: lcp
+        ? {
+            tag: lcp.element ? lcp.element.tagName.toLowerCase() : null,
+            size: Math.round(lcp.size ?? 0),
+            isImage: Boolean(lcp.url),
+            src: lcp.url ? decodeURIComponent(lcp.url.split('/').pop() || '').slice(0, 70) : null,
+          }
+        : null,
+    };
+  });
+
   return {
     route,
     viewport: viewport.name,
@@ -289,6 +323,7 @@ async function auditRoute(page, axeModule, route, viewport) {
     violations,
     headings,
     undersizedTargets: touches,
+    vitals,
   };
 }
 
@@ -371,7 +406,8 @@ async function main() {
         const hasIssue =
           result.violations.length > 0 ||
           result.headings.h1 !== 1 ||
-          result.undersizedTargets.length > (baseline.touchTargetUndersizedMax ?? 0);
+          result.undersizedTargets.length > (baseline.touchTargetUndersizedMax ?? 0) ||
+          result.vitals.cls > CLS_LIMIT;
         if (hasIssue) {
           const file = path.join(SHOT_DIR, `${slug(route)}__${viewport.name}.png`);
           await page.screenshot({ path: file, fullPage: false }).catch(() => {});
@@ -433,7 +469,18 @@ async function main() {
       sample: pageResult.undersizedTargets.slice(0, 6),
     }));
 
+  const clsFailures = report.pages
+    .filter((pageResult) => pageResult.vitals.cls > CLS_LIMIT)
+    .map((pageResult) => ({
+      route: pageResult.route,
+      viewport: pageResult.viewport,
+      cls: pageResult.vitals.cls,
+      limit: CLS_LIMIT,
+    }));
+
   report.summary = {
+    clsLimit: CLS_LIMIT,
+    clsFailures,
     axeNodes: nodeTotal,
     axeRules: ruleStats.size,
     axeRuleIds: Array.from(ruleStats.keys()),
@@ -445,7 +492,11 @@ async function main() {
     touchTargetUndersizedMax: baseline.touchTargetUndersizedMax,
     allowedRules: Object.keys(allowed),
     failures:
-      blocking.length + headingFailures.length + touchFailures.length + report.behaviors.filter((behavior) => !behavior.ok).length,
+      blocking.length +
+      headingFailures.length +
+      touchFailures.length +
+      clsFailures.length +
+      report.behaviors.filter((behavior) => !behavior.ok).length,
   };
 
   writeFileSync(path.join(OUT_DIR, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -453,6 +504,16 @@ async function main() {
   // ---- 打印 ----
   console.log(`\n== ui-check ${BASE} ==`);
   console.log(`路由 ${routes.length} × 视口 ${VIEWPORTS.length}｜axe 节点 ${nodeTotal}、规则 ${ruleStats.size}`);
+  for (const pageResult of report.pages) {
+    const { vitals } = pageResult;
+    const lcp = vitals.lcp;
+    const label = lcp
+      ? `${lcp.tag}${lcp.isImage ? `（图 ${lcp.src ?? ''}）` : '（文本）'} ${lcp.size}px²`
+      : '未捕获';
+    console.log(
+      `  LCP ${pageResult.route}@${pageResult.viewport} = ${label}｜CLS ${vitals.cls}${vitals.cls > CLS_LIMIT ? ' ✗' : ''}`,
+    );
+  }
 
   const sortedRules = Array.from(ruleStats.values()).sort((a, b) => b.nodes - a.nodes);
   for (const stat of sortedRules) {

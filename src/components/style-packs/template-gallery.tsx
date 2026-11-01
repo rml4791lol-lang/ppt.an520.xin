@@ -153,8 +153,8 @@ export function TemplateGallery({ packs }: { packs: StylePack[] }) {
       {/* 三级：模板卡 */}
       {filtered.length > 0 ? (
         <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {filtered.map((pack) => (
-            <TemplateCard key={pack.id} pack={pack} />
+          {filtered.map((pack, index) => (
+            <TemplateCard key={pack.id} pack={pack} preload={index < 2} />
           ))}
         </div>
       ) : (

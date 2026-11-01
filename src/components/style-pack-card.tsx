@@ -15,9 +15,12 @@ const BADGE_TONE: Record<string, string> = {
 export function StylePackCard({
   pack,
   onUse,
+  preload = false,
 }: {
   pack: StylePack;
   onUse?: (pack: StylePack) => void;
+  /** 首屏可见的卡片给 true，其余保持懒加载 */
+  preload?: boolean;
 }) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const pages = pack.previewImageUrls.length > 0 ? pack.previewImageUrls : [pack.previewUrl];
@@ -35,6 +38,7 @@ export function StylePackCard({
             src={pack.previewUrl}
             alt={`${pack.name} 预览图`}
             fill
+            preload={preload}
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 280px"
             className="object-cover"
           />

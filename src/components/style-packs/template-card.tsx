@@ -11,7 +11,14 @@ const DOMAIN_LABEL: Record<string, string> = {
 };
 
 /** 模板一版卡片：封面 / 名称 / 赛道 / 热度（静态占位）+ 预览（大图翻页）/ 使用模板。 */
-export function TemplateCard({ pack }: { pack: StylePack }) {
+export function TemplateCard({
+  pack,
+  preload = false,
+}: {
+  pack: StylePack;
+  /** 首屏可见的卡片给 true，参与 LCP 抢先加载 */
+  preload?: boolean;
+}) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const pages = pack.previewImageUrls.length > 0 ? pack.previewImageUrls : [pack.previewUrl];
 
@@ -30,6 +37,7 @@ export function TemplateCard({ pack }: { pack: StylePack }) {
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 280px"
             className="object-cover"
+            preload={preload}
           />
         </button>
         {pack.badgeText && (
