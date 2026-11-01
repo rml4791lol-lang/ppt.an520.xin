@@ -518,6 +518,8 @@ export function SinglePageClient() {
 
   return (
     <div className="flex min-h-screen flex-col bg-page" data-state={currentStep}>
+      {/* 工作台没有可见大标题（标题是可编辑的项目名），用读屏标题占位，保证每页恰好一个 h1 */}
+      <h1 className="sr-only">创意页面生成器</h1>
       {/* 顶部细条 */}
       <header className="flex items-center gap-3 border-b border-line bg-card px-4 py-2.5 sm:px-6">
         <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="返回首页">

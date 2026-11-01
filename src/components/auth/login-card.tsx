@@ -109,9 +109,9 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
 
   return (
     <div className="flex h-full flex-col justify-center p-6 sm:p-10">
-      <h2 className="text-center text-xl font-bold text-ink">
+      <h1 className="text-center text-xl font-bold text-ink">
         {registering ? "注册 AnPPT 账号" : "登录 AnPPT"}
-      </h2>
+      </h1>
       <p className="mt-2 text-center text-xs text-ink-3">
         {registering ? "注册即送星星，马上开始生成" : "登录后可保存作品、查看项目和使用星星"}
       </p>
