@@ -4,6 +4,7 @@
 // 状态机（不看样稿流程，与用户对齐）：大纲编辑 → 内容梳理 → 确认冻结 → 选择风格 → 整套生成 → 导出。
 // 规格：anppt-v2-recon/WORKBENCH-UI-SPEC.md（sample/confirm-sample 步骤按产品决策剔除）。
 import Link from "next/link";
+import { LoginWall } from "@/components/auth/login-wall";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
@@ -237,29 +238,32 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   );
 
   // ---------- 终态错误屏（401/404） ----------
+  if (fatalError?.status === 401) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center bg-page px-4">
+        <LoginWall
+          scene="deck"
+          next={`/deck/${deckId}`}
+          detail="登录后会自动回到这个项目。"
+        />
+      </div>
+    );
+  }
+
   if (fatalError) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-page px-4 text-center">
-        <p className="text-lg font-semibold text-ink">
-          {fatalError.status === 401 ? "请先登录" : "项目不存在或已删除"}
-        </p>
-        <p className="mt-2 text-sm text-ink-3">{fatalError.message}</p>
+        <p className="text-lg font-semibold text-ink">项目不存在或已删除</p>
+        {fatalError.message !== "项目不存在或已删除" && (
+          <p className="mt-2 text-sm text-ink-3">{fatalError.message}</p>
+        )}
         <div className="mt-6 flex items-center gap-3">
-          {fatalError.status === 401 ? (
-            <Link
-              href={`/login?next=${encodeURIComponent(`/deck/${deckId}`)}`}
-              className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
-            >
-              去登录
-            </Link>
-          ) : (
-            <Link
-              href="/projects"
-              className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
-            >
-              返回我的项目
-            </Link>
-          )}
+          <Link
+            href="/projects"
+            className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
+          >
+            返回我的项目
+          </Link>
           <Link href="/" className="text-sm text-ink-3 transition hover:text-brand">
             返回首页
           </Link>

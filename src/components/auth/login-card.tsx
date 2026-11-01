@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { AUTH_SCENES, type AuthScene } from "@/data/auth-scenes";
 import { useState } from "react";
 import { api, resetSessionCache, type AuthResult } from "@/lib/client/api";
 
@@ -24,6 +25,11 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/projects";
+  const fromScene = searchParams.get("from");
+  const sceneLabel =
+    fromScene && Object.prototype.hasOwnProperty.call(AUTH_SCENES, fromScene)
+      ? AUTH_SCENES[fromScene as AuthScene]
+      : null;
 
   const [mode, setMode] = useState<Mode>("code");
   const [registering, setRegistering] = useState(false);
@@ -109,6 +115,11 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
 
   return (
     <div className="flex h-full flex-col justify-center p-6 sm:p-10">
+      {sceneLabel && (
+        <p className="mb-4 rounded-xl bg-brand-soft px-3 py-2 text-center text-xs leading-5 text-brand">
+          你刚才在{sceneLabel}，登录后会自动回到那里。
+        </p>
+      )}
       <h1 className="text-center text-xl font-bold text-ink">
         {registering ? "注册 AnPPT 账号" : "登录 AnPPT"}
       </h1>

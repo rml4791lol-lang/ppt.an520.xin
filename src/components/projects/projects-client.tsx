@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { LoginWall } from "@/components/auth/login-wall";
 import { PlusIcon } from "@/components/icons";
 import { api, ApiClientError, getSession, type ProjectItem } from "@/lib/client/api";
 import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
@@ -70,24 +71,7 @@ export function ProjectsClient() {
         </p>
       )}
       {unauthorized && (
-        <div className="flex items-center justify-between rounded-2xl border border-danger/20 bg-danger-soft px-5 py-4">
-          <p className="text-sm text-danger">请先登录后再操作</p>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="text-sm font-medium text-danger hover:underline"
-            >
-              重新加载
-            </button>
-            <Link
-              href="/login?next=%2Fprojects"
-              className="rounded-full bg-dark px-4 py-1.5 text-xs font-medium text-white"
-            >
-              去登录
-            </Link>
-          </div>
-        </div>
+        <LoginWall scene="projects" detail="项目跟账号走，登录后才能看到历史记录。" />
       )}
 
       {loading ? (

@@ -3,6 +3,7 @@
 // 下载中心：GET /api/pptx-exports 列表；有 pending/processing 记录时 4s 自动刷新。
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { LoginWall } from "@/components/auth/login-wall";
 import { PlusIcon } from "@/components/icons";
 import { DownloadIcon, Spinner } from "@/components/deck/ui";
 import { getSession } from "@/lib/client/api";
@@ -84,15 +85,7 @@ export function ExportsClient() {
   return (
     <div className="space-y-5">
       {unauthorized && (
-        <div className="flex items-center justify-between rounded-2xl border border-danger/20 bg-danger-soft px-5 py-4">
-          <p className="text-sm text-danger">请先登录后再操作</p>
-          <Link
-            href="/login?next=%2Fexports"
-            className="rounded-full bg-dark px-4 py-1.5 text-xs font-medium text-white"
-          >
-            去登录
-          </Link>
-        </div>
+        <LoginWall scene="exports" detail="导出记录跟账号走，登录后才会出现在这里。" />
       )}
 
       {loading ? (

@@ -10,6 +10,7 @@ import { buildBaseJson, type SceneModel } from "./pptx-model";
 import { parsePptx, type ParsedDeck } from "./pptx-parse";
 import { makeZipImageLoader, renderSceneToCanvas, type ImageLoader } from "./pptx-render";
 import { screenshotToBasePng } from "./image-prepare";
+import { LoginWall } from "@/components/auth/login-wall";
 
 type Gate = "loading" | "closed" | "ready";
 
@@ -52,6 +53,7 @@ export function PptToBaseClient() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BaseResult | null>(null);
   const [error, setError] = useState("");
+  const [needLogin, setNeedLogin] = useState(false);
   const [draggingShot, setDraggingShot] = useState(false);
 
   // 次级流程：pptx 源文件本地转换（免费，保风格只去字）
@@ -156,7 +158,7 @@ export function PptToBaseClient() {
       setResult(data);
     } catch (err) {
       if (err instanceof ApiClientError && err.isUnauthorized) {
-        setError("请先登录后再使用");
+        setNeedLogin(true);
       } else if (err instanceof ApiClientError && err.isInsufficientCredits) {
         setError("🌟 星星不足，请充值后重试");
       } else {
@@ -285,14 +287,15 @@ export function PptToBaseClient() {
         />
       </div>
 
-      {error && (
-        <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+      {needLogin && (
+        <div className="mt-4">
+          <LoginWall scene="ppt-to-base" detail="登录后会自动回到这个工具页。" />
+        </div>
+      )}
+
+      {error && !needLogin && (
+        <p role="alert" className="mt-4 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
           {error}
-          {error.includes("登录") && (
-            <Link href="/login" className="ml-2 underline">
-              去登录
-            </Link>
-          )}
           {error.includes("充值") && (
             <Link href="/recharge" className="ml-2 underline">
               去充值

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LoginWall } from "@/components/auth/login-wall";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BeautifyBannerView, BeautifyPageCard, BeautifySegmented } from "./beautify-ui";
@@ -733,16 +734,11 @@ export function BeautifyClient() {
   }
   if (gate === "login") {
     return (
-      <div className="rounded-2xl border border-line bg-card p-8 text-center shadow-card">
-        <h1 className="text-xl font-semibold text-ink">请先登录</h1>
-        <p className="mt-2 text-sm text-ink-3">登录后即可上传参考稿，把画面留下来、把文案换成你的。</p>
-        <Link
-          href={loginNext}
-          className="mt-6 inline-flex rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-strong"
-        >
-          去登录
-        </Link>
-      </div>
+      <LoginWall
+        scene="beautify"
+        next={loginNext}
+        detail="登录后即可上传参考稿，把画面留下来、把文案换成你的。"
+      />
     );
   }
   if (gate === "closed") {
