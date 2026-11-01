@@ -60,6 +60,7 @@ npm run gate:fast  # 迭代快集：跳过 build 与两套测试，其余同一�
 
 - 改业务逻辑必须同步加/改断言；`npm run gate` 全绿才允许提交，断言数变化同步更新 README 与手册 §8。
 - 并行工作时用 `npm run worktree -- <name> [base]` 建工作树（实体 `node_modules`，可跑 tsc；build 只在主仓跑）。
+- 动 token、表单、弹层、图片布局时跑 `npm run ui-check`（axe + 键盘/焦点/播报行为断言，见 `docs/ACCESSIBILITY.md`）。它不进 `npm run gate`：门要秒级且不要求本机有浏览器。
 - 新克隆 `npm install` 会经 `prepare` 自动启用提交前快集（`core.hooksPath=.githooks`）；手工兜底 `git config core.hooksPath .githooks`。紧急绕过用 `git commit --no-verify`，完整门由 CI 兜底。
 
 - WPS、Image2PPT、Codia、生图、VLM **禁止真实调用进测试**（全部 mock）；真机验证走 dev 环境小额度实测。
@@ -71,6 +72,7 @@ npm run gate:fast  # 迭代快集：跳过 build 与两套测试，其余同一�
 
 - `docs/DEBUG-HANDBOOK.md` = 系统全貌唯一权威入口：改完代码同步更新对应小节；新功能新增编号小节（格式：机制 → 关键代码路径 → 失败/恢复语义 → 测试约束）。
 - `docs/LOGGING.md` = 日志系统的多人协作、上线、监控、回滚与故障手册。
+- `docs/ACCESSIBILITY.md` = 无障碍检查（`npm run ui-check`）的断言范围、基线棘轮与首次红线记录。
 - `README.md` = 对外门面：业务规则、测试数、目录结构变化时同步。
 - 本文 = 流程与纪律：分层/流程变化时同步。
 - 文档写"是什么+为什么+在哪"，不写逐步教程；每张截图、每个命令都要能直接执行验证。

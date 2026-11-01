@@ -1,0 +1,5 @@
+{
+  "$comment": "ui-check 的棘轮基线：只允许变少。allowedRules 里的规则被视为已接受并需写明原因与去向；touchTargetUndersizedMax 为移动端小目标允许数。",
+  "allowedRules": {},
+  "touchTargetUndersizedMax": 0
+}
