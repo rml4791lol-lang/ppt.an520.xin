@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import type { StylePack } from "@/data/style-packs";
+import { stylePackThumb, type StylePack } from "@/data/style-packs";
 import { PackPreviewModal } from "./pack-preview-modal";
 
 const DOMAIN_LABEL: Record<string, string> = {
@@ -32,7 +32,7 @@ export function TemplateCard({
           aria-label={`预览 ${pack.name}`}
         >
           <Image
-            src={pack.previewUrl}
+            src={stylePackThumb(pack.previewUrl)}
             alt={`${pack.name} 封面`}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 280px"

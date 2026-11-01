@@ -3,6 +3,13 @@
 > 本文是开发流程与架构纪律的权威入口；系统全貌（部署/链路/运维）见 `docs/DEBUG-HANDBOOK.md`。
 > 改代码前读本文；改完代码同步两份文档。最后更新：2026-10-29（可编辑导出接入计费运行 + 恢复运行源注册表四源齐 + 单页/复刻接入视觉计划）
 
+## 静态图片资源
+
+`public/assets` 里的风格包/展示图只入库 webp 两档：`<stem>.thumb.webp`（480w，给列表卡片）与 `<stem>.webp`（≤1600w，给详情/大图位）。数据里的 `previewUrl` 用 `stylePackThumb()` 取缩略图，详情弹窗取原图。
+
+- 换图或加包：`node scripts/build-style-assets.mjs`（幂等；sharp → cwebp → sips 降级；删源前会确认新路径已被 `src/` 引用）。
+- 体积门：`node scripts/check-assets.mjs`，`public/assets` ≤20MB、单文件 ≤200KB。已挂进 `npm run gate` 与 `gate:fast` 的 `assets` 步。
+
 ## 1. 金字塔分层
 
 依赖只允许自上而下，禁止下层反向引用上层；同层之间不交叉 import，交叉需求提到更下层。

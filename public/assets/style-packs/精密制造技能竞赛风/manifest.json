@@ -13,14 +13,14 @@
       "file": "cover.webp",
       "width": 1536,
       "height": 864,
-      "sha256": "20847dd8d2dba85516f922e2d162056a598d9f7219588b63f9c74f9b8a1d68af"
+      "sha256": "6469f1260896147013e599f9d863311b4bcef275ac7af0f5e7553adc3e2750c8"
     },
     {
       "role": "toc",
       "file": "toc.webp",
       "width": 1536,
       "height": 864,
-      "sha256": "dd2954f9691dba2037109860c97c0ce7e0ce1cf666b8471c559f66a07f0aa3ac"
+      "sha256": "7bb925c8cb758c873d4db9d6f867c1d46c20267b20903613d491a232d1448afd"
     },
     {
       "role": "section",
@@ -32,9 +32,9 @@
     {
       "role": "content",
       "file": "content.webp",
-      "width": 1536,
-      "height": 864,
-      "sha256": "a56a5e006e583deceb0d8b81994d464042f6c1fad3f47163e0fc4940a2728542"
+      "width": 1306,
+      "height": 735,
+      "sha256": "2d59f122a5b99205cd023c4f14d530f3979341f696cbfd37b694d36acbc74d65"
     },
     {
       "role": "data",
@@ -46,9 +46,9 @@
     {
       "role": "process",
       "file": "process.webp",
-      "width": 1536,
-      "height": 864,
-      "sha256": "b27f7bea9acf9b678a86db7622793ef9bb9f43e909d320cdf66bea07bf18a27e"
+      "width": 1306,
+      "height": 735,
+      "sha256": "db1da71c907555540e538602260af6568d9682d8a179287e44f4ac978dd1f0b6"
     }
   ]
 }

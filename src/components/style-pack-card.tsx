@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import type { StylePack } from "@/data/style-packs";
+import { stylePackThumb, type StylePack } from "@/data/style-packs";
 import { PackPreviewModal } from "@/components/style-packs/pack-preview-modal";
 
 const BADGE_TONE: Record<string, string> = {
@@ -35,7 +35,7 @@ export function StylePackCard({
           aria-label={`预览 ${pack.name}`}
         >
           <Image
-            src={pack.previewUrl}
+            src={stylePackThumb(pack.previewUrl)}
             alt={`${pack.name} 预览图`}
             fill
             preload={preload}
