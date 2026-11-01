@@ -32,7 +32,7 @@ export default function LoginPage() {
         </Link>
         <Link
           href="/"
-          className="text-sm text-ink-3 transition hover:text-brand"
+          className="inline-flex min-h-6 items-center text-sm text-ink-3 transition hover:text-brand"
         >
           返回首页
         </Link>
@@ -53,15 +53,15 @@ export default function LoginPage() {
 
       <footer className="px-5 pb-6 text-center text-xs leading-6 text-ink-3 sm:px-8">
         登录即表示你同意 AnPPT 的
-        <Link href="/legal/terms" className="mx-1 text-ink-3 underline-offset-2 hover:text-brand hover:underline">
+        <Link href="/legal/terms" className="mx-1 inline-flex min-h-6 items-center text-ink-3 underline-offset-2 hover:text-brand hover:underline">
           服务条款
         </Link>
         和
-        <Link href="/legal/privacy" className="mx-1 text-ink-3 underline-offset-2 hover:text-brand hover:underline">
+        <Link href="/legal/privacy" className="mx-1 inline-flex min-h-6 items-center text-ink-3 underline-offset-2 hover:text-brand hover:underline">
           隐私政策
         </Link>
         。遇到问题可查看
-        <Link href="/help" className="mx-1 text-ink-3 underline-offset-2 hover:text-brand hover:underline">
+        <Link href="/help" className="mx-1 inline-flex min-h-6 items-center text-ink-3 underline-offset-2 hover:text-brand hover:underline">
           帮助中心
         </Link>
         。

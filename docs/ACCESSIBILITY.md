@@ -29,6 +29,12 @@ npm run ui-check -- --no-server --port 3100   # 复用已起的 dev
 
 axe 看不见键盘与焦点（它是静态 DOM 审），所以那三件事必须真按键盘，写成行为断言。
 
+### 触控目标怎么改
+
+- 文字链接（页脚导航、卡片里的"查看 X"、行内条款链接）：`inline-flex min-h-6 items-center` —— 24px 高，字号和基线不变。
+- 纯图标按钮（公告栏关闭）：图标 14px 时用 `p-1.5` → 26×26。
+- 不要用 `after:absolute inset-[-4px]` 之类扩热区：ui-check 量的是元素盒子，热区不在盒子里就量不到，等于没守。
+
 ## 基线棘轮
 
 `scripts/ui-check-baseline.json`：

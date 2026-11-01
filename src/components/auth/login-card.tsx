@@ -264,7 +264,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
             已有账号？
             <button
               type="button"
-              className="font-medium text-brand hover:underline"
+              className="inline-flex min-h-6 items-center font-medium text-brand hover:underline"
               onClick={() => {
                 setRegistering(false);
                 setError(null);
@@ -278,7 +278,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
             没有账号？
             <button
               type="button"
-              className="font-medium text-brand hover:underline"
+              className="inline-flex min-h-6 items-center font-medium text-brand hover:underline"
               onClick={() => {
                 setRegistering(true);
                 setError(null);

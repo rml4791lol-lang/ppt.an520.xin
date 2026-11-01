@@ -80,7 +80,7 @@ export default function HomePage() {
           </div>
           <Link
             href="/style-packs"
-            className="flex shrink-0 items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
+            className="flex min-h-6 shrink-0 items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
           >
             全部风格
             <ArrowRightIcon width={14} height={14} />

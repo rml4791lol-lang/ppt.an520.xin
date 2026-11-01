@@ -528,7 +528,7 @@ export function SinglePageClient() {
         </Link>
         <Link
           href="/projects"
-          className="flex items-center gap-1 text-sm text-ink-3 transition hover:text-brand"
+          className="flex min-h-6 items-center gap-1 text-sm text-ink-3 transition hover:text-brand"
         >
           <ChevronLeftIcon width={14} height={14} /> 我的项目
         </Link>

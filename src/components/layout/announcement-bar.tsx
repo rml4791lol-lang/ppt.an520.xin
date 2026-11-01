@@ -42,7 +42,7 @@ export function AnnouncementBar({
       <button
         type="button"
         aria-label="关闭公告"
-        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 opacity-80 transition hover:opacity-100"
+        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1.5 opacity-80 transition hover:opacity-100"
         onClick={() => {
           setVisible(false);
           try {
