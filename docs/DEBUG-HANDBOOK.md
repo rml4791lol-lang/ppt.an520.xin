@@ -3,6 +3,12 @@
 > 写给接手探查/debug 的 agent：本文是系统全貌的唯一权威入口。改完代码请同步更新本文。
 > 最后更新：2026-10-28（门命令化 `npm run gate`、提交前钩子与 CI、工作树脚本、测试互斥、发布脚本 `npm run release`；此前：问题日志请求追踪 / 脱敏 / 落盘健康契约 / 发布后自动校验与回滚；PPT 美化批量任务服务端化 / 刷新续看 / 项目更新时间按页修正）
 
+## 无障碍与静态资源门（2026-11）
+
+- `npm run ui-check`：起本地 dev（默认 3155），Playwright + axe 扫 7 条路由 × 桌面/移动两视口，外加键盘行为断言（页数下拉、抽屉焦点陷阱、表单错误播报、每页唯一 h1）与触控目标/CLS 记录。基线 `scripts/ui-check-baseline.json` 做棘轮；不进 `npm run gate`（门要秒级、不依赖浏览器），改 UI 时手动跑。
+- `npm run check-assets`：`public/assets` ≤20MB、单文件 ≤200KB；已挂在 `npm run gate` / `gate:fast` 的 `assets` 步。
+- 图片两档：列表卡片用 `<stem>.thumb.webp`（480w），详情/大图位用 `<stem>.webp`（≤1600w）；换图跑 `node scripts/build-style-assets.mjs`（幂等，删源前确认新路径已被引用）。
+
 ## 1. 系统是什么
 
 ppt.an520.xin = **AnPPT**（anppt-v2）：AI 生成 PPT 网站。技术栈：Next.js 16.3.1 App Router + React 19 + TypeScript + better-sqlite3（WAL）+ 自研 lib 层。生图走 OpenAI 兼容图片接口，大纲/梳理走 LLM 模型链，转可编辑走 WPS AIPPT / Image2PPT / Codia 多通道。
