@@ -98,7 +98,7 @@ export function StepStyle({
           <button
             type="button"
             onClick={() => setCategory(null)}
-            className="text-xs text-ink-4 underline underline-offset-2 hover:text-brand"
+            className="text-xs text-ink-3 underline underline-offset-2 hover:text-brand"
           >
             清除筛选
           </button>

@@ -8,7 +8,14 @@ import type { ShowcaseCase } from "@/data/showcase-cases";
  * Before/After 滑块对比：拖动中间手柄查看「原始 → 生成」对比。
  * 支持鼠标与触摸（pointer events）。
  */
-export function BeforeAfterSlider({ item }: { item: ShowcaseCase }) {
+export function BeforeAfterSlider({
+  item,
+  preload = false,
+}: {
+  item: ShowcaseCase;
+  /** 首屏可见时给 true，让这张图参与 LCP 抢先加载（Next 16 用 preload，priority 已废弃） */
+  preload?: boolean;
+}) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState(50);
   const dragging = useRef(false);
@@ -58,6 +65,7 @@ export function BeforeAfterSlider({ item }: { item: ShowcaseCase }) {
           src={item.afterImageUrl}
           alt={`${item.title} 生成后`}
           fill
+          preload={preload}
           sizes="(max-width: 768px) 100vw, 560px"
           className="object-cover"
           draggable={false}

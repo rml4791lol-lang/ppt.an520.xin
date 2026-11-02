@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -69,36 +69,122 @@ function Dropdown({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const baseId = useId();
+  const listId = `${baseId}-list`;
   const current = options.find((o) => o.value === value);
+  const enabledIndexes = options.reduce<number[]>((acc, opt, index) => {
+    if (!opt.disabled) acc.push(index);
+    return acc;
+  }, []);
+
+  const openMenu = (startIndex?: number) => {
+    const selected = options.findIndex((o) => o.value === value);
+    const fallback = selected >= 0 && !options[selected].disabled ? selected : (enabledIndexes[0] ?? -1);
+    setActiveIndex(startIndex ?? fallback);
+    setOpen(true);
+  };
+  const closeMenu = (restoreFocus = true) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  };
+  const selectOption = (index: number) => {
+    const opt = options[index];
+    if (!opt || opt.disabled) return;
+    onChange(opt.value);
+    closeMenu();
+  };
+  const move = (step: 1 | -1) => {
+    if (enabledIndexes.length === 0) return;
+    const at = enabledIndexes.indexOf(activeIndex);
+    const next = at === -1 ? (step === 1 ? 0 : enabledIndexes.length - 1) : (at + step + enabledIndexes.length) % enabledIndexes.length;
+    setActiveIndex(enabledIndexes[next]);
+  };
+
+  // 打开后把焦点交给列表框，方向键/Home/End/Enter 全在 menu 上处理
+  useEffect(() => {
+    if (open) menuRef.current?.focus();
+  }, [open]);
+
   return (
     <div className={`relative ${className ?? ""}`}>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 rounded-full border border-line bg-card px-4 py-2 text-sm text-ink-2 transition hover:border-brand-line"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => (open ? closeMenu(false) : openMenu())}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openMenu();
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            openMenu(enabledIndexes[enabledIndexes.length - 1]);
+          } else if (event.key === "Escape" && open) {
+            event.preventDefault();
+            closeMenu();
+          }
+        }}
+        className="flex w-full items-center justify-between gap-2 rounded-full border border-line-control bg-card px-4 py-2 text-sm text-ink-2 transition hover:border-brand-line"
       >
         <span className="truncate">{current?.label}</span>
         <ChevronDownIcon width={14} height={14} className="shrink-0 text-ink-3" />
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute z-40 mt-2 w-full min-w-52 rounded-xl border border-line bg-card p-1 shadow-pop">
-            {options.map((opt) => (
-              <button
+          <div className="fixed inset-0 z-30" onClick={() => closeMenu()} />
+          <div
+            ref={menuRef}
+            id={listId}
+            role="listbox"
+            tabIndex={-1}
+            aria-activedescendant={activeIndex >= 0 ? `${baseId}-opt-${activeIndex}` : undefined}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeMenu();
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                move(1);
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                move(-1);
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                if (enabledIndexes.length) setActiveIndex(enabledIndexes[0]);
+              } else if (event.key === "End") {
+                event.preventDefault();
+                if (enabledIndexes.length) setActiveIndex(enabledIndexes[enabledIndexes.length - 1]);
+              } else if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                selectOption(activeIndex);
+              } else if (event.key === "Tab") {
+                closeMenu(false);
+              }
+            }}
+            className="absolute z-40 mt-2 w-full min-w-52 rounded-xl border border-line bg-card p-1 shadow-pop outline-none"
+          >
+            {options.map((opt, index) => (
+              <div
                 key={opt.value}
-                type="button"
-                disabled={opt.disabled}
-                onClick={() => {
-                  onChange(opt.value);
-                  setOpen(false);
-                }}
+                id={`${baseId}-opt-${index}`}
+                role="option"
+                aria-selected={opt.value === value}
+                aria-disabled={opt.disabled || undefined}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => selectOption(index)}
                 className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
                   opt.disabled
-                    ? "cursor-not-allowed text-ink-4"
+                    ? "cursor-not-allowed text-ink-3"
                     : opt.value === value
                       ? "bg-brand-soft font-medium text-brand"
-                      : "text-ink-2 hover:bg-page"
+                      : index === activeIndex
+                        ? "cursor-pointer bg-page text-ink"
+                        : "cursor-pointer text-ink-2"
                 }`}
               >
                 <span>{opt.label}</span>
@@ -107,7 +193,7 @@ function Dropdown({
                     {opt.note}
                   </span>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </>
@@ -193,7 +279,7 @@ function StylePicker({
                 );
               })}
             </div>
-            <p className="mt-3 text-xs text-ink-4">
+            <p className="mt-3 text-xs text-ink-3">
               不选择时，AI 将按内容自动匹配推荐风格
             </p>
           </div>
@@ -486,7 +572,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 </div>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <p className="text-xs text-ink-4">
+                <p className="text-xs text-ink-3">
                   {isCustomDuration && customPageCount === null
                     ? `自定义页数范围 ${CUSTOM_PAGE_MIN}-${CUSTOM_PAGE_MAX} 页`
                     : "按页计费，确认前显示估价"}
@@ -520,14 +606,14 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                         第 {i + 1} 页
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-ink-4">
+                        <span className="text-xs text-ink-3">
                           {content.length}/{MAX_PAGE_CHARS}
                         </span>
                         {pages.length > 1 && (
                           <button
                             type="button"
                             aria-label={`删除第 ${i + 1} 页`}
-                            className="rounded-md p-1 text-ink-4 hover:text-danger"
+                            className="rounded-md p-1 text-ink-3 hover:text-danger"
                             onClick={() =>
                               setPages((prev) => prev.filter((_, idx) => idx !== i))
                             }
@@ -547,7 +633,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                           prev.map((p, idx) => (idx === i ? e.target.value : p)),
                         )
                       }
-                      className="w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+                      className="w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
                     />
                   </div>
                 ))}
@@ -575,7 +661,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                     className={`shrink-0 transition ${settingsOpen ? "rotate-180" : ""}`}
                   />
                 </button>
-                <p className="text-xs text-ink-4">单页上限 1,500 字</p>
+                <p className="text-xs text-ink-3">单页上限 1,500 字</p>
               </div>
               {settingsOpen && (
                 <div
@@ -591,7 +677,7 @@ export function UploadCard({ packs }: { packs: StylePack[] }) {
                 </div>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <p className="text-xs text-ink-4">按页计费，确认前显示估价</p>
+                <p className="text-xs text-ink-3">按页计费，确认前显示估价</p>
                 <button
                   type="button"
                   onClick={() => void submitPaged()}

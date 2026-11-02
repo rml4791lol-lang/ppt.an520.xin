@@ -191,7 +191,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
               <select
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
+                className="rounded-lg border border-line-control bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
               >
                 <option value="">全部类别</option>
                 {categoryOptions.map((value) => (
@@ -206,7 +206,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
               <select
                 value={level}
                 onChange={(event) => setLevel(event.target.value)}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
+                className="rounded-lg border border-line-control bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
               >
                 <option value="">全部级别</option>
                 <option value="error">错误</option>
@@ -218,7 +218,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
               <select
                 value={days}
                 onChange={(event) => setDays(event.target.value)}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
+                className="rounded-lg border border-line-control bg-white px-2.5 py-1.5 text-xs text-ink outline-none transition focus:border-brand"
               >
                 <option value="1">最近 1 天</option>
                 <option value="3">最近 3 天</option>
@@ -307,7 +307,7 @@ export function ProblemsClient({ admin }: { admin: { displayName: string } }) {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] leading-4 text-ink-3">
                         <div title={item.requestId || "旧记录无请求号"}>{item.requestId ? item.requestId.slice(0, 16) : "—"}</div>
-                        <div className="mt-1 text-[10px] text-ink-4" title={item.release || "旧记录无发布版本"}>
+                        <div className="mt-1 text-[10px] text-ink-3" title={item.release || "旧记录无发布版本"}>
                           {item.release ? item.release.slice(0, 12) : "—"}
                         </div>
                       </td>

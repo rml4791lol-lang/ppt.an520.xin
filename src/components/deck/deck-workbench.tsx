@@ -4,6 +4,7 @@
 // 状态机（不看样稿流程，与用户对齐）：大纲编辑 → 内容梳理 → 确认冻结 → 选择风格 → 整套生成 → 导出。
 // 规格：anppt-v2-recon/WORKBENCH-UI-SPEC.md（sample/confirm-sample 步骤按产品决策剔除）。
 import Link from "next/link";
+import { LoginWall } from "@/components/auth/login-wall";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
@@ -237,29 +238,32 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
   );
 
   // ---------- 终态错误屏（401/404） ----------
+  if (fatalError?.status === 401) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center bg-page px-4">
+        <LoginWall
+          scene="deck"
+          next={`/deck/${deckId}`}
+          detail="登录后会自动回到这个项目。"
+        />
+      </div>
+    );
+  }
+
   if (fatalError) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-page px-4 text-center">
-        <p className="text-lg font-semibold text-ink">
-          {fatalError.status === 401 ? "请先登录" : "项目不存在或已删除"}
-        </p>
-        <p className="mt-2 text-sm text-ink-3">{fatalError.message}</p>
+        <p className="text-lg font-semibold text-ink">项目不存在或已删除</p>
+        {fatalError.message !== "项目不存在或已删除" && (
+          <p className="mt-2 text-sm text-ink-3">{fatalError.message}</p>
+        )}
         <div className="mt-6 flex items-center gap-3">
-          {fatalError.status === 401 ? (
-            <Link
-              href={`/login?next=${encodeURIComponent(`/deck/${deckId}`)}`}
-              className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
-            >
-              去登录
-            </Link>
-          ) : (
-            <Link
-              href="/projects"
-              className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
-            >
-              返回我的项目
-            </Link>
-          )}
+          <Link
+            href="/projects"
+            className="rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-white transition hover:bg-brand-strong"
+          >
+            返回我的项目
+          </Link>
           <Link href="/" className="text-sm text-ink-3 transition hover:text-brand">
             返回首页
           </Link>
@@ -351,7 +355,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
                       ? "bg-brand font-medium text-white"
                       : done
                         ? "text-ink-2 hover:bg-brand-soft hover:text-brand"
-                        : "cursor-not-allowed text-ink-4"
+                        : "cursor-not-allowed text-ink-3"
                   }`}
                 >
                   <span
@@ -370,7 +374,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             );
           })}
         </ol>
-        <p className="mt-1.5 text-center text-xs text-ink-4 sm:hidden">
+        <p className="mt-1.5 text-center text-xs text-ink-3 sm:hidden">
           第 {activeStep + 1} 步 / 共 {DECK_STEPS.length} 步 · {DECK_STEPS[activeStep]}
         </p>
       </nav>
@@ -484,7 +488,7 @@ export function DeckWorkbench({ deckId }: { deckId: string }) {
             <li>重新生成后，当前大纲及你的修改内容将被覆盖。</li>
             <li>重新生成大纲不消耗 🌟 星星；之后的内容梳理同样免费。</li>
           </ul>
-          <p className="mt-3 text-xs text-ink-4">*页面生成阶段才按页计费</p>
+          <p className="mt-3 text-xs text-ink-3">*页面生成阶段才按页计费</p>
           <div className="mt-5 flex justify-end gap-3">
             <button
               type="button"
@@ -651,7 +655,7 @@ function EditableTitle({
         className="min-w-0 max-w-72 truncate rounded-lg px-2 py-1 text-left text-sm font-medium text-ink transition hover:bg-page"
       >
         {title || "未命名项目"}
-        {saving && <span className="ml-2 text-xs text-ink-4">保存中…</span>}
+        {saving && <span className="ml-2 text-xs text-ink-3">保存中…</span>}
       </button>
     );
   }

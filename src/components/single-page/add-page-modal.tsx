@@ -120,13 +120,6 @@ export function AddPageModal({
       {tab === "image" ? (
         <div className="mt-4">
           <div
-            role="button"
-            tabIndex={0}
-            aria-label="上传图片"
-            onClick={() => inputRef.current?.click()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-            }}
             onDragOver={(e) => {
               e.preventDefault();
               setDragOver(true);
@@ -137,15 +130,20 @@ export function AddPageModal({
               setDragOver(false);
               pickFiles(e.dataTransfer.files);
             }}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center transition ${
-              dragOver ? "border-brand bg-brand-softer" : "border-line-strong bg-page hover:border-brand-line"
-            }`}
           >
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-soft text-brand">
-              <UploadIcon width={20} height={20} />
-            </span>
-            <p className="mt-3 text-sm font-medium text-ink">点击上传 图片，或拖拽到此处</p>
-            <p className="mt-1 text-xs text-ink-4">支持一次多张，一张图片追加一页 · 单张 ≤15MB</p>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center transition ${
+                dragOver ? "border-brand bg-brand-softer" : "border-line-control bg-page hover:border-brand-line"
+              }`}
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+                <UploadIcon width={20} height={20} />
+              </span>
+              <p className="mt-3 text-sm font-medium text-ink">点击上传 图片，或拖拽到此处</p>
+              <p className="mt-1 text-xs text-ink-3">支持一次多张，一张图片追加一页 · 单张 ≤15MB</p>
+            </button>
           </div>
           <input
             ref={inputRef}
@@ -168,11 +166,11 @@ export function AddPageModal({
                     className="flex items-center gap-2 rounded-lg bg-page px-3 py-1.5 text-xs text-ink-2"
                   >
                     <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                    <span className="shrink-0 text-ink-4">{(file.size / 1024 / 1024).toFixed(1)}MB</span>
+                    <span className="shrink-0 text-ink-3">{(file.size / 1024 / 1024).toFixed(1)}MB</span>
                     <button
                       type="button"
                       aria-label="移除"
-                      className="shrink-0 text-ink-4 hover:text-danger"
+                      className="shrink-0 text-ink-3 hover:text-danger"
                       onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
                     >
                       <CloseIcon width={12} height={12} />
@@ -200,9 +198,9 @@ export function AddPageModal({
               setError(null);
             }}
             placeholder="粘贴单页 PPT 需要表达的内容…"
-            className="w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+            className="w-full resize-y rounded-xl border border-line bg-card px-3 py-2.5 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
           />
-          <div className="mt-1.5 flex items-center justify-between text-xs text-ink-4">
+          <div className="mt-1.5 flex items-center justify-between text-xs text-ink-3">
             <span>已输入 {text.trim().length} 字</span>
             <span>粘贴文本每次只生成 1 页；如需长文档自动分页，请使用整套 PPT 生成。</span>
           </div>
@@ -212,7 +210,7 @@ export function AddPageModal({
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
 
       <div className="mt-5 flex items-center justify-between">
-        <span className="text-xs text-ink-4">
+        <span className="text-xs text-ink-3">
           {remaining <= 0
             ? `已达 ${SP_MAX_PAGES} 页上限`
             : pendingCount > 0

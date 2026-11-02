@@ -744,7 +744,7 @@ export function AdminClient({ admin }: AdminClientProps) {
                         placeholder={field.secret ? (field.configured ? "留空表示不修改现有密钥" : "输入新密钥") : "请输入配置值"}
                         autoComplete="off"
                         spellCheck={false}
-                        className="h-10 w-full rounded-xl border border-line-strong bg-white px-3 text-sm text-ink outline-none transition placeholder:text-ink-4 focus:border-brand disabled:bg-page disabled:text-ink-4"
+                        className="h-10 w-full rounded-xl border border-line-strong bg-white px-3 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand disabled:bg-page disabled:text-ink-3"
                       />
                     </div>
                     <div className="mt-2 flex min-h-5 items-center justify-between gap-3 text-[10px] text-ink-3">

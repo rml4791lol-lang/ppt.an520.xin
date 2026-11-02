@@ -80,7 +80,7 @@ export function StepPrepare({
           />
         </div>
 
-        <p className="mt-6 text-xs leading-5 text-ink-4">
+        <p className="mt-6 text-xs leading-5 text-ink-3">
           请保持当前页面打开，整理完成后会自动进入大纲编辑页
           <br />
           预计 1–2 分钟，请稍候
@@ -88,17 +88,17 @@ export function StepPrepare({
 
         <dl className="mx-auto mt-8 grid max-w-md grid-cols-2 gap-3 text-left sm:grid-cols-3">
           <div className="rounded-xl border border-line bg-card px-4 py-3">
-            <dt className="text-xs text-ink-4">来源文档</dt>
+            <dt className="text-xs text-ink-3">来源文档</dt>
             <dd className="mt-1 truncate text-sm font-medium text-ink">
               {state.deck.sourceFileName || "—"}
             </dd>
           </div>
           <div className="rounded-xl border border-line bg-card px-4 py-3">
-            <dt className="text-xs text-ink-4">汇报时长</dt>
+            <dt className="text-xs text-ink-3">汇报时长</dt>
             <dd className="mt-1 text-sm font-medium text-ink">{state.deck.durationMinutes} 分钟</dd>
           </div>
           <div className="rounded-xl border border-line bg-card px-4 py-3">
-            <dt className="text-xs text-ink-4">目标页数</dt>
+            <dt className="text-xs text-ink-3">目标页数</dt>
             <dd className="mt-1 text-sm font-medium text-ink">{state.deck.targetPageCount} 页</dd>
           </div>
         </dl>

@@ -297,7 +297,7 @@ export function OnlyOfficeClient() {
             </article>
           ))}
         </div>
-        <p className="mt-4 rounded-2xl border border-line bg-page px-5 py-4 text-xs leading-5 text-ink-4 sm:px-6">
+        <p className="mt-4 rounded-2xl border border-line bg-page px-5 py-4 text-xs leading-5 text-ink-3 sm:px-6">
           <strong className="font-semibold text-ink-3">什么时候可以不下载：</strong>
           如果你只在 AnPPT 里在线生成、看图页和 PDF，不需要在本地继续改稿，就不用装软件，也不用充值解锁它。
         </p>
@@ -325,11 +325,11 @@ export function OnlyOfficeClient() {
             <p className="text-sm font-semibold text-brand">Windows 一键下载</p>
             <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink sm:text-3xl">选对你的电脑版本，点击就开始下载</h2>
           </div>
-          <p className="text-xs text-ink-4">
+          <p className="text-xs text-ink-3">
             当前版本 {release.version} · {formatReleaseDate(release.publishedAt)}
           </p>
         </div>
-        <p className="mt-3 max-w-3xl text-xs leading-5 text-ink-4">
+        <p className="mt-3 max-w-3xl text-xs leading-5 text-ink-3">
           安装包来自 ONLYOFFICE 官方开源仓库，我们只做入口整理，并把版本号、大小与 SHA-256 校验值一起列出来，方便你核对文件有没有被改过。
         </p>
 
@@ -356,7 +356,7 @@ export function OnlyOfficeClient() {
                 </div>
                 <h3 className="mt-5 text-xl font-bold text-ink">{installer.title}</h3>
                 <p className="mt-2 min-h-12 text-sm leading-6 text-ink-3">{installer.description}</p>
-                <div className="mt-5 flex items-center gap-2 text-xs text-ink-4">
+                <div className="mt-5 flex items-center gap-2 text-xs text-ink-3">
                   <FileIcon width={15} height={15} />
                   <span>{asset.filename}</span>
                   <span aria-hidden="true">·</span>
@@ -376,16 +376,16 @@ export function OnlyOfficeClient() {
                   ) : (
                     <BenefitAction me={me} compact />
                   )}
-                  <details className="group mt-3 rounded-xl bg-page px-3 py-2.5 text-xs text-ink-4">
+                  <details className="group mt-3 rounded-xl bg-page px-3 py-2.5 text-xs text-ink-3">
                     <summary className="cursor-pointer select-none font-medium text-ink-3">查看 SHA-256 校验值</summary>
-                    <code className="mt-2 block break-all font-mono text-[10px] leading-4 text-ink-4">{asset.sha256}</code>
+                    <code className="mt-2 block break-all font-mono text-[10px] leading-4 text-ink-3">{asset.sha256}</code>
                   </details>
                 </div>
               </article>
             );
           })}
         </div>
-        <p className="mt-4 text-xs leading-5 text-ink-4">
+        <p className="mt-4 text-xs leading-5 text-ink-3">
           不确定选哪个？绝大多数电脑选择 x64。只有“系统类型”明确写着 32 位时选 x86；骁龙 Windows 电脑通常选 ARM64。
         </p>
       </section>
@@ -435,7 +435,7 @@ export function OnlyOfficeClient() {
                 </p>
               </div>
               <div className="mt-2 rounded-2xl bg-page p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-ink-4">订阅制办公软件的常见做法</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-ink-3">订阅制办公软件的常见做法</p>
                 <p className="mt-2 text-sm leading-6 text-ink-3">{row.subscription}</p>
               </div>
             </article>
@@ -443,7 +443,7 @@ export function OnlyOfficeClient() {
         </div>
       </section>
 
-      <section className="mt-8 rounded-2xl border border-line bg-page px-5 py-4 text-xs leading-5 text-ink-4 sm:px-6">
+      <section className="mt-8 rounded-2xl border border-line bg-page px-5 py-4 text-xs leading-5 text-ink-3 sm:px-6">
         <strong className="font-semibold text-ink-3">说明：</strong>
         ONLYOFFICE Desktop Editors 是第三方开源软件，著作权与许可证归 ONLYOFFICE 官方所有，不是 AnPPT 自研产品；
         AnPPT 充值对应星星与长期附带服务，不是软件销售或授权费。复杂宏、少数高级动画、特殊字体和专有对象可能存在兼容差异。

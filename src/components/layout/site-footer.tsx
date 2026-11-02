@@ -72,7 +72,7 @@ export function SiteFooter({
           </p>
           <a
             href={`mailto:${serviceEmail}`}
-            className="mt-3 inline-block text-xs text-ink-4 transition hover:text-brand"
+            className="mt-3 inline-flex min-h-6 items-center text-xs text-ink-3 transition hover:text-brand"
           >
             {serviceEmail}
           </a>
@@ -86,7 +86,7 @@ export function SiteFooter({
                 <li key={link.label}>
                   <Link
                     href={link.href}
-                    className="text-sm text-ink-3 transition hover:text-brand"
+                    className="inline-flex min-h-6 items-center text-sm text-ink-3 transition hover:text-brand"
                   >
                     {link.label}
                   </Link>
@@ -105,7 +105,7 @@ export function SiteFooter({
                   href={link.href}
                   target={link.external ? "_blank" : undefined}
                   rel={link.external ? "noreferrer" : undefined}
-                  className="text-sm text-ink-3 transition hover:text-brand"
+                  className="inline-flex min-h-6 items-center text-sm text-ink-3 transition hover:text-brand"
                 >
                   {link.label}
                 </a>
@@ -116,7 +116,7 @@ export function SiteFooter({
       </div>
 
       <div className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-5 text-xs text-ink-4 sm:flex-row sm:items-center sm:justify-between lg:px-0">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-5 text-xs text-ink-3 sm:flex-row sm:items-center sm:justify-between lg:px-0">
           <p>
             © {new Date().getFullYear()} {companyName} · AI 生成内容可能存在偏差，请在正式使用前人工核验。
           </p>
@@ -126,15 +126,15 @@ export function SiteFooter({
                 href="https://beian.miit.gov.cn/"
                 target="_blank"
                 rel="noreferrer"
-                className="transition hover:text-brand"
+                className="inline-flex min-h-6 items-center transition hover:text-brand"
               >
                 {icpNumber}
               </a>
             ) : null}
-            <Link href="/legal/privacy" className="transition hover:text-brand">
+            <Link href="/legal/privacy" className="inline-flex min-h-6 items-center transition hover:text-brand">
               隐私政策
             </Link>
-            <Link href="/legal/terms" className="transition hover:text-brand">
+            <Link href="/legal/terms" className="inline-flex min-h-6 items-center transition hover:text-brand">
               服务条款
             </Link>
           </div>

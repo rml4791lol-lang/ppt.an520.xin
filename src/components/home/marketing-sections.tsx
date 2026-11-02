@@ -118,7 +118,7 @@ export function WorkflowSection() {
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand">
                 <step.icon width={17} height={17} />
               </span>
-              <span className="text-xs font-semibold tracking-[0.18em] text-ink-4">
+              <span className="text-xs font-semibold tracking-[0.18em] text-ink-3">
                 0{index + 1}
               </span>
             </div>
@@ -143,7 +143,7 @@ export function FeatureSection() {
         </div>
         <Link
           href="/help"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
+          className="inline-flex min-h-6 items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
         >
           查看使用说明
           <ArrowRightIcon width={14} height={14} />
@@ -228,7 +228,7 @@ export function TrustSection() {
           <p className="mt-2 text-sm leading-6 text-ink-3">{item.text}</p>
           <Link
             href={item.href}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand transition hover:text-brand-strong"
+            className="mt-3 inline-flex min-h-6 items-center gap-1 text-xs font-medium text-brand transition hover:text-brand-strong"
           >
             {item.link}
             <ArrowRightIcon width={12} height={12} />
@@ -251,7 +251,7 @@ export function HomeFaqSection() {
         </div>
         <Link
           href="/help"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
+          className="inline-flex min-h-6 items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
         >
           全部问题
           <ArrowRightIcon width={14} height={14} />
@@ -266,7 +266,7 @@ export function HomeFaqSection() {
             <summary className="cursor-pointer list-none text-sm font-medium text-ink marker:hidden">
               <span className="flex items-center justify-between gap-4">
                 {item.q}
-                <span className="text-lg leading-none text-ink-4 transition group-open:rotate-45">+</span>
+                <span className="text-lg leading-none text-ink-3 transition group-open:rotate-45">+</span>
               </span>
             </summary>
             <p className="mt-3 border-t border-line pt-3 text-sm leading-7 text-ink-3">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { AUTH_SCENES, type AuthScene } from "@/data/auth-scenes";
 import { useState } from "react";
 import { api, resetSessionCache, type AuthResult } from "@/lib/client/api";
 
@@ -24,6 +25,11 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/projects";
+  const fromScene = searchParams.get("from");
+  const sceneLabel =
+    fromScene && Object.prototype.hasOwnProperty.call(AUTH_SCENES, fromScene)
+      ? AUTH_SCENES[fromScene as AuthScene]
+      : null;
 
   const [mode, setMode] = useState<Mode>("code");
   const [registering, setRegistering] = useState(false);
@@ -105,13 +111,18 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
   };
 
   const inputCls =
-    "w-full rounded-xl border border-line bg-card px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-4 focus:border-brand";
+    "w-full rounded-xl border border-line-control bg-card px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand";
 
   return (
     <div className="flex h-full flex-col justify-center p-6 sm:p-10">
-      <h2 className="text-center text-xl font-bold text-ink">
+      {sceneLabel && (
+        <p className="mb-4 rounded-xl bg-brand-soft px-3 py-2 text-center text-xs leading-5 text-brand">
+          你刚才在{sceneLabel}，登录后会自动回到那里。
+        </p>
+      )}
+      <h1 className="text-center text-xl font-bold text-ink">
         {registering ? "注册 AnPPT 账号" : "登录 AnPPT"}
-      </h2>
+      </h1>
       <p className="mt-2 text-center text-xs text-ink-3">
         {registering ? "注册即送星星，马上开始生成" : "登录后可保存作品、查看项目和使用星星"}
       </p>
@@ -186,7 +197,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
                   type="button"
                   disabled={sending || countdown > 0}
                   onClick={() => void sendCode()}
-                  className="shrink-0 rounded-xl border border-brand-line px-3 text-sm text-brand transition hover:bg-brand-softer disabled:cursor-not-allowed disabled:border-line disabled:text-ink-4"
+                  className="shrink-0 rounded-xl border border-brand-line px-3 text-sm text-brand transition hover:bg-brand-softer disabled:cursor-not-allowed disabled:border-line disabled:text-ink-3"
                 >
                   {countdown > 0 ? `${countdown}s 后重发` : sending ? "发送中…" : "发送验证码"}
                 </button>
@@ -225,11 +236,18 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
           />
         )}
 
-        {error && (
-          <p className="rounded-xl bg-danger-soft px-3 py-2 text-xs leading-5 text-danger">
-            {error}
-          </p>
-        )}
+        {/* 常驻 live region：插入式渲染的 role=alert 在部分读屏下不播报，空时用 sr-only 收起来 */}
+        <p
+          role="alert"
+          aria-live="assertive"
+          className={
+            error
+              ? "rounded-xl bg-danger-soft px-3 py-2 text-xs leading-5 text-danger"
+              : "sr-only"
+          }
+        >
+          {error}
+        </p>
 
         <button
           type="submit"
@@ -246,7 +264,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
             已有账号？
             <button
               type="button"
-              className="font-medium text-brand hover:underline"
+              className="inline-flex min-h-6 items-center font-medium text-brand hover:underline"
               onClick={() => {
                 setRegistering(false);
                 setError(null);
@@ -260,7 +278,7 @@ export function LoginCard({ signupBonus }: { signupBonus: number }) {
             没有账号？
             <button
               type="button"
-              className="font-medium text-brand hover:underline"
+              className="inline-flex min-h-6 items-center font-medium text-brand hover:underline"
               onClick={() => {
                 setRegistering(true);
                 setError(null);

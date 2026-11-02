@@ -17,7 +17,7 @@ export function LoginShowcase({ cases }: { cases: ShowcaseCase[] }) {
         *AI 生成具有随机性，具体生成效果视页面内容而定
       </p>
       <div className="mt-6">
-        <BeforeAfterSlider item={active} />
+        <BeforeAfterSlider item={active} preload />
       </div>
       <div className="mt-4 grid grid-cols-4 gap-2.5">
         {cases.map((c) => (

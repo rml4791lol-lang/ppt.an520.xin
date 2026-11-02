@@ -47,7 +47,7 @@ function Hero({ signupBonusPoints }: { signupBonusPoints: number }) {
           先看看模板库
         </Link>
       </div>
-      <p className="mt-3 text-xs text-ink-4">
+      <p className="mt-3 text-xs text-ink-3">
         新用户注册送 {signupBonusPoints} 🌟 · 生成失败未完成部分自动退回
       </p>
     </section>
@@ -80,7 +80,7 @@ export default function HomePage() {
           </div>
           <Link
             href="/style-packs"
-            className="flex shrink-0 items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
+            className="flex min-h-6 shrink-0 items-center gap-1 text-sm font-medium text-brand transition hover:text-brand-strong"
           >
             全部风格
             <ArrowRightIcon width={14} height={14} />

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { LoginWall } from "@/components/auth/login-wall";
 import { PlusIcon } from "@/components/icons";
 import { api, ApiClientError, getSession, type ProjectItem } from "@/lib/client/api";
 import { beautifyHref } from "@/modules/ppt-replicate/client/replicate-urls";
@@ -65,27 +66,12 @@ export function ProjectsClient() {
   return (
     <div id="recent" className="space-y-5">
       {error && (
-        <p className="rounded-xl bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p>
+        <p role="alert" className="rounded-xl bg-danger-soft px-4 py-2.5 text-sm text-danger">
+          {error}
+        </p>
       )}
       {unauthorized && (
-        <div className="flex items-center justify-between rounded-2xl border border-danger/20 bg-danger-soft px-5 py-4">
-          <p className="text-sm text-danger">请先登录后再操作</p>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="text-sm font-medium text-danger hover:underline"
-            >
-              重新加载
-            </button>
-            <Link
-              href="/login?next=%2Fprojects"
-              className="rounded-full bg-dark px-4 py-1.5 text-xs font-medium text-white"
-            >
-              去登录
-            </Link>
-          </div>
-        </div>
+        <LoginWall scene="projects" detail="项目跟账号走，登录后才能看到历史记录。" />
       )}
 
       {loading ? (
@@ -106,7 +92,7 @@ export function ProjectsClient() {
                 }
                 className="block rounded-2xl border border-line bg-card p-4 shadow-card transition hover:shadow-pop"
               >
-                <div className="flex aspect-[16/9] items-center justify-center rounded-xl bg-page text-ink-4">
+                <div className="flex aspect-[16/9] items-center justify-center rounded-xl bg-page text-ink-3">
                   {p.coverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -122,7 +108,7 @@ export function ProjectsClient() {
                   {p.source === "replicate" ? "美化 · " : ""}
                   {p.title || "未命名项目"}
                 </p>
-                <p className="mt-1 text-xs text-ink-4">
+                <p className="mt-1 text-xs text-ink-3">
                   {p.updatedAt
                     ? `更新于 ${new Date(p.updatedAt).toLocaleString("zh-CN")}`
                     : ""}
@@ -142,7 +128,7 @@ export function ProjectsClient() {
                   <button
                     type="button"
                     onClick={() => setConfirmingId(null)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-ink-4 transition hover:text-ink"
+                    className="rounded-full px-2 py-0.5 text-[11px] text-ink-3 transition hover:text-ink"
                   >
                     取消
                   </button>
@@ -152,7 +138,7 @@ export function ProjectsClient() {
                   type="button"
                   aria-label={`删除项目 ${p.title}`}
                   onClick={() => setConfirmingId(p.id)}
-                  className="absolute right-2 top-2 z-10 rounded-full border border-line bg-card/95 px-2.5 py-1 text-[11px] text-ink-4 shadow-card transition hover:border-danger/30 hover:text-danger"
+                  className="absolute right-2 top-2 z-10 rounded-full border border-line bg-card/95 px-2.5 py-1 text-[11px] text-ink-3 shadow-card transition hover:border-danger/30 hover:text-danger"
                 >
                   删除
                 </button>

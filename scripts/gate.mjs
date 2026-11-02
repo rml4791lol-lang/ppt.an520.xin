@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 const STEP_DEFS = [
   { name: 'branch', handler: runBranchStep },
   { name: 'markers', handler: runMarkersStep },
+  { name: 'assets', command: 'node', args: ['scripts/check-assets.mjs'] },
   { name: 'lint', command: 'npm', args: ['run', 'lint', '--', '--max-warnings=0'] },
   { name: 'typegen', command: 'npx', args: ['next', 'typegen'] },
   { name: 'tsc', command: 'npx', args: ['tsc', '--noEmit'] },
@@ -14,7 +15,7 @@ const STEP_DEFS = [
   { name: 'build', command: 'npm', args: ['run', 'build'] },
 ];
 
-const FAST_STEP_NAMES = ['branch', 'markers', 'lint', 'typegen', 'tsc'];
+const FAST_STEP_NAMES = ['branch', 'markers', 'assets', 'lint', 'typegen', 'tsc'];
 
 // 覆盖 agent 会手写/合并的全部文本类型：规范要求 md/ts/tsx/mjs，外加 yml/sh/json（CI 与钩子本身就是这些后缀）。
 const MARKER_EXT_RE = /\.(md|ts|tsx|mjs|js|yml|yaml|sh|json)$/i;

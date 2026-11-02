@@ -124,7 +124,7 @@ export default function HelpPage() {
             <ArrowRightIcon
               width={14}
               height={14}
-              className="ml-auto text-ink-4 transition group-hover:text-brand"
+              className="ml-auto text-ink-3 transition group-hover:text-brand"
             />
           </a>
         ))}
@@ -144,7 +144,7 @@ export default function HelpPage() {
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand">
                   <step.icon width={17} height={17} />
                 </span>
-                <span className="text-xs font-semibold tracking-[0.18em] text-ink-4">
+                <span className="text-xs font-semibold tracking-[0.18em] text-ink-3">
                   0{index + 1}
                 </span>
               </div>
@@ -174,7 +174,7 @@ export default function HelpPage() {
               </div>
               <div className="text-xs leading-6 text-ink-2">
                 <p>{row.formats}</p>
-                <p className="text-ink-4">{row.limit}</p>
+                <p className="text-ink-3">{row.limit}</p>
               </div>
               <p className="text-xs leading-6 text-ink-3">{row.note}</p>
             </div>
@@ -200,7 +200,7 @@ export default function HelpPage() {
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />PPTX 请先另存为 PDF，浏览器无法直接把 PPTX 拆成位图。</li>
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />生成按页计费，失败未完成部分自动退回。</li>
             </ul>
-            <Link href="/beautify" className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:text-brand-strong">
+            <Link href="/beautify" className="mt-5 inline-flex min-h-6 items-center gap-1.5 text-sm font-medium text-brand hover:text-brand-strong">
               打开 PPT 美化 <ArrowRightIcon width={14} height={14} />
             </Link>
           </div>
@@ -221,7 +221,7 @@ export default function HelpPage() {
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />转换完成后在「下载中心」获取，不重复扣费。</li>
               <li className="flex gap-2"><CheckIcon width={14} height={14} className="mt-1 text-brand" />复杂图表和特殊字体的还原度会有差异，请导出后检查。</li>
             </ul>
-            <Link href="/exports" className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:text-brand-strong">
+            <Link href="/exports" className="mt-5 inline-flex min-h-6 items-center gap-1.5 text-sm font-medium text-brand hover:text-brand-strong">
               前往下载中心 <ArrowRightIcon width={14} height={14} />
             </Link>
           </div>
@@ -237,20 +237,20 @@ export default function HelpPage() {
             { title: "可编辑导出", value: "按页计费", text: "转换成功才扣费；上游失败会退回，单次最多 50 页。" },
           ].map((item) => (
             <div key={item.title} className="rounded-2xl border border-line bg-card p-5 shadow-card">
-              <p className="text-xs text-ink-4">{item.title}</p>
+              <p className="text-xs text-ink-3">{item.title}</p>
               <p className="mt-2 text-2xl font-bold tracking-tight text-brand">{item.value}</p>
               <p className="mt-2 text-sm leading-6 text-ink-3">{item.text}</p>
             </div>
           ))}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-          <Link href="/recharge" className="inline-flex items-center gap-1.5 font-medium text-brand hover:text-brand-strong">
+          <Link href="/recharge" className="inline-flex min-h-6 items-center gap-1.5 font-medium text-brand hover:text-brand-strong">
             查看充值套餐 <ArrowRightIcon width={14} height={14} />
           </Link>
-          <Link href="/legal/refund" className="text-ink-3 transition hover:text-brand">
+          <Link href="/legal/refund" className="inline-flex min-h-6 items-center text-ink-3 transition hover:text-brand">
             退款说明
           </Link>
-          <Link href="/account/credits" className="text-ink-3 transition hover:text-brand">
+          <Link href="/account/credits" className="inline-flex min-h-6 items-center text-ink-3 transition hover:text-brand">
             积分明细
           </Link>
         </div>
@@ -267,7 +267,7 @@ export default function HelpPage() {
               <summary className="cursor-pointer list-none text-sm font-medium text-ink marker:hidden">
                 <span className="flex items-center justify-between gap-4">
                   {item.q}
-                  <span className="text-lg leading-none text-ink-4 transition group-open:rotate-45">+</span>
+                  <span className="text-lg leading-none text-ink-3 transition group-open:rotate-45">+</span>
                 </span>
               </summary>
               <p className="mt-3 border-t border-line pt-3 text-sm leading-7 text-ink-3">
@@ -301,10 +301,10 @@ export default function HelpPage() {
         </div>
       </section>
 
-      <div className="mt-8 flex flex-wrap items-center gap-4 text-xs text-ink-4">
-        <Link href="/legal/privacy" className="transition hover:text-brand">隐私政策</Link>
-        <Link href="/legal/terms" className="transition hover:text-brand">服务条款</Link>
-        <Link href="/legal/refund" className="transition hover:text-brand">退款说明</Link>
+      <div className="mt-8 flex flex-wrap items-center gap-4 text-xs text-ink-3">
+        <Link href="/legal/privacy" className="inline-flex min-h-6 items-center transition hover:text-brand">隐私政策</Link>
+        <Link href="/legal/terms" className="inline-flex min-h-6 items-center transition hover:text-brand">服务条款</Link>
+        <Link href="/legal/refund" className="inline-flex min-h-6 items-center transition hover:text-brand">退款说明</Link>
         <span className="inline-flex items-center gap-1">
           <ShieldIcon width={13} height={13} /> 账号与数据安全说明
         </span>

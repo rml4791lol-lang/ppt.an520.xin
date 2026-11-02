@@ -12,7 +12,6 @@ export function Dropzone({
   onFile,
   title,
   hint,
-  ariaLabel,
   validate,
 }: {
   accept: string[];
@@ -20,8 +19,6 @@ export function Dropzone({
   onFile: (file: File | null) => void;
   title: string;
   hint: string;
-  /** 文件卡/拖拽区的无障碍名称；缺省用 title */
-  ariaLabel?: string;
   /** 内置格式与大小校验通过后的补充校验；返回错误文案即拒绝（如 PPTX 需先转 PDF） */
   validate?: (file: File) => string | null;
 }) {
@@ -77,14 +74,8 @@ export function Dropzone({
 
   return (
     <div>
+      {/* 真按钮承载整个拖拽区：读屏拿到的名字就是可见文案，不会再报 label-content-name-mismatch */}
       <div
-        role="button"
-        tabIndex={0}
-        aria-label={ariaLabel ?? title}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-        }}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -95,20 +86,29 @@ export function Dropzone({
           setDragOver(false);
           pick(e.dataTransfer.files?.[0]);
         }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-14 text-center transition ${
-          dragOver
-            ? "border-brand bg-brand-softer"
-            : "border-line-strong bg-page hover:border-brand-line hover:bg-brand-softer"
-        }`}
       >
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand">
-          <UploadIcon width={22} height={22} />
-        </span>
-        <p className="mt-4 text-base font-semibold text-ink">{title}</p>
-        <p className="mt-1.5 text-sm text-ink-3">点击此处选择文件</p>
-        <p className="mt-3 text-xs leading-5 text-ink-4">{hint}</p>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-14 text-center transition ${
+            dragOver
+              ? "border-brand bg-brand-softer"
+              : "border-line-control bg-page hover:border-brand-line hover:bg-brand-softer"
+          }`}
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+            <UploadIcon width={22} height={22} />
+          </span>
+          <p className="mt-4 text-base font-semibold text-ink">{title}</p>
+          <p className="mt-1.5 text-sm text-ink-3">点击此处选择文件</p>
+          <p className="mt-3 text-xs leading-5 text-ink-3">{hint}</p>
+        </button>
       </div>
-      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          {error}
+        </p>
+      )}
       <input
         ref={inputRef}
         type="file"

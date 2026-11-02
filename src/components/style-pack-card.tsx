@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import type { StylePack } from "@/data/style-packs";
+import { stylePackThumb, type StylePack } from "@/data/style-packs";
 import { PackPreviewModal } from "@/components/style-packs/pack-preview-modal";
 
 const BADGE_TONE: Record<string, string> = {
@@ -15,9 +15,12 @@ const BADGE_TONE: Record<string, string> = {
 export function StylePackCard({
   pack,
   onUse,
+  preload = false,
 }: {
   pack: StylePack;
   onUse?: (pack: StylePack) => void;
+  /** 首屏可见的卡片给 true，其余保持懒加载 */
+  preload?: boolean;
 }) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const pages = pack.previewImageUrls.length > 0 ? pack.previewImageUrls : [pack.previewUrl];
@@ -32,9 +35,10 @@ export function StylePackCard({
           aria-label={`预览 ${pack.name}`}
         >
           <Image
-            src={pack.previewUrl}
+            src={stylePackThumb(pack.previewUrl)}
             alt={`${pack.name} 预览图`}
             fill
+            preload={preload}
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 280px"
             className="object-cover"
           />

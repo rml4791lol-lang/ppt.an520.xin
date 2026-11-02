@@ -32,14 +32,14 @@ const GEN_LABEL: Record<string, string> = {
 function genChipClass(status: string): string {
   switch (status) {
     case "succeeded":
-      return "bg-emerald-50 text-emerald-600";
+      return "bg-emerald-50 text-emerald-700";
     case "failed":
       return "bg-danger-soft text-danger";
     case "queued":
     case "running":
       return "bg-brand-soft text-brand";
     case "stale":
-      return "bg-page text-ink-4 line-through";
+      return "bg-page text-ink-3 line-through";
     default:
       return "bg-page text-ink-3";
   }
@@ -227,7 +227,7 @@ export function StepGenerate({
                 {pageSummary.failed > 0 && <span className="text-danger"> · 失败 {pageSummary.failed}</span>}
               </span>
             </h2>
-            <p className="hidden text-xs text-ink-4 sm:block">
+            <p className="hidden text-xs text-ink-3 sm:block">
               缩略总览 · 点击任意页面进入大图查看与优化
             </p>
           </div>
@@ -260,7 +260,7 @@ export function StepGenerate({
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <span className="flex h-full items-center justify-center bg-gradient-to-br from-brand-softer to-page text-xs text-ink-4">
+                      <span className="flex h-full items-center justify-center bg-gradient-to-br from-brand-softer to-page text-xs text-ink-3">
                         P{slide.pageIndex + 1} · {slide.title || "待生成"}
                       </span>
                     )}
@@ -279,7 +279,7 @@ export function StepGenerate({
 
                   {/* 信息行 */}
                   <div className="flex items-center gap-2 px-3.5 py-2.5">
-                    <span className="shrink-0 text-xs font-medium text-ink-4">
+                    <span className="shrink-0 text-xs font-medium text-ink-3">
                       P{slide.pageIndex + 1}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
@@ -403,7 +403,7 @@ export function StepGenerate({
                   setEditableForce(true);
                   setEditableOpen(true);
                 }}
-                className="hidden text-xs text-ink-4 underline decoration-dotted underline-offset-4 transition hover:text-brand sm:inline"
+                className="hidden text-xs text-ink-3 underline decoration-dotted underline-offset-4 transition hover:text-brand sm:inline"
               >
                 重新转换
               </button>
@@ -446,7 +446,7 @@ export function StepGenerate({
                   setTextEditableForce(true);
                   setTextEditableOpen(true);
                 }}
-                className="hidden text-xs text-ink-4 underline decoration-dotted underline-offset-4 transition hover:text-brand sm:inline"
+                className="hidden text-xs text-ink-3 underline decoration-dotted underline-offset-4 transition hover:text-brand sm:inline"
               >
                 重新转换
               </button>
@@ -875,7 +875,7 @@ function SlideEditor({
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             placeholder="例如：标题更突出、配色换成红色系、图表区域放大一点…"
-            className="mt-2 w-full resize-y rounded-xl border border-line bg-card px-3 py-2 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+            className="mt-2 w-full resize-y rounded-xl border border-line-control bg-card px-3 py-2 text-sm leading-6 text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
           />
           <button
             type="button"
@@ -966,7 +966,7 @@ function SlideEditor({
                     value={textEdit}
                     onChange={(e) => setTextEdit(e.target.value)}
                     placeholder="图上改字，例如：把标题改成「2025 年度报告」"
-                    className="w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-4 focus:border-brand-line"
+                    className="w-full rounded-xl border border-line-control bg-card px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink-3 focus:border-brand-line"
                   />
                   <button
                     type="button"
@@ -984,7 +984,7 @@ function SlideEditor({
                   <select
                     value={fusionPackId}
                     onChange={(e) => setFusionPackId(e.target.value)}
-                    className="w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink outline-none transition focus:border-brand-line"
+                    className="w-full rounded-xl border border-line-control bg-card px-3 py-2 text-sm text-ink outline-none transition focus:border-brand-line"
                   >
                     <option value="">选择要融合的模板风格…</option>
                     {fusionPacks.map((p) => (
@@ -1019,7 +1019,7 @@ function SlideEditor({
                     {isAnchor ? "本页是全套参考图 · 点击取消" : "设为全套参考图 · 免费"}
                   </button>
                   {anchorSlide && !isAnchor && (
-                    <p className="mt-1.5 text-[11px] leading-4 text-ink-4">
+                    <p className="mt-1.5 text-[11px] leading-4 text-ink-3">
                       当前参考图：第 {anchorSlide.pageIndex + 1} 页
                     </p>
                   )}
@@ -1032,7 +1032,7 @@ function SlideEditor({
           <div className="mt-4 border-t border-line pt-3">
             <p className="text-xs font-medium text-ink-3">本页版本 · 选中的版本参与导出</p>
             {versions.length === 0 ? (
-              <p className="mt-2 text-xs text-ink-4">本页暂无可切换的版本</p>
+              <p className="mt-2 text-xs text-ink-3">本页暂无可切换的版本</p>
             ) : (
               <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
                 {versions.map((v) => {
@@ -1053,7 +1053,7 @@ function SlideEditor({
                         active ? "border-brand ring-2 ring-brand/30" : "border-line hover:border-brand-line"
                       }`}
                     >
-                      <span className="flex h-14 w-24 items-center justify-center bg-page text-[10px] text-ink-4">
+                      <span className="flex h-14 w-24 items-center justify-center bg-page text-[10px] text-ink-3">
                         {v.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={v.imageUrl} alt={`版本 ${v.versionNo}`} className="h-full w-full object-cover" />

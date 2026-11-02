@@ -32,7 +32,6 @@ export function BeautifyTab() {
           onFile={setFile}
           title="拖入 PDF 或图片，开始美化"
           hint="PDF · PNG · JPG · WebP · 单文件最大 30MB · PPTX 请先另存 PDF"
-          ariaLabel="上传参考稿"
           validate={(picked) => (/.pptx?$/i.test(picked.name) ? "PPTX 请先另存为 PDF 再上传" : null)}
         />
       </div>
@@ -45,7 +44,7 @@ export function BeautifyTab() {
           开始美化
         </button>
       </div>
-      <p className="mt-2 px-1 text-xs text-ink-4">
+      <p className="mt-2 px-1 text-xs text-ink-3">
         不选文件也可进入工作台。生成与转可编辑均按页计费，进入工作台后可看到实际单价。
       </p>
     </div>

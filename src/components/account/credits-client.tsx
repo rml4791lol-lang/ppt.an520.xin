@@ -1,36 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { LoginWall } from "@/components/auth/login-wall";
 import {
   api,
   ApiClientError,
   type CreditLedgerEntry,
   type CreditSummary,
 } from "@/lib/client/api";
-
-function AuthWall({ onReload }: { onReload: () => void }) {
-  return (
-    <div className="flex items-center justify-between rounded-2xl border border-danger/20 bg-danger-soft px-5 py-4">
-      <p className="text-sm text-danger">请先登录后再操作</p>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onReload}
-          className="text-sm font-medium text-danger hover:underline"
-        >
-          重新加载
-        </button>
-        <Link
-          href="/login?next=%2Faccount%2Fcredits"
-          className="rounded-full bg-dark px-4 py-1.5 text-xs font-medium text-white"
-        >
-          去登录
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 const CARDS: { key: keyof CreditSummary; label: string; hint: string }[] = [
   { key: "balance", label: "可用星星", hint: "可用于生成和导出" },
@@ -83,7 +60,9 @@ export function CreditsClient() {
 
   return (
     <div className="space-y-6">
-      {unauthorized && <AuthWall onReload={() => void load()} />}
+      {unauthorized && (
+        <LoginWall scene="credits" detail="星星收支记在账号上，登录后才能查看。" />
+      )}
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {CARDS.map((card) => (
@@ -95,7 +74,7 @@ export function CreditsClient() {
             <p className="mt-2 text-2xl font-bold tracking-tight text-ink">
               {summary?.[card.key] ?? "—"}
             </p>
-            <p className="mt-2 text-xs text-ink-4">{card.hint}</p>
+            <p className="mt-2 text-xs text-ink-3">{card.hint}</p>
           </div>
         ))}
       </div>
@@ -122,14 +101,14 @@ export function CreditsClient() {
                     {entry.reason || "星星变动"}
                   </p>
                   {entry.createdAt && (
-                    <p className="mt-0.5 text-xs text-ink-4">
+                    <p className="mt-0.5 text-xs text-ink-3">
                       {new Date(entry.createdAt).toLocaleString("zh-CN")}
                     </p>
                   )}
                 </div>
                 <span
                   className={`text-sm font-semibold ${
-                    entry.delta >= 0 ? "text-emerald-600" : "text-ink"
+                    entry.delta >= 0 ? "text-emerald-700" : "text-ink"
                   }`}
                 >
                   {entry.delta >= 0 ? "+" : ""}

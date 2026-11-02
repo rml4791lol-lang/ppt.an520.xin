@@ -1,0 +1,126 @@
+{
+  "generatedAt": "2026-11-01T12:48:00.450Z",
+  "command": "npm run ui-check",
+  "routes": [
+    "/",
+    "/login",
+    "/single-page",
+    "/style-packs",
+    "/help",
+    "/projects",
+    "/exports"
+  ],
+  "viewports": [
+    "desktop",
+    "mobile"
+  ],
+  "axe": {
+    "tags": [
+      "wcag2a",
+      "wcag2aa",
+      "wcag21a",
+      "wcag21aa"
+    ],
+    "nodes": 643,
+    "rules": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "nodes": 635,
+        "pages": [
+          "/@desktop",
+          "/@mobile",
+          "/login@desktop",
+          "/login@mobile",
+          "/single-page@desktop",
+          "/single-page@mobile",
+          "/style-packs@desktop",
+          "/style-packs@mobile",
+          "/help@desktop",
+          "/help@mobile",
+          "/projects@desktop",
+          "/projects@mobile",
+          "/exports@desktop",
+          "/exports@mobile"
+        ]
+      },
+      {
+        "id": "link-in-text-block",
+        "impact": "serious",
+        "help": "Links must be distinguishable without relying on color",
+        "nodes": 6,
+        "pages": [
+          "/login@desktop",
+          "/login@mobile"
+        ]
+      },
+      {
+        "id": "label-content-name-mismatch",
+        "impact": "serious",
+        "help": "Elements must have their visible text as part of their accessible name",
+        "nodes": 2,
+        "pages": [
+          "/@desktop",
+          "/@mobile"
+        ]
+      }
+    ]
+  },
+  "behaviors": [
+    {
+      "id": "dropdown-keyboard",
+      "ok": false,
+      "detail": "aria-expanded=null；菜单可见=true；Enter 后正文长度=2392；选中「汇报 15 分钟 · 约 10 页」→「汇报 15 分钟 · 约 10 页」；Esc 后菜单可见=false"
+    },
+    {
+      "id": "drawer-focus-trap",
+      "ok": false,
+      "detail": "Tab 12 次，焦点离开抽屉 12 次；Esc 后仍可见=false；焦点回到触发按钮=false"
+    },
+    {
+      "id": "form-error-announced",
+      "ok": false,
+      "detail": "提交后没有任何 role=\"alert\" 或 aria-live 节点承载错误文本"
+    }
+  ],
+  "headingFailures": [
+    {
+      "route": "/login",
+      "viewport": "desktop",
+      "h1": 0
+    },
+    {
+      "route": "/login",
+      "viewport": "mobile",
+      "h1": 0
+    },
+    {
+      "route": "/single-page",
+      "viewport": "desktop",
+      "h1": 0
+    },
+    {
+      "route": "/single-page",
+      "viewport": "mobile",
+      "h1": 0
+    }
+  ],
+  "touchTargetUndersizedByRoute": {
+    "/": 24,
+    "/login": 5,
+    "/single-page": 1,
+    "/style-packs": 18,
+    "/help": 26,
+    "/projects": 19,
+    "/exports": 18
+  },
+  "totals": {
+    "failures": 32,
+    "axeNodes": 643,
+    "axeRules": 3,
+    "behaviorsFailed": 3,
+    "headingFailures": 4,
+    "touchFailures": 7
+  }
+}

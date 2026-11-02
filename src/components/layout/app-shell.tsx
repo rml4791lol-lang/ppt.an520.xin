@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, MenuIcon } from "@/components/icons";
 import { getSession } from "@/lib/client/api";
 import { AnnouncementBar } from "@/components/layout/announcement-bar";
@@ -42,17 +42,52 @@ export function AppShell({
   const [sessionUser, setSessionUser] = useState<ShellSessionUser | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
 
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const drawerTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // 抽屉要真的是模态：焦点进来、循环留在里面、Esc 或关闭后回到触发键。
+  // 只锁 body 滚动不算——键盘用户照样能 Tab 到被遮住的页面上。
   useEffect(() => {
     if (!drawerOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDrawerOpen(false);
-    };
+    const drawer = drawerRef.current;
+    const trigger = drawerTriggerRef.current;
+    const focusables = () =>
+      Array.from(
+        drawer?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => el.offsetParent !== null);
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    focusables()[0]?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDrawerOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const list = focusables();
+      if (list.length === 0) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      const inside = Boolean(active && drawer?.contains(active));
+      if (!event.shiftKey && (!inside || active === last)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && (!inside || active === first)) {
+        event.preventDefault();
+        last.focus();
+      }
+    };
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
+      trigger?.focus();
     };
   }, [drawerOpen]);
 
@@ -95,6 +130,7 @@ export function AppShell({
         {/* 桌面侧边栏 */}
         <aside
           id="app-sidebar"
+          inert={drawerOpen}
           className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line bg-card transition-[width] duration-200 lg:flex ${
             collapsed ? "w-16" : "w-[216px]"
           }`}
@@ -130,6 +166,7 @@ export function AppShell({
         {drawerOpen && (
           <div
             id="mobile-nav"
+            ref={drawerRef}
             className="fixed inset-0 z-50 lg:hidden"
             role="dialog"
             aria-modal="true"
@@ -165,10 +202,11 @@ export function AppShell({
         )}
 
         {/* 内容列 */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col" inert={drawerOpen}>
           <header className="flex items-center gap-3 px-4 py-3 sm:px-6 lg:justify-end lg:px-10">
             <button
               type="button"
+              ref={drawerTriggerRef}
               aria-label="打开菜单"
               aria-expanded={drawerOpen}
               aria-controls="mobile-nav"

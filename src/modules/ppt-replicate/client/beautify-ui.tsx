@@ -84,13 +84,13 @@ export function BeautifyPageCard({
           rows={6}
           placeholder="本页新标题和要点，换行分隔"
           onChange={(event) => onCopy(event.target.value)}
-          className="w-full resize-y rounded-xl border border-line bg-page px-3 py-2.5 text-sm leading-6 text-ink outline-none focus:border-brand-line"
+          className="w-full resize-y rounded-xl border border-line-control bg-page px-3 py-2.5 text-sm leading-6 text-ink outline-none focus:border-brand-line"
         />
         <input
           value={page.tweak}
           placeholder="可选：生成后再改一句"
           onChange={(event) => onTweak(event.target.value)}
-          className="mt-2 w-full rounded-xl border border-line bg-page px-3 py-2 text-sm text-ink outline-none focus:border-brand-line"
+          className="mt-2 w-full rounded-xl border border-line-control bg-page px-3 py-2 text-sm text-ink outline-none focus:border-brand-line"
         />
         <div className="mt-2 flex flex-wrap gap-2">
           <button
@@ -110,7 +110,7 @@ export function BeautifyPageCard({
             改图
           </button>
         </div>
-        <p className={`mt-2 text-xs ${page.error ? "text-danger" : page.imageUrl ? "text-emerald-600" : "text-ink-3"}`}>
+        <p className={`mt-2 text-xs ${page.error ? "text-danger" : page.imageUrl ? "text-emerald-700" : "text-ink-3"}`}>
           {page.status}
         </p>
       </div>
