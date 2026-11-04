@@ -471,7 +471,6 @@ export function buildSlideImagePromptStages(
     ].filter(Boolean).join('\n\n'),
     'page-copy': [
       slide.title ? `页面标题：${slide.title}` : '',
-      slide.goal ? `本页表达目标：${slide.goal}` : '',
       copy.length > 0
         ? `页面文案（必须逐字完整呈现，不得增删、不得改写；同一句只出现一次）：\n${copy.map((line) => `- ${line}`).join('\n')}`
         : '',

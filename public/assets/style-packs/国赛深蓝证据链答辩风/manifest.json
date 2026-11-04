@@ -1,0 +1,54 @@
+{
+  "stylePackId": "anppt-original-cicsic-evidence-20261104",
+  "name": "国赛深蓝证据链答辩风",
+  "scenario": "中国国际大学生创新大赛 / 双创赛路演",
+  "assetVersion": "2026-11-04-v1",
+  "generatedAt": "2026-11-04",
+  "generator": "html-css vector render (playwright/chromium) + sharp webp",
+  "sourcePolicy": "AnPPT original vector layout; no project data, third-party template image, logo, PDF page, or brand copy used as an input asset.",
+  "reviewStatus": "passed-manual-visual-qc",
+  "files": [
+    {
+      "role": "cover",
+      "file": "cover.webp",
+      "width": 1600,
+      "height": 900,
+      "sha256": "fa7ac26e566c943f46dd6bdc8a9779d99e56a79441c6c3a12d82d51abdc1da40"
+    },
+    {
+      "role": "toc",
+      "file": "toc.webp",
+      "width": 1600,
+      "height": 900,
+      "sha256": "dbec018b29abbc74d0fbedef8a52b33f37171755f21fab510cdc54531cc778fd"
+    },
+    {
+      "role": "section",
+      "file": "section.webp",
+      "width": 1600,
+      "height": 900,
+      "sha256": "3674773742c0e807124911615b10080a6cbaae152664fd1849fd7346d952a7f6"
+    },
+    {
+      "role": "content",
+      "file": "content.webp",
+      "width": 1600,
+      "height": 900,
+      "sha256": "a7ef78d9ea00591041aa4dc45274ea3eff7a9c12db5d94d528d011dd06200002"
+    },
+    {
+      "role": "data",
+      "file": "data.webp",
+      "width": 1600,
+      "height": 900,
+      "sha256": "1a9ab529fd88cc5d949da8fd2d4e401a118323c24154516fa52d49c3414047dc"
+    },
+    {
+      "role": "process",
+      "file": "process.webp",
+      "width": 1600,
+      "height": 900,
+      "sha256": "c37d3411e2f2722bcd254e187939e2b1082b8777c89c975572a4b9a410fbfdbd"
+    }
+  ]
+}
