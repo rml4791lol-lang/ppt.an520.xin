@@ -373,7 +373,6 @@ export interface StructureResult {
 async function structureSlideViaLlm(slide: OutlineSlide, deps: EngineDeps): Promise<string> {
   const userPrompt = [
     `页标题：${slide.title}`,
-    slide.goal ? `本页目标：${slide.goal}` : '',
     slide.mustKeep.length > 0 ? `必保留要点：\n${slide.mustKeep.map((s) => `- ${s}`).join('\n')}` : '',
     slide.summary.length > 0 ? `要点摘要：\n${slide.summary.map((s) => `- ${s}`).join('\n')}` : '',
     `rawText（原文锚点）：\n${slide.rawText || '(无)'}`,

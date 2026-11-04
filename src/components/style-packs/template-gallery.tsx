@@ -13,7 +13,7 @@ const SORT_OPTIONS = [
 ] as const;
 const DOMAIN_OPTIONS = [
   { key: "wvcsc", label: "世校赛", disabled: false },
-  { key: "cicsic", label: "双创赛 · 敬请期待", disabled: true },
+  { key: "cicsic", label: "双创赛", disabled: false },
   { key: ALL, label: ALL, disabled: false },
 ] as const;
 
@@ -60,12 +60,12 @@ export function TemplateGallery({ packs }: { packs: StylePack[] }) {
     () => [
       ...new Set(
         templates
-          .filter((pack) => (pack.domain ?? "general") === "wvcsc")
+          .filter((pack) => domain === ALL || (pack.domain ?? "general") === domain)
           .map((pack) => pack.track)
           .filter((value): value is string => Boolean(value)),
       ),
     ],
-    [templates],
+    [templates, domain],
   );
   const styleOptions = useMemo(() => [...new Set(templates.map((pack) => pack.category))], [templates]);
   const themeOptions = useMemo(
@@ -76,7 +76,7 @@ export function TemplateGallery({ packs }: { packs: StylePack[] }) {
   const filtered = useMemo(() => {
     let list = templates;
     if (domain !== ALL) list = list.filter((pack) => (pack.domain ?? "general") === domain);
-    if (domain === "wvcsc" && track !== ALL) list = list.filter((pack) => pack.track === track);
+    if (domain !== ALL && track !== ALL) list = list.filter((pack) => pack.track === track);
     if (colors.length > 0) list = list.filter((pack) => (pack.colorTags ?? []).some((tag) => colors.includes(tag)));
     if (styles.length > 0)
       list = list.filter((pack) => styles.includes(pack.category) || pack.tags.some((tag) => styles.includes(tag)));
@@ -112,8 +112,8 @@ export function TemplateGallery({ packs }: { packs: StylePack[] }) {
         ))}
       </div>
 
-      {/* 二级：赛道（世校赛域内） */}
-      {domain === "wvcsc" && tracks.length > 0 && (
+      {/* 二级：赛道（当前赛事域内） */}
+      {domain !== ALL && tracks.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-xs text-ink-3">赛道</span>
           {[ALL, ...tracks].map((value) => (

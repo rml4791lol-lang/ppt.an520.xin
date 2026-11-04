@@ -68,6 +68,28 @@ const RAW_STYLE_PACKS: StylePack[] = [
     visualKeywords: ["深海军蓝底", "冷青蓝细线分隔", "琥珀橙证据强调", "真实高校研发摄影", "斜切技术栅格", "评审证据链", "编号导航系统", "技术路线图"],
   },
   {
+    id: "anppt-original-cicsic-evidence-20261104",
+    name: "国赛深蓝证据链答辩风",
+    slug: "国赛深蓝证据链答辩风",
+    category: "赛事/竞赛",
+    description: "面向中国国际大学生创新大赛等高规格赛事的深蓝答辩视觉：超大编号、非对称证据栏、结论先行句与横向对标图，适合 18 页以内的国赛路演。",
+    previewUrl: "/assets/style-packs/国赛深蓝证据链答辩风/cover.webp",
+    previewImageUrls: [
+      "/assets/style-packs/国赛深蓝证据链答辩风/cover.webp",
+      "/assets/style-packs/国赛深蓝证据链答辩风/toc.webp",
+      "/assets/style-packs/国赛深蓝证据链答辩风/section.webp",
+      "/assets/style-packs/国赛深蓝证据链答辩风/content.webp",
+      "/assets/style-packs/国赛深蓝证据链答辩风/data.webp",
+      "/assets/style-packs/国赛深蓝证据链答辩风/process.webp",
+    ],
+    badgeText: "国赛原创",
+    tags: ["国创赛", "挑战杯", "证据链"],
+    suitablePageTypes: ["国赛路演", "金奖答辩", "科研项目评审"],
+    suitableScenarios: ["中国国际大学生创新大赛", "挑战杯", "科技成果转化路演"],
+    recommendationWeight: 103,
+    visualKeywords: ["深海蓝实色底", "青色 HUD 细线", "橙色结论强调", "超大描边编号", "非对称证据栏", "横向基线对标", "斜切技术栅格", "结论先行"],
+  },
+  {
     id: "anppt-original-skill-20260822",
     name: "精密制造技能竞赛风",
     slug: "精密制造技能竞赛风",
@@ -815,6 +837,7 @@ interface StylePackTaxonomy {
 // 缺省 kind 即纯风格包，只在风格一版出现。世校赛（wvcsc）是第一阶段唯一激活的垂直域。
 const PACK_TAXONOMY: Readonly<Record<string, StylePackTaxonomy>> = {
   'anppt-original-innovation-20260822': { domain: 'wvcsc', track: '信息技术', kind: 'template', colorTags: ['蓝'], themeTags: ['信息AI', '科技创新'] },
+  'anppt-original-cicsic-evidence-20261104': { domain: 'cicsic', track: '信息技术', kind: 'template', colorTags: ['蓝'], themeTags: ['信息AI', '科技创新'] },
   'anppt-original-skill-20260822': { domain: 'wvcsc', track: '装备制造', kind: 'template', colorTags: ['蓝', '橙'], themeTags: ['智能制造', '工业技术'] },
   'anppt-original-career-20260822': { domain: 'wvcsc', track: '教育与成长', kind: 'template', colorTags: ['橙'], themeTags: ['教育培训'] },
   'anppt-template-wvcsc-aiot-20260822': { domain: 'wvcsc', track: '现代农业', kind: 'template', colorTags: ['蓝'], themeTags: ['智慧农业', '信息AI'] },

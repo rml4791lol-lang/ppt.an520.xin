@@ -217,6 +217,22 @@ export const STYLE_DESIGN_DNA_BY_ID: Readonly<Record<string, StyleDesignDNA>> = 
       avoid: ['通用 AI 大脑', '发光机器人', '城市天际线', '虚构奖项、专利、Logo 或数据', '无意义粒子海报'],
     },
   ),
+  'anppt-original-cicsic-evidence-20261104': makeDna(
+    COMPETITION_ACADEMIC,
+    { cover: [0], toc: [1], section: [2], content: [3], data: [4], process: [5] },
+    {
+      scenarioLabels: ['国赛路演', '金奖答辩', '科技成果转化路演'],
+      audiences: ['competition', 'academic'],
+      domains: ['technology', 'education', 'manufacturing'],
+      palette: ['#050E1F 深海蓝', '#35D0FF 冷青', '#FF6A3D 结论橙', '#F2F7FF 冷白'],
+      grid: '16:9 非对称证据栅格：左侧 34% 固定为结论与评委记忆句，右侧 66% 放三条纵向证据；数据页用标签列加横向基线对标，流程页用阶梯节点。',
+      motif: '超大描边章节编号、1px 青色 HUD 角标、64px 技术网格、橙色结论线、菱形节点与虚线推进路径；装饰只强化论证方向。',
+      imagery: '优先真实研发、镀膜涂布产线、材料微观结构与第三方检测场景；没有实拍时用抽象光圈与栅格构成，不生成可读文字、商标或人物正脸。',
+      dataVisualization: '同一量纲、同一基线、同一检测机构；基线用青色描边条，本项目用橙色实心条，右侧保留数值与口径，禁止无来源增幅。',
+      density: '中高密度但强分层：每页一句结论、三条证据、一个来源；投屏 5 秒可读到判断。',
+      avoid: ['虚构奖项、专利号与客户 Logo', '通用 AI 大脑与发光机器人', '无意义粒子背景', '把项目真实数据写进生图提示词'],
+    },
+  ),
   'anppt-original-skill-20260822': makeDna(
     ENGINEERING_LIGHT,
     { cover: [0], toc: [1], section: [2], content: [3], data: [4], process: [5] },
