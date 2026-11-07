@@ -30,7 +30,7 @@ export default function GlobalError({
             页面加载失败
           </h1>
           <p style={{ margin: "16px 0 0", color: "#8a919e", fontSize: 14, lineHeight: 1.8 }}>
-            请刷新页面重试。如果问题持续出现，请联系 support@anppt.app 并附上错误编号。
+            请刷新页面重试。如果问题持续出现，请联系 366150820@qq.com 并附上错误编号。
           </p>
           {error.digest && (
             <p style={{ marginTop: 16, color: "#b6bcc7", fontSize: 12 }}>

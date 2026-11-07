@@ -40,7 +40,7 @@ export function getSiteConfig(): SiteConfig {
     legalUpdatedAt: '2026-10-19',
     signupBonusPoints: Number(env.ANPPT_SIGNUP_BONUS_POINTS ?? 100),
     beginnerTutorialUrl: env.ANPPT_TUTORIAL_URL ?? '',
-    serviceEmail: env.ANPPT_SERVICE_EMAIL ?? 'support@anppt.app',
+    serviceEmail: env.ANPPT_SERVICE_EMAIL ?? '366150820@qq.com',
     announcement: {
       enabled: (env.ANPPT_ANNOUNCEMENT_ENABLED ?? 'true') !== 'false',
       html: env.ANPPT_ANNOUNCEMENT_HTML ?? DEFAULT_ANNOUNCEMENT_HTML,
